@@ -9,10 +9,9 @@ import type { GameRow, GameView, ToastView } from "./types";
 
 /**
  * The engine release whose `--debug` build includes control (`__MOKU_GAME_CONTROL__`), so its
- * cheats run on the phone. Written when the engine version is pinned (spec 10 E8); a placeholder
- * until then.
+ * cheats run on the phone: the pinned engine (spec 10 E8), 0.15.1.
  */
-export const CONTROL_ENGINE = "0.15.x";
+export const CONTROL_ENGINE = "0.15.1";
 
 /**
  * The refusal text of a read-only build: a `--debug` build of an engine before `CONTROL_ENGINE`,

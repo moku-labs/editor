@@ -161,8 +161,8 @@ already sends each frame once. A link stall longer than the window leaves a hole
 
 | Engine field | Engine version | Without it |
 |---|---|---|
-| pass ring `owner`, `kind2` + `kindNames`, `drawsAt`, `format`, `resolution`; `shader` lines; sample `targets`, `counts`; header `app.id`, `debug.overdraw`; `problem` lines (two rules) | 0.15.x patch | owner, filter, draws, format, resolution null; old `compile` lines as compiles without ms; `targets`, `counts`, `appId` null |
-| `ring.systemNames` public, copied on growth | 0.15.x patch (present, grown in place, in 0.15.0) | the names copied when their length grows |
+| pass ring `owner`, `kind2` (named by the frame ring's `kindNames`), `drawsAt`, `format`, `resolution`; `shader` lines; sample `targets`, `counts`; header `app.id`, `debug.overdraw`; `problem` lines (`filter-still`, `target-churn`, `retakes`) | 0.15.1 (the 0.15.x patch, the dev engine) | owner, filter, draws, format, resolution null; old `compile` lines as compiles without ms; `targets`, `counts`, `appId` null. Draws also need `draws` in the header's `measured`: the engine counts them on WebGPU only and writes `drawsAt` 0 on WebGL |
+| `ring.systemNames` public, copied on growth | 0.15.1 (present, grown in place, in 0.15.0) | the names copied when their length grows |
 | `monitor.sections`, `sections` lines, header `sections`, sample `sectionsMs` | next change | perf's feeds only, `engine: false`, `costMs` null |
 | `monitor.detail`, the mark ring | next change (perf's reading deferred) | perf's window, `nodes` null |
 | `passes` summary line, sample `shaders`, `gc` lines, sample `memory` | next change | perf's raw pass rows (chains built on the tools page); `shaders` null; no GC marks; `source` inferred (`memory.source`, `"uasm"` included, passed through when sent) |

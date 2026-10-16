@@ -2,13 +2,22 @@
 /* eslint-disable unicorn/no-null -- null is "not known" in the engine's rate (displayHz without adaptive) */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Json } from "../../../registry/protocol";
+import type { PerfEventsWire } from "../../protocol";
 import {
   CAUSE_BITS,
   causesOf,
   createPerfWindow,
+  eventsOf,
   readFramesWire,
   readWireWindow
 } from "../../protocol";
+import {
+  CANVAS_DRAWS,
+  CANVAS_TARGET,
+  FILTER_DRAWS,
+  FILTER_TARGET,
+  PIPELINE_LABEL
+} from "../counted-gpu";
 import { stallOnce, startPair } from "../real-engine";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,6 +32,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+
+/**
+ * The newest two cells of a pass rows column: the newest frame's canvas and filter pass.
+ *
+ * @param column - The column.
+ * @returns Its last two cells.
+ */
+function lastTwo<Value>(column: readonly Value[] | undefined): Value[] | undefined {
+  return column?.slice(-2);
+}
 
 describe("perf on the real engine", () => {
   it("reads the engine's ring: the window fills, 40 ms of work is a js spike, a 25.1 ms pause is none, each row's budget is the ring's", async () => {
@@ -133,8 +152,8 @@ describe("perf on the real engine without the agent flag (a page moku-game dev d
   });
 });
 
-describe("Mission control's feeds on the installed engine (0.15.0, spec 03 Delta 2026-10-16 D15)", () => {
-  it("answer every new id with the blocks it does not measure absent and those capabilities false; nothing throws", async () => {
+describe("Mission control's feeds on an uncounted WebGL page of the dev engine (0.15.1, spec 03 Delta 2026-10-16 D15)", () => {
+  it("answer every new id with the blocks it does not measure absent and those capabilities false; nothing throws (bug: WebGL's drawsAt 0 shown as passes of 0 draws)", async () => {
     const { editor, step } = await startPair();
     const read = (id: string, input: Json = {}): Json =>
       editor.registry.source(id)?.read(input) ?? null;
@@ -153,9 +172,10 @@ describe("Mission control's feeds on the installed engine (0.15.0, spec 03 Delta
       reason: "no-detail"
     });
     expect(() => read("editor.perf.passes")).not.toThrow();
+    // 0.15.1 writes the pass ring's owner column on every backend, draws only where it counts them.
     expect(editor.perf.second()).toMatchObject({
       caps: {
-        passOwners: false,
+        passOwners: true,
         passDraws: false,
         sections: false,
         detail: false,
@@ -165,8 +185,90 @@ describe("Mission control's feeds on the installed engine (0.15.0, spec 03 Delta
       memory: { trusted: false }
     });
   });
+});
 
-  it.todo(
-    "TODO(engine): on @moku-labs/game 0.15.x the feeds show pass owners, draws, a shader event and system names (delta-data Verification; the installed engine is 0.15.0)"
-  );
+describe("Mission control's feeds on a counted WebGPU page of the dev engine (0.15.1, delta-data Verification)", () => {
+  it("show the pass owners, filters and draws, a shader event, a problem, the system names, the sample's counts and targets and the build's app id (bug: a 0.15.1 column or line perf reads under another name)", async () => {
+    const appId = "com.mokulabs.timber.debug";
+    const { game, editor, step, filterOwner } = await startPair({
+      backend: "webgpu",
+      filterKind: "fog.blur",
+      appId,
+      idleAfterMs: 60_000
+    });
+    const read = (id: string, input: Json = {}): Json =>
+      editor.registry.source(id)?.read(input) ?? null;
+    await editor.registry.command("editor.perf.sections")?.run({ passes: true });
+    // Over three seconds: the stand-in makes and drops a render target every frame (target-churn).
+    for (let index = 0; index < 200; index += 1) step(16.7);
+    vi.advanceTimersByTime(250);
+
+    // The newest frame's two passes: the canvas (3 draws), then the entity's filter (1 draw), its
+    // kind named from the frame ring's kindNames by the pass's kind2.
+    const ring = game.renderer.monitor.frames();
+    const frames = readFramesWire(read("editor.perf.frames"));
+    const passes = frames?.passes;
+    expect({
+      kind: lastTwo(passes?.kind),
+      owner: lastTwo(passes?.owner),
+      filter: lastTwo(passes?.filter),
+      draws: lastTwo(passes?.draws),
+      format: lastTwo(passes?.format),
+      resolution: lastTwo(passes?.resolution)
+    }).toEqual({
+      kind: ["canvas", "filter"],
+      owner: [null, filterOwner],
+      filter: [null, "fog.blur"],
+      draws: [CANVAS_DRAWS, FILTER_DRAWS],
+      format: [CANVAS_TARGET.colorTexture.source.format, FILTER_TARGET.colorTexture.source.format],
+      resolution: [
+        CANVAS_TARGET.colorTexture.source.resolution,
+        FILTER_TARGET.colorTexture.source.resolution
+      ]
+    });
+    expect(ring.kindNames).toEqual(["other", "fog.blur"]);
+    expect(frames?.systems?.names).toEqual([...ring.systemNames]);
+    expect(ring.systemNames.length).toBeGreaterThan(0);
+
+    // The compile of the filter's first apply, at boot, and the churn of its targets.
+    const events = eventsOf(read("editor.perf.events") as PerfEventsWire);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "shader",
+        what: "compile",
+        label: PIPELINE_LABEL,
+        boot: true,
+        pass: 1,
+        filter: "fog.blur",
+        owner: filterOwner
+      })
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "problem",
+        rule: "target-churn",
+        reason: "rate",
+        cleared: false
+      })
+    );
+
+    const second = editor.perf.second();
+    expect(second.caps).toMatchObject({
+      passOwners: true,
+      passDraws: true,
+      passFormat: true,
+      systemNames: true,
+      shaderEvents: true,
+      problems: true
+    });
+    expect(second.counts).toEqual(second.sample?.counts);
+    expect(second.counts).toMatchObject({ entities: 1, clockListeners: expect.any(Number) });
+    expect(second.sample?.targets).toEqual({ created: 60, destroyed: 60 });
+    // The header's app.id and the registry's BuildInfo.appId: the same __MOKU_GAME_APP__.
+    expect(second.appId).toBe(appId);
+    expect(editor.registry.build().appId).toBe(appId);
+
+    await editor.stop();
+    await game.stop();
+  });
 });

@@ -286,7 +286,9 @@ export function headerLine(t = 0, overrides: Partial<PerfHeaderLine> = {}): Perf
     reason: "start",
     displayHz: 120,
     ladder: [120, 60],
-    thermal: null
+    thermal: null,
+    asked: null,
+    heldBy: null
   } as const;
   return { ...baseHeader(t), rate, ...overrides };
 }

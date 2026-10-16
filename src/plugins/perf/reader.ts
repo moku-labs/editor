@@ -28,7 +28,7 @@ import {
 } from "./protocol";
 import { REASON_NONE, ringCauses } from "./ring";
 import { notifyWatchers } from "./state";
-import type { NamedRing, PerfConfig, PerfState } from "./types";
+import type { PerfConfig, PerfState } from "./types";
 
 /**
  * One value of a column; NaN past its end (`noUncheckedIndexedAccess` reads a typed array as
@@ -507,7 +507,7 @@ function updateScalars(state: PerfState, windowMs: number): boolean {
  * @param ring - The frame ring.
  * @param config - perf's config.
  */
-function readRing(state: PerfState, ring: NamedRing, config: Readonly<PerfConfig>): void {
+function readRing(state: PerfState, ring: FrameRing, config: Readonly<PerfConfig>): void {
   // The display's rate, for the vsync judgement of the gaps read now: the hz the display announces,
   // else the one the engine's time learned.
   state.displayHz = announcedHzOf(state.display) ?? displayHzOf(state.game) ?? state.displayHz;

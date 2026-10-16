@@ -155,6 +155,30 @@ describe("timelineEventOf", () => {
     });
   });
 
+  it("keeps a target-churn problem with the clause that fired (bug: 0.15.1's target-churn skipped because its reason is not filter-still's)", () => {
+    // The engine's target-churn detail (0.15.1): one problem for the whole canvas, no owner.
+    const churn = {
+      rule: "target-churn",
+      severity: "warn",
+      owner: null,
+      view: null,
+      filter: null,
+      value: 6,
+      threshold: 4,
+      since: 1700,
+      frames: 120,
+      reason: "after-trim"
+    };
+    expect(timelineEventOf(line("problem", 1820, churn), 9, ORIGIN)).toEqual({
+      seq: 9,
+      kind: "problem",
+      t: 80_310.2,
+      frame: 1820,
+      ...churn,
+      cleared: false
+    });
+  });
+
   it("skips a malformed detail without throwing (bug: one bad line from a newer engine crashing the events feed)", () => {
     const throwing = Object.defineProperty({}, "what", {
       enumerable: true,
@@ -173,7 +197,8 @@ describe("timelineEventOf", () => {
       ["recorder", { action: "rewind" }],
       ["sections", { on: "passes", off: [] }],
       ["display", { ...DISPLAY, hz: null }],
-      ["problem", { ...STILL, owner: "412" }]
+      ["problem", { ...STILL, owner: "412" }],
+      ["problem", { ...STILL, reason: 3 }]
     ];
     for (const [name, detail] of malformed) {
       expect(timelineEventOf(line(name, 4851, detail), 0, ORIGIN), name).toBeUndefined();

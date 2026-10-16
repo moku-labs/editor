@@ -9,8 +9,9 @@ import { pushSample } from "./series";
 import type { MissionSeries } from "./types";
 
 /**
- * The render targets the sample says were created (the 0.15.x patch's `sample.targets`, which the
- * installed engine's sample type does not list yet): read as a field of a newer engine.
+ * The render targets the sample says were created (the 0.15.x patch's `sample.targets`: typed from
+ * the dev engine, 0.15.1, on; absent from a peer floor page, 0.15.0, and from an older log), read
+ * structurally because the line came over the wire.
  *
  * @param sample - The sample line.
  * @returns Targets created in its second; NaN when the engine does not send them.

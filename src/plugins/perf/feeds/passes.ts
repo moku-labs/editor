@@ -10,7 +10,7 @@
 import type { FrameRing, PerfPassRowsWire } from "../protocol";
 import { isTilerGpu, rowOfFrame } from "../protocol";
 import { passKindOf } from "../ring";
-import type { PassesAnswer, PassRing, PassWindow, PerfState } from "../types";
+import type { NamedRing, PassesAnswer, PassRing, PassWindow, PerfState } from "../types";
 import { cell, MS_SCALE, measured, TIME_SCALE } from "./wire";
 
 /** A second, ms. */
@@ -148,7 +148,7 @@ export function readPasses(state: PerfState, frames: FrameRing): boolean {
 /**
  * The filter kind's name of a pass: `kindNames[kind2 - 1]`, null for kind2 0 (no filter).
  *
- * @param names - The ring's interned kind names.
+ * @param names - The frame ring's interned kind names (`FrameRing.kindNames`, not on its passes).
  * @param kind2 - The pass's kind2 byte.
  * @returns The name, or null.
  * @example
@@ -220,7 +220,7 @@ function pushPass(
   at: number
 ): void {
   const { passes, caps } = state;
-  const ring: PassRing | undefined = state.monitor?.frames().passes;
+  const ring: NamedRing | undefined = state.monitor?.frames();
   rows.row.push(at);
   rows.index.push(cell(passes.index, pass));
   rows.kind.push(passKindOf(cell(passes.kind, pass)));

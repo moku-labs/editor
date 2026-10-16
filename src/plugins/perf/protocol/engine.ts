@@ -10,8 +10,9 @@
  * monitor, `KeptStats` and the render stats from `Renderer`), except `DevtoolsDetail`, the detail of
  * the editor's own `devtools` event, which the engine names but does not type, and the mirrors of
  * the 0.15.x patch and the next engine change at the end of the file (spec 03 Delta 2026-10-16 D1):
- * the editor's structural copies until the installed engine exports them.
- * `engine-contract.test.ts` asserts each re-export equals the engine's type.
+ * the editor's structural copies, kept because the peer floor (0.15.0) exports none of them.
+ * `engine-contract.test.ts` asserts each re-export equals the engine's type, and each mirror against
+ * the engine's export once the dev engine (0.15.1) has it.
  */
 import type { FrameRing, PassRecord, PerfEventName, Renderer, Time } from "@moku-labs/game";
 import type { MonitorSectionName, MonitorSections } from "./sections";
@@ -197,32 +198,48 @@ export type RenderStatsLike = Pick<
 export type MonitorLike = Renderer.PerfMonitorApi;
 
 // Mirrors of the 0.15.x patch and the next engine change (spec 03 Delta 2026-10-16 D1).
-// The engine installed here (0.15.0) exports none of these yet: each is the editor's structural copy,
-// optional for a reader (an older engine sends none of it). `engine-contract.test.ts` compares each
-// with the engine's export once the engine has it (ask E7).
+// The peer floor (0.15.0) exports none of these: each is the editor's structural copy, optional for a
+// reader (an older engine sends none of it). The dev engine (0.15.1) exports the patch's; the
+// `engine-contract.test.ts` checks each against it (ask E7); the next change's wait for the engine.
 
 /**
  * The pass ring columns of the 0.15.x patch (E2, TC §2.1): the owner entity (0 = none), the filter
- * kind (`kind2`, 1-based, 0 = none: the name is `kindNames[kind2 - 1]`), the draw-call counter at
- * the pass's start, the target format and the resolution. Every column is absent on an older engine.
+ * kind (`kind2`, 1-based, 0 = none: the name is `kindNames[kind2 - 1]` of the frame ring, not of
+ * the pass ring), the draw-call counter at the pass's start (0 where draws are not counted: WebGL),
+ * the target format and the resolution. Every column is absent on an older engine.
  *
  * @example
  * ```ts
- * const extra: PassColumnsNext = { owner: new Uint32Array(4096), kind2: new Uint8Array(4096), kindNames: ["fog.blur"] };
+ * const extra: PassColumnsNext = { owner: new Uint32Array(4096), kind2: new Uint8Array(4096) };
  * ```
  */
 export type PassColumnsNext = {
   readonly owner?: Uint32Array;
   readonly kind2?: Uint8Array;
-  readonly kindNames?: readonly string[];
   readonly drawsAt?: Uint16Array;
   readonly format?: readonly (string | null)[];
   readonly resolution?: Float32Array;
 };
 
 /**
+ * The frame ring's names of the 0.15.x patch (E2, E8): the interned filter kinds `kind2` indexes
+ * 1-based (`"other"` first, at most 32, only growing) and the world's system names `sysIdx` indexes
+ * (a new array when a system registers). Absent from the type of an older engine.
+ *
+ * @example
+ * ```ts
+ * const names: RingNamesNext = { kindNames: ["other", "fog.blur"], systemNames: ["ward.update"] };
+ * ```
+ */
+export type RingNamesNext = {
+  readonly kindNames?: readonly string[];
+  readonly systemNames?: readonly string[];
+};
+
+/**
  * The event names the 0.15.x patch and the next change add to the engine's `PerfEventName`: `shader`
- * (E4), `problem` (N3, two rules in 0.15.x), `debug` (U6, overdraw), `gc` (N6) and `sections` (N1).
+ * (E4), `problem` (N3, three rules in 0.15.1), `debug` (U6, overdraw), `gc` (N6) and `sections` (N1).
+ * The dev engine (0.15.1) lists the patch's three; the peer floor (0.15.0) none.
  *
  * @example
  * ```ts
@@ -257,9 +274,27 @@ export type ShaderEventDetail = {
 };
 
 /**
+ * Why a problem opened (engine U5): `filter-still` says why the still view is not kept (`budget`,
+ * `not-eligible`), `target-churn` which clause fired (`rate`, `idle`, `after-trim`); a newer
+ * engine's word is kept as its string.
+ *
+ * @example
+ * ```ts
+ * const why: ProblemReason = "after-trim"; // targets made right after a pool trim
+ * ```
+ */
+export type ProblemReason =
+  | "budget"
+  | "not-eligible"
+  | "rate"
+  | "idle"
+  | "after-trim"
+  | (string & {});
+
+/**
  * The detail of a `problem` event line (N3): a rule that flagged an owner and view, or the same
- * rule cleared for them (`cleared` carries owner and view, engine U5). `filter-still` also says why
- * (`budget` or `not-eligible`).
+ * rule cleared for them (`cleared` carries owner and view, engine U5). `filter-still` and
+ * `target-churn` also say why (`reason`).
  *
  * @example
  * ```ts
@@ -279,7 +314,7 @@ export type ProblemEventDetail =
       readonly threshold: number | null;
       readonly since: number | null;
       readonly frames: number | null;
-      readonly reason?: "budget" | "not-eligible";
+      readonly reason?: ProblemReason;
     }
   | {
       readonly rule: ProblemRule;
@@ -329,13 +364,14 @@ export type DebugEventDetail = { readonly overdraw: boolean };
 
 /**
  * The fields a `sample` line gains with the 0.15.x patch and the next change: render-target
- * churn (E5), the object counters (engine U3: entities, views, timers, frame listeners and the
- * registered counts), the shader counters (N7), the cost per section (N2) and the memory source
- * (N6, beside the kept `heapMb`).
+ * churn (E5), the object counters (engine U3: entities, views, timers, frame and clock listeners
+ * and the registered counts), the shader counters (N7), the cost per section (N2) and the memory
+ * source (N6, beside the kept `heapMb`).
  *
  * @example
  * ```ts
- * const extra: PerfSampleNext = { targets: { created: 6, destroyed: 6 }, counts: { entities: 104, views: 180, timers: 3, frameListeners: 2 } };
+ * const extra: PerfSampleNext = { targets: { created: 6, destroyed: 6 },
+ *   counts: { entities: 104, views: 180, timers: 3, frameListeners: 2, clockListeners: 1 } };
  * ```
  */
 export type PerfSampleNext = {
@@ -345,6 +381,7 @@ export type PerfSampleNext = {
     readonly views: number;
     readonly timers: number;
     readonly frameListeners: number;
+    readonly clockListeners: number;
     readonly [registered: string]: number;
   } | null;
   readonly shaders?: {
@@ -364,7 +401,8 @@ export type PerfSampleNext = {
 
 /**
  * The fields the header gains with the 0.15.x patch and the next change: the app id (with the
- * `.debug` suffix on native debug installs, S-E3), the overdraw flag (U6) and the sections (N1).
+ * `.debug` suffix on native debug installs, S-E3; null on a page the build gave none), the overdraw
+ * flag (U6) and the sections (N1).
  *
  * @example
  * ```ts
@@ -372,7 +410,7 @@ export type PerfSampleNext = {
  * ```
  */
 export type PerfHeaderNext = {
-  readonly app?: { readonly id: string };
+  readonly app?: { readonly id: string | null };
   readonly debug?: { readonly overdraw: boolean };
   readonly sections?: MonitorSections;
 };

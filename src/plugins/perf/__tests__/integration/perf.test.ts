@@ -218,7 +218,7 @@ describe("Mission control's feeds in an agent app (spec 03 Delta 2026-10-16)", (
     expect(readFramesWire(read("editor.perf.frames", { after: newest }))?.passes).toBeUndefined();
   });
 
-  it("on the installed engine's shape (0.15.0): the same ids answer with the blocks absent and the capabilities false, nothing throws", async () => {
+  it("on the peer floor's shape (0.15.0): the same ids answer with the blocks absent and the capabilities false, nothing throws", async () => {
     const monitor = createFakeMonitor({ capacity: 512, ...ENGINE_0_15_0 });
     const editor = await startEditor(monitor);
     const read = (id: string, input: Json = {}): Json =>

@@ -172,7 +172,9 @@ describe("the per-frame budget and the rate", () => {
       reason: "start",
       displayHz: 120,
       ladder: [120, 60],
-      thermal: null
+      thermal: null,
+      asked: null,
+      heldBy: null
     } as const;
     const withRate = setup({ header: headerLine({ rate }) });
     commitFrames(withRate.monitor, 3, 0, 8.33, { rateMs: 8.33 });

@@ -3,13 +3,19 @@ import type {
   PerfEventLine as EngineEventLine,
   PerfEventName as EngineEventName,
   FrameRecord as EngineFrameRecord,
+  FrameRing as EngineFrameRing,
   PerfHeaderLine as EngineHeaderLine,
   PerfLogLine as EngineLogLine,
   PerfMeasured as EngineMeasured,
   OverlayEventDetail as EngineOverlayEventDetail,
   OverlayWhat as EngineOverlayWhat,
+  PerfCounts as EnginePerfCounts,
   PoolTrimDetail as EnginePoolTrimDetail,
+  ProblemEventDetail as EngineProblemEventDetail,
+  ProblemRule as EngineProblemRule,
   PerfSampleLine as EngineSampleLine,
+  ShaderEventDetail as EngineShaderEventDetail,
+  ShaderWhat as EngineShaderWhat,
   PerfSpikeLine as EngineSpikeLine,
   WarmDetail as EngineWarmDetail,
   Renderer,
@@ -20,6 +26,9 @@ import {
   DEMAND_REASONS,
   PERF_GAP_BUCKETS as ENGINE_GAP_BUCKETS,
   PERF_LOG_VERSION as ENGINE_LOG_VERSION,
+  PASS_KINDS as ENGINE_PASS_KINDS,
+  PROBLEM_RULES as ENGINE_PROBLEM_RULES,
+  SHADER_WHATS as ENGINE_SHADER_WHATS,
   frameAt,
   PERF_CAUSES
 } from "@moku-labs/game";
@@ -27,24 +36,32 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import type {
   FrameRate,
+  FrameRateNext,
   FrameRecord,
   KeptStats,
   MonitorLike,
   OverlayEventDetail,
   OverlayWhat,
+  PassColumnsNext,
   PerfEventLine,
   PerfEventName,
+  PerfEventNameNext,
   PerfFramesWire,
   PerfHeaderLine,
+  PerfHeaderNext,
   PerfLogLine,
   PerfMeasured,
   PerfSampleLine,
+  PerfSampleNext,
   PerfSpikeLine,
   PoolTrimDetail,
+  ProblemEventDetail,
   RateChange,
   RateMode,
   RateReason,
   RenderStatsLike,
+  RingNamesNext,
+  ShaderEventDetail,
   ThermalStatus,
   WarmDetail
 } from "../../protocol";
@@ -202,12 +219,13 @@ describe("the engine's exported lists (game@0fda201: PERF_CAUSES, DEMAND_REASONS
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The 0.15.x patch (spec 03 Delta 2026-10-16 D1, D12, D14; E7): the editor's
-// runtime-free copies of the engine's new lists equal the engine's root exports
-// once the installed engine has them (asserted from the patch on: a patched
-// engine without one fails); before it, each is listed as an engine to-do, never
-// a silent pass. The pass ring's kind2 and the growth of systemNames are read as
-// the engine writes them (the fake follows the engine's rules).
+// The 0.15.x patch (spec 03 Delta 2026-10-16 D1, D12, D14; E7) against the dev
+// engine (0.15.1): the editor's runtime-free copies of the engine's lists equal
+// its root exports, and every mirror holds what the engine's type allows (the
+// mirrors stay: the peer floor, 0.15.0, exports none of them). The next
+// change's lists and types wait for the engine as listed to-dos, never a silent
+// pass. The pass ring's kind2 and the growth of systemNames are read as the
+// engine writes them (the fake follows the engine's rules).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The installed engine's version. */
@@ -218,33 +236,73 @@ const ENGINE_VERSION: string = JSON.parse(
   )
 ).version;
 
-/** The installed engine is older than the 0.15.x patch (0.15.0 or before): its lists are not exported yet. */
-const BEFORE_PATCH = /^0\.(?:\d|1[0-4])\.\d|^0\.15\.0(?:\D|$)/.test(ENGINE_VERSION);
+/** A problem detail that opens a problem: the branch without `cleared`. */
+type Opened<Detail> = Exclude<Detail, { cleared: true }>;
 
-/** The editor's copy of each list and when the engine exports it: the 0.15.x patch, or the next change. */
-const LISTS = [
-  ["SHADER_WHATS", SHADER_WHATS, "patch"],
-  ["PROBLEM_RULES", PROBLEM_RULES, "patch"],
-  ["PASS_KINDS", PASS_KINDS, "patch"],
-  ["MONITOR_SECTIONS", MONITOR_SECTIONS, "next"]
-] as const;
+/** A problem detail that clears one: the branch with `cleared: true`. */
+type Cleared<Detail> = Extract<Detail, { cleared: true }>;
 
-/** The type mirrors of D1 the engine exports from the patch or the next change (types: tsc, once exported). */
-const TYPE_MIRRORS = [
-  "ShaderEventDetail",
-  "ProblemEventDetail",
+describe("the editor's copies of the engine's 0.15.x lists and types (E7, dev engine 0.15.1)", () => {
+  it("keeps SHADER_WHATS, PROBLEM_RULES and PASS_KINDS equal to the engine's exports, in order (bug: a shader event, a problem rule or a pass kind byte the tools page names differently from the engine)", () => {
+    expect([...SHADER_WHATS]).toEqual([...ENGINE_SHADER_WHATS]);
+    expect([...PROBLEM_RULES]).toEqual([...ENGINE_PROBLEM_RULES]);
+    expect([...PASS_KINDS]).toEqual([...ENGINE_PASS_KINDS]);
+    expectTypeOf<(typeof SHADER_WHATS)[number]>().toEqualTypeOf<EngineShaderWhat>();
+    expectTypeOf<(typeof PROBLEM_RULES)[number]>().toEqualTypeOf<EngineProblemRule>();
+  });
+
+  it("holds every shader and problem detail the engine writes in the editor's mirrors, field for field (bug: a mirror missing a field the engine sends, or reading one it never sends)", () => {
+    expectTypeOf<EngineShaderEventDetail>().toExtend<ShaderEventDetail>();
+    expectTypeOf<keyof ShaderEventDetail>().toEqualTypeOf<keyof EngineShaderEventDetail>();
+    expectTypeOf<keyof ShaderEventDetail["during"]>().toEqualTypeOf<
+      keyof EngineShaderEventDetail["during"]
+    >();
+    expectTypeOf<EngineProblemEventDetail>().toExtend<ProblemEventDetail>();
+    expectTypeOf<keyof Opened<ProblemEventDetail>>().toEqualTypeOf<
+      keyof Opened<EngineProblemEventDetail>
+    >();
+    expectTypeOf<keyof Cleared<ProblemEventDetail>>().toEqualTypeOf<
+      keyof Cleared<EngineProblemEventDetail>
+    >();
+  });
+
+  it("reads the ring's names on the frame ring and the patch's pass columns, sample, header and rate fields through mirrors that hold the engine's types (bug: kindNames looked up on the pass ring, where the engine does not put it)", () => {
+    expectTypeOf<
+      "kindNames" extends keyof EngineFrameRing["passes"] ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<Pick<EngineFrameRing, keyof RingNamesNext>>().toExtend<Required<RingNamesNext>>();
+    expectTypeOf<Pick<EngineFrameRing["passes"], keyof PassColumnsNext>>().toExtend<
+      Required<PassColumnsNext>
+    >();
+    expectTypeOf<Pick<EngineSampleLine, "targets" | "counts">>().toExtend<
+      Pick<PerfSampleNext, "targets" | "counts">
+    >();
+    expectTypeOf<NonNullable<PerfSampleNext["counts"]>>().toExtend<EnginePerfCounts>();
+    expectTypeOf<Pick<EngineHeaderLine, "app" | "debug">>().toExtend<
+      Pick<PerfHeaderNext, "app" | "debug">
+    >();
+    expectTypeOf<Pick<Time.FrameRate, "asked" | "heldBy">>().toExtend<FrameRateNext>();
+    expectTypeOf<"shader" | "problem" | "debug">().toExtend<EngineEventName>();
+    expectTypeOf<EngineEventName>().toExtend<PerfEventNameNext>();
+  });
+});
+
+/** The next change's lists: the editor's copy, compared once the engine exports it. */
+const NEXT_LISTS = [["MONITOR_SECTIONS", MONITOR_SECTIONS]] as const;
+
+/** The next change's type mirrors the engine does not export yet (types: tsc, once exported). */
+const NEXT_TYPES = [
   "GcEventDetail",
   "MonitorSections",
   "PerfPassesLine",
-  "PassColumnsNext (FrameRing.passes owner, kind2, kindNames, drawsAt, format, resolution)",
-  "PerfSampleNext (sample targets, counts, shaders, sectionsMs, memory.source)"
+  "PerfSampleNext (sample shaders, sectionsMs, memory.source)",
+  "PerfHeaderNext (header sections)"
 ] as const;
 
-describe("the editor's copies of the engine's 0.15.x lists (E7)", () => {
-  for (const [name, copy, from] of LISTS) {
+describe("the editor's copies of the engine's next-change lists and types (E7)", () => {
+  for (const [name, copy] of NEXT_LISTS) {
     const exported: unknown = Reflect.get(engine, name);
-    const pending = exported === undefined && (from === "next" || BEFORE_PATCH);
-    if (pending) {
+    if (exported === undefined) {
       it.todo(`TODO(engine): ${name} equals the engine's export (game ${ENGINE_VERSION} has none)`);
       continue;
     }
@@ -252,10 +310,8 @@ describe("the editor's copies of the engine's 0.15.x lists (E7)", () => {
       expect(exported).toEqual([...copy]);
     });
   }
-  for (const name of TYPE_MIRRORS) {
-    it.todo(
-      `TODO(engine): ${name} is assignable both ways to the engine's export (game ${ENGINE_VERSION})`
-    );
+  for (const name of NEXT_TYPES) {
+    it.todo(`TODO(engine): ${name} holds the engine's export (game ${ENGINE_VERSION} has none)`);
   }
 });
 

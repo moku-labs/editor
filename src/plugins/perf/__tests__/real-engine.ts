@@ -5,12 +5,15 @@ import { agentCoreConfig, createAgentCore } from "../../../config";
 import { registryPlugin } from "../../registry";
 import type { GameLike } from "../../registry/types";
 import { perfPlugin } from "..";
+import { countedGpuPixi, STAND_IN_FILTER } from "./counted-gpu";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The real-engine harness of perf's integration tests (needs a DOM: the files
 // using it run under happy-dom): a real createApp game with the screen plugins
 // and the agent flag on, its renderer on a stand-in Pixi (the engine ships no
-// mock renderer), frames from a scripted rAF on fake time.
+// mock renderer): an uncounted WebGL one by default, or a counted WebGPU one
+// (./counted-gpu.ts) that draws passes, a filter and a compile; frames from a
+// scripted rAF on fake time.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The game's player and session. */
@@ -43,11 +46,17 @@ class StandInApplication {
 
 /**
  * What a test can change of the real game: render on demand, the idle cap, the rate, the adaptive
- * rule and the agent flag (on by default; off is a page `moku-game dev` did not write, whose
- * monitor's ring has capacity 0).
+ * rule, the agent flag (on by default; off is a page `moku-game dev` did not write, whose
+ * monitor's ring has capacity 0), the backend (`"webgl"`: the uncounted stand-in, by default;
+ * `"webgpu"`: the counted one), the kind of the counted backend's filter (`filterKind`: an entity
+ * hangs it before the first frame, so its passes and compile name that entity and kind; absent,
+ * no entity hangs it) and the app id the build wrote (`__MOKU_GAME_APP__`).
  */
 export type RealGameOptions = {
   readonly agent?: boolean;
+  readonly backend?: "webgl" | "webgpu";
+  readonly filterKind?: string;
+  readonly appId?: string;
   readonly onDemand?: boolean;
   readonly idleFps?: 0 | 30;
   readonly idleAfterMs?: number;
@@ -91,7 +100,9 @@ function createRealGame(options: RealGameOptions) {
       renderer: {
         mount,
         onDemand: options.onDemand ?? false,
-        loadPixi: async () => ({ Application: StandInApplication }) as never
+        ...(options.backend === "webgpu"
+          ? { preference: "webgpu" as const, loadPixi: async () => countedGpuPixi() as never }
+          : { loadPixi: async () => ({ Application: StandInApplication }) as never })
       }
     }
   });
@@ -102,19 +113,37 @@ function createRealGame(options: RealGameOptions) {
 const { createApp } = createAgentCore(agentCoreConfig, { plugins: [registryPlugin, perfPlugin] });
 
 /**
+ * Hangs the counted backend's filter on a new entity with a kind, the way `effects` names a
+ * filter: the engine then writes that entity as the owner of its passes and compiles.
+ *
+ * @param game - The game app.
+ * @param kind - The filter kind id.
+ * @returns The entity.
+ */
+function hangFilter(game: ReturnType<typeof createRealGame>, kind: string): number {
+  const entity = game.world.ecs.spawn({ kind: "plugin", name: "perf.test" }, []);
+  // boundary: the stand-in filter is not a Pixi Filter; the engine only keys its maps by it
+  game.renderer.sync.filters.set(entity, [{ filter: STAND_IN_FILTER as never, passes: 1, kind }]);
+  return entity;
+}
+
+/**
  * Starts a real game with the agent flag on (unless `agent: false`) and frames from a scripted
  * rAF, then the agent app with registry and perf on it. Time is fake (`performance` included): `step(gapMs)` moves the clock and
  * runs one frame of the loop at that gap. The caller restores globals and timers (`vi.unstubAllGlobals`,
  * `vi.useRealTimers`).
  *
- * @param options - Render on demand, the idle cap and the agent flag of the game.
- * @returns The game, the editor and the frame stepper.
+ * @param options - Render on demand, the idle cap, the agent flag, the backend, the filter kind and
+ *   the app id.
+ * @returns The game, the editor, the frame stepper and the entity hanging the filter (with
+ *   `filterKind`).
  */
 export async function startPair(options: RealGameOptions = {}) {
   vi.useFakeTimers({
     toFake: ["performance", "setInterval", "clearInterval", "setTimeout", "clearTimeout"]
   });
   vi.stubGlobal("__MOKU_GAME_AGENT__", options.agent ?? true);
+  if (options.appId !== undefined) vi.stubGlobal("__MOKU_GAME_APP__", options.appId);
   let frame: ((at: number) => void) | undefined;
   vi.stubGlobal("requestAnimationFrame", (callback: (at: number) => void) => {
     frame = callback;
@@ -126,6 +155,8 @@ export async function startPair(options: RealGameOptions = {}) {
 
   const game = createRealGame(options);
   await game.start();
+  const filterOwner =
+    options.filterKind === undefined ? undefined : hangFilter(game, options.filterKind);
   const editor = createApp({
     pluginConfigs: { registry: { game: game as unknown as GameLike } }
   });
@@ -140,7 +171,7 @@ export async function startPair(options: RealGameOptions = {}) {
     frame?.(performance.now());
   };
   frame?.(performance.now());
-  return { game, editor, step };
+  return { game, editor, step, filterOwner };
 }
 
 /** The game's frame API the stall hook needs. */

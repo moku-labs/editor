@@ -1,19 +1,32 @@
+import type { PerfLogLine as EngineLogLine } from "@moku-labs/game";
 import { describe, expectTypeOf, it } from "vitest";
 import type { ServerEvents } from "../../../../config";
 import { createServerPlugin } from "../../../../config";
 import type { DeviceTelemetry } from "../../../connect/protocol";
 import { collectorPlugin } from "../..";
+import type { PerfGapLine } from "../../report";
 import type {
   CollectorConfig,
   CollectorCtx,
   CollectorHooks,
-  CollectorSessionEvent
+  CollectorSessionEvent,
+  PerfTelemetryLine
 } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-level checks of the per-plugin event collector:session and the config
 // (checked by tsc; vitest does not run *.test-d.ts files).
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A line as `JSON.parse` gives it back from the computer file: the same fields, every array
+ * mutable (the engine's `Json` holds mutable arrays).
+ */
+type Parsed<Value> = Value extends readonly (infer Item)[]
+  ? Parsed<Item>[]
+  : Value extends object
+    ? { -readonly [Key in keyof Value]: Parsed<Value[Key]> }
+    : Value;
 
 /**
  * Emits a session event without its device: a compile error.
@@ -62,10 +75,13 @@ describe("collector:session types", () => {
     >().toEqualTypeOf<DeviceTelemetry>();
   });
 
-  // eslint-disable-next-line sonarjs/todo-tag -- waits for the engine's 0.15.x types (agreed 2026-10-16)
-  // TODO(engine): the 0.15.x patch (U4) lists `telemetry` and `gap` as collector-written kinds in the
-  // engine's PerfLogLine union (types only). The installed @moku-labs/game 0.15.0 exports neither
-  // line type; once it does, assert PerfTelemetryLine and PerfGapLine assignable to them here.
+  it("writes telemetry and gap lines the engine's PerfLogLine lists (engine U4, 0.15.1; bug: a collector line a reader of the engine's union refuses)", () => {
+    // The engine reads the computer file's lines as JSON.parse gives them back: arrays mutable.
+    expectTypeOf<Parsed<PerfTelemetryLine>>().toExtend<
+      Extract<EngineLogLine, { kind: "telemetry" }>
+    >();
+    expectTypeOf<Parsed<PerfGapLine>>().toExtend<Extract<EngineLogLine, { kind: "gap" }>>();
+  });
 
   it("refuses a numeric appId", () => {
     const config: CollectorConfig = {

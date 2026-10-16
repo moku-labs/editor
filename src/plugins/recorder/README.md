@@ -55,7 +55,8 @@ The recorder keeps no allow-list of kinds or event names: what an engine adds ar
 the samples, spikes and long frames, the per-second `passes` summaries, the `shader` compiles, the flagged `problem`s,
 the `gc`s, the `rate` changes (every adaptive change, with its frame) and `display` changes, the `sections` switches,
 the `debug` overdraw switches, the editor's `command` and `devtools` events, and the marks. With the engine's 0.15.x
-patch `shader` (`what` `compile` or `module`), `problem` (`filter-still`, `target-churn`) and `debug` arrive; `passes`,
+patch (0.15.1) `shader` (`what` `compile` or `module`), `problem` (`filter-still`, `target-churn`, `retakes`) and
+`debug` arrive; `passes`,
 `gc` and `sections` come with the next engine change. A rate switched from the tools page is in the log twice by
 design: the `command` event says who switched, the engine's `rate` event what changed.
 

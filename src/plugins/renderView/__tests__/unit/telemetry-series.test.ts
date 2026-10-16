@@ -148,7 +148,14 @@ describe("addSecond", () => {
     };
     const second: PerfSecond = {
       ...secondOf(),
-      counts: { entities: 104, views: 180, timers: 3, frameListeners: 2, inputListeners: 9 },
+      counts: {
+        entities: 104,
+        views: 180,
+        timers: 3,
+        frameListeners: 2,
+        clockListeners: 1,
+        inputListeners: 9
+      },
       memory: webview
     };
 

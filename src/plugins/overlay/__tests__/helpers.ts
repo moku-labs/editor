@@ -206,7 +206,8 @@ export function bracketMonitor(): BracketMonitor {
     endAgent: () => {
       calls.push("end");
     },
-    setResolution: () => 1
+    setResolution: () => 1,
+    counts: { register: () => unsubscribe }
   };
 }
 

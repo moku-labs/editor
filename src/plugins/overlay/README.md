@@ -120,8 +120,7 @@ that (its `--debug` had no control) or a deliberate `--debug=read` build; the wo
 | The note under `READ-ONLY` | `This build only reads. Commands run on --debug builds of @moku-labs/game {CONTROL_ENGINE} or newer (not --debug=read).` |
 | The toast of a press refused -32009 `read_only` | `{title} needs a debug build of a newer engine.` |
 
-`CONTROL_ENGINE` (`model/game.ts`) is the engine release whose `--debug` includes control; it is written when the engine
-version is pinned and reads `0.15.x` until then.
+`CONTROL_ENGINE` (`model/game.ts`) is the engine release whose `--debug` includes control: the pinned engine, `0.15.1`.
 
 **Record.** The recorder starts no log by itself. Idle, the top row reads `OFF` with `Nothing is saved until you
 record.` / `The editor or an agent can start it too.` Start calls `recorder.start({ by: "phone" })`, so the tools page

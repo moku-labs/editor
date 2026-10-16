@@ -676,6 +676,7 @@ function countsAt(pageMs: number): NonNullable<PerfSecond["counts"]> {
     views: 96,
     timers: 8,
     frameListeners: 210 + Math.round(12 * minutes),
+    clockListeners: 2,
     inputListeners: 4
   };
 }

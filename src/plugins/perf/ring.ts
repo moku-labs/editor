@@ -65,10 +65,10 @@ export const REASON_NONE: number = DEMAND_REASONS.indexOf("none");
 
 /**
  * The pass kind of a pass ring `kind` byte (the engine's `writePass`: 0 canvas, 1 texture, 2
- * filter). The engine exports this order as `PASS_KINDS` from the 0.15.x patch on; the installed
- * engine (0.15.0) does not, so the editor's runtime-free copy decodes it, and
- * `engine-contract.test.ts` asserts the copy equals the engine's export once it exists (an engine
- * follow-up: import it here at the 0.15.x pin). A byte past the list reads as a texture pass.
+ * filter). The engine exports this order as `PASS_KINDS` from 0.15.1 on; the peer floor (0.15.0)
+ * does not, so the editor's runtime-free copy decodes it (a run-time import would fail to link on
+ * 0.15.0), and `engine-contract.test.ts` asserts the copy equals the engine's export. A byte past
+ * the list reads as a texture pass.
  *
  * @param byte - The ring's `kind` value.
  * @returns The pass kind.

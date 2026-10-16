@@ -21,7 +21,7 @@ import { feedRig } from "../helpers";
 const SLOTS = 8;
 
 /**
- * A pass ring of the 0.15.x patch: owner, kind2 and its names, drawsAt, format and resolution.
+ * A pass ring of the 0.15.x patch: owner, kind2, drawsAt, format and resolution.
  *
  * @returns The ring's `passes`.
  */
@@ -32,7 +32,6 @@ function patchedPasses() {
     frame: new Uint32Array(SLOTS),
     owner: new Uint32Array(SLOTS),
     kind2: new Uint8Array(SLOTS),
-    kindNames: ["fog.blur", "colorMatrix"],
     drawsAt: new Uint16Array(SLOTS),
     format: Array.from<string | null>({ length: SLOTS }).fill(null),
     resolution: new Float32Array(SLOTS)
@@ -42,8 +41,13 @@ function patchedPasses() {
 /** A ring of an engine before the 0.15.x patch: none of its pass columns, no system names. */
 const OLD_RING = { capacity: 1024, passes: { capacity: SLOTS, frame: new Uint32Array(SLOTS) } };
 
-/** A ring of the 0.15.x patch. */
-const PATCHED_RING = { capacity: 1024, passes: patchedPasses(), systemNames: ["ward.update"] };
+/** A ring of the 0.15.x patch: the kind names `kind2` indexes sit on the frame ring (0.15.1). */
+const PATCHED_RING = {
+  capacity: 1024,
+  passes: patchedPasses(),
+  kindNames: ["other", "fog.blur"],
+  systemNames: ["ward.update"]
+};
 
 describe("capsOf", () => {
   it("reads every 0.15.x column of a patched ring as measured (bug: a patched phone's owners and draws shown as 'not measured on this engine')", () => {
@@ -66,6 +70,16 @@ describe("capsOf", () => {
       systemNames: false,
       shaderEvents: false
     });
+  });
+
+  it("answers no pass draws on a page whose header does not measure draws (bug: a WebGL phone's passes shown as 0 draws: 0.15.1 writes drawsAt 0 there)", () => {
+    const webgl = headerLine({ measured: ["passes", "compiles", "marks"] });
+    expect(capsOf(PATCHED_RING, webgl, undefined)).toMatchObject({
+      passOwners: true,
+      passDraws: false,
+      passFormat: true
+    });
+    expect(capsOf(PATCHED_RING, undefined, undefined).passDraws).toBe(false);
   });
 
   it("answers false for a column of the wrong type or length (bug: a short column read past its end)", () => {

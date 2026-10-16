@@ -47,9 +47,6 @@ const RATE_REASONS: readonly RateReason[] = [
 /** The severities of a flagged problem (N3). */
 const SEVERITIES: readonly ("info" | "warn")[] = ["info", "warn"];
 
-/** Why `filter-still` flagged a filter (engine U5). */
-const STILL_REASONS: readonly ("budget" | "not-eligible")[] = ["budget", "not-eligible"];
-
 /** The number fields of a flagged problem, each a number or null. */
 const PROBLEM_NUMBERS = ["value", "threshold", "since", "frames"] as const;
 
@@ -469,7 +466,8 @@ export function isShaderDetail(value: unknown): value is ShaderEventDetail {
  * Whether a value is the detail of a `problem` event line (N3): a string `rule` (a newer engine's
  * rule included) with an owner and a view, then either `cleared: true`, or a severity, a filter,
  * the numbers `value`, `threshold`, `since`, `frames` (each a number or null) and an optional
- * `filter-still` reason.
+ * string `reason` (`filter-still`'s `budget` / `not-eligible`, `target-churn`'s `rate` / `idle` /
+ * `after-trim`, a newer engine's word).
  *
  * @param value - The detail.
  * @returns Whether it is a problem.
@@ -490,7 +488,7 @@ export function isProblemDetail(value: unknown): value is ProblemEventDetail {
     isOneOf(fieldOf(value, "severity"), SEVERITIES) &&
     isTextOrNull(fieldOf(value, "filter")) &&
     PROBLEM_NUMBERS.every(key => isNumberOrNull(fieldOf(value, key))) &&
-    (reason === undefined || isOneOf(reason, STILL_REASONS))
+    (reason === undefined || typeof reason === "string")
   );
 }
 
@@ -640,9 +638,12 @@ function heapOf(
  * What this page's engine and build measure (spec 03 Delta 2026-10-16 D2), from the ring, the header
  * and the monitor, read structurally once per header (each column tested once with
  * `ArrayBuffer.isView` / `Array.isArray` and its length, so the read loop branches on cached
- * booleans only). `shaderEvents` is true on an engine with the pass ring's 0.15.x columns or
- * `systemNames` (the release that sends `shader` lines); a seen `shader`, `problem`, `gc` or
- * `passes` line turns its capability on later (perf's reader). Never throws; allocates its answer.
+ * booleans only). `passDraws` also needs `draws` in the header's `measured`: the engine writes the
+ * `drawsAt` column on every backend but counts draws only where it measures them (WebGPU), so a
+ * WebGL page's column is all 0. `shaderEvents` is true on an engine with the pass ring's 0.15.x
+ * columns or `systemNames` (the release that sends `shader` lines); a seen `shader`, `problem`,
+ * `gc` or `passes` line turns its capability on later (perf's reader). Never throws; allocates its
+ * answer.
  *
  * @param ring - `monitor.frames()` (any value).
  * @param header - The newest header line, or undefined before one.
@@ -667,7 +668,7 @@ export function capsOf(
   const measured = measuredOf(header);
   return {
     passOwners,
-    passDraws: isRingColumn(fieldOf(passes, "drawsAt"), slots),
+    passDraws: isRingColumn(fieldOf(passes, "drawsAt"), slots) && measured.includes("draws"),
     passFormat:
       isListColumn(fieldOf(passes, "format"), slots) &&
       isRingColumn(fieldOf(passes, "resolution"), slots),

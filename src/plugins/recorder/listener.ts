@@ -64,8 +64,8 @@ export function clearQueue(state: RecorderState): void {
  * @param line - An event line of the stream.
  */
 function keepContext(state: RecorderState, line: PerfEventLine): void {
-  // The 0.15.x patch and the next change send `sections` and `debug`, names the installed engine's
-  // PerfEventName does not list yet: read the line as the newer engine's event line.
+  // The next change sends `sections`, a name the engine's PerfEventName does not list yet (`debug`
+  // is in it from 0.15.1, not in the peer floor's): read the line as the newer engine's event line.
   const event: TimelineEventLine = line;
   switch (event.name) {
     case "display": {

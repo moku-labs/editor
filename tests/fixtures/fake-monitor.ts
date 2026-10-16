@@ -12,15 +12,17 @@
  *
  * Mission control (spec 03 Delta 2026-10-16 D1, D14; engine reconciliation 2026-10-16): the pass
  * ring is written with `commitPass` (slot `written % capacity`, the engine's `writePass`) and
- * carries the 0.15.x columns `owner`, `kind2` (1-based: 0 none, else `kindNames[kind2 - 1]`),
- * `kindNames`, `drawsAt`, `format` and `resolution` unless `passColumns: false` models an older
- * engine; `ring.systemNames` grows by `addSystem` with a new array (the patch) or in place (0.15.0);
+ * carries the 0.15.x columns `owner`, `kind2` (1-based: 0 none, else `ring.kindNames[kind2 - 1]`,
+ * the names on the frame ring as in the engine), `drawsAt`, `format` and `resolution` unless
+ * `passColumns: false` models an older engine; the frame columns include the 0.15.1 render-target
+ * counts (NaN: not counted); `ring.systemNames` grows by `addSystem` with a new array (the patch) or
+ * in place (0.15.0);
  * `monitor.sections(next?)` and `monitor.detail({ from, to })` of the next change exist unless
  * switched `"absent"`, and refuse with an error tagged `reason: "read-only"` / `"dev-only"` when
  * switched so; `emit` also delivers the lines of a newer engine (`passes`, and the event names
  * `shader`, `problem`, `gc`, `sections`, `debug`), and the builders write them, the patch's header
  * (`app.id` with the `.debug` suffix, `debug.overdraw`) and its sample (`targets`, `counts`).
- * `ENGINE_0_15_0` is the options of the engine installed here.
+ * `ENGINE_0_15_0` is the options of the peer floor's engine (the dev engine is 0.15.1, the patch).
  */
 import { frameAt } from "@moku-labs/game";
 import type {
@@ -132,7 +134,7 @@ export type FakePass = {
   readonly gpuMs?: number;
   /** The owner entity (0.15.x column `owner`); 0 (none) by default. */
   readonly owner?: number;
-  /** The filter kind's name (0.15.x `kind2`, interned into `kindNames`); null (none) by default. */
+  /** The filter kind's name (0.15.x `kind2`, interned into `ring.kindNames`); null (none) by default. */
   readonly filter?: string | null;
   /** The draw-call counter at the pass's start (0.15.x `drawsAt`); 0 by default. */
   readonly drawsAt?: number;
@@ -162,7 +164,7 @@ export type FakeMonitorOptions = {
    */
   readonly legacyReset?: boolean;
   /**
-   * False: the pass ring has none of the 0.15.x columns (`owner`, `kind2`, `kindNames`, `drawsAt`,
+   * False: the pass ring has none of the 0.15.x columns (`owner`, `kind2`, `drawsAt`,
    * `format`, `resolution`), an engine before the patch. True by default.
    */
   readonly passColumns?: boolean;
@@ -186,7 +188,7 @@ export type FakeMonitorOptions = {
 };
 
 /**
- * The options of the engine installed here (0.15.0): no 0.15.x pass columns, `systemNames` grown in
+ * The options of the peer floor's engine (0.15.0): no 0.15.x pass columns, `systemNames` grown in
  * place, no `monitor.sections`, no `monitor.detail`.
  */
 export const ENGINE_0_15_0: FakeMonitorOptions = {
@@ -242,12 +244,16 @@ export type FakeDetail = {
   readonly marks: null;
 };
 
-/** The pass ring as the fake writes it: the engine's columns plus the 0.15.x ones when present. */
-export type FakePassColumns = FrameRing["passes"] & PassColumnsNext;
+/** The pass ring as the fake writes it: the engine's columns, the 0.15.x ones only when present. */
+export type FakePassColumns = Omit<FrameRing["passes"], keyof PassColumnsNext> & PassColumnsNext;
 
-/** The ring of the fake: the engine's `FrameRing`, its pass ring with the 0.15.x columns, and the system names. */
-export type FakeRing = Omit<FrameRing, "passes"> & {
+/**
+ * The ring of the fake: the engine's `FrameRing`, its pass ring with the 0.15.x columns when
+ * present, the filter kind names `kind2` indexes, and the system names.
+ */
+export type FakeRing = Omit<FrameRing, "passes" | "kindNames" | "systemNames"> & {
   readonly passes: FakePassColumns;
+  readonly kindNames: readonly string[];
   /** Absent with `systemNames: "none"`. */
   readonly systemNames?: readonly string[];
 };
@@ -362,7 +368,9 @@ const STRIDES: Readonly<Record<keyof FrameColumns, number>> = {
   fltApplies: 4,
   fltMpx: 4,
   kept: 1,
-  retakes: 1
+  retakes: 1,
+  targetsCreated: 1,
+  targetsDestroyed: 1
 };
 
 /** The column names in a fixed order. */
@@ -387,7 +395,7 @@ const PASS_KIND_BYTE: Readonly<Record<PassKind, number>> = { canvas: 0, texture:
 const PASS_KIND_NAMES: readonly PassKind[] = ["canvas", "texture", "filter"];
 
 /**
- * Allocates the 35 columns of a ring of `capacity` frames.
+ * Allocates the 39 columns of a ring of `capacity` frames.
  *
  * @param capacity - Frames.
  * @returns The columns.
@@ -430,7 +438,9 @@ function createColumns(capacity: number): FrameColumns {
     fltApplies: new Uint16Array(capacity * 4),
     fltMpx: new Float32Array(capacity * 4),
     kept: new Float32Array(capacity).fill(Number.NaN),
-    retakes: new Float32Array(capacity).fill(Number.NaN)
+    retakes: new Float32Array(capacity).fill(Number.NaN),
+    targetsCreated: new Float32Array(capacity).fill(Number.NaN),
+    targetsDestroyed: new Float32Array(capacity).fill(Number.NaN)
   };
 }
 
@@ -450,7 +460,6 @@ type MutablePasses = {
   label: (string | null)[];
   owner?: Uint32Array;
   kind2?: Uint8Array;
-  kindNames?: string[];
   drawsAt?: Uint16Array;
   format?: (string | null)[];
   resolution?: Float32Array;
@@ -484,7 +493,6 @@ function createPasses(slots: number, withColumns: boolean): MutablePasses {
     ...passes,
     owner: new Uint32Array(slots),
     kind2: new Uint8Array(slots),
-    kindNames: [],
     drawsAt: new Uint16Array(slots),
     format: Array.from<string | null>({ length: slots }).fill(null),
     resolution: new Float32Array(slots).fill(Number.NaN)
@@ -652,7 +660,14 @@ export function patchedSampleLine(
 ): FakeSampleLine {
   return sampleLine(frame, {
     targets: { created: 6, destroyed: 6 },
-    counts: { entities: 104, views: 180, timers: 3, frameListeners: 2, inputListeners: 5 },
+    counts: {
+      entities: 104,
+      views: 180,
+      timers: 3,
+      frameListeners: 2,
+      clockListeners: 1,
+      inputListeners: 5
+    },
     ...overrides
   });
 }
@@ -946,8 +961,8 @@ export function passesLine(overrides: Partial<PerfPassesLine> = {}): PerfPassesL
 }
 
 /**
- * A line of a newer engine as the installed engine's listener type names it: the 0.15.x patch and
- * the next change hand the same listener line kinds (`passes`) and event names the installed
+ * A line of a newer engine as the installed engine's listener type names it: the next change hands
+ * the same listener line kinds (`passes`) and event names (`gc`, `sections`) the installed
  * `PerfLogLine` does not list yet.
  *
  * @param line - The line.
@@ -974,6 +989,12 @@ function refusal(reason: "read-only" | "dev-only", method: string): Error & { re
   );
 }
 
+/**
+ * The remover `counts.register` answers: the fake keeps no count (perf never registers one), so
+ * there is nothing to undo.
+ */
+function noCount(): void {}
+
 /** The mutable ring the fake writes. */
 type MutableRing = {
   capacity: number;
@@ -983,9 +1004,23 @@ type MutableRing = {
   columns: FrameColumns;
   passes: MutablePasses;
   paths: string[];
+  /** The interned filter kinds `kind2` indexes 1-based (the engine keeps them on the frame ring). */
+  kindNames: string[];
   systemNames?: readonly string[];
   read: FrameRing["read"];
 };
+
+/**
+ * The fake's ring as the engine's listener and `frameAt` type it. A ring modelling an older engine
+ * lacks the 0.15.x pass columns and the system names the installed type requires.
+ *
+ * @param ring - The fake's ring.
+ * @returns The same ring.
+ */
+function asEngineRing(ring: MutableRing): FrameRing {
+  // boundary: the fake of an older engine omits columns the installed engine's ring type requires
+  return ring as unknown as FrameRing;
+}
 
 /**
  * Writes the five slowest systems of a frame (the engine's `writeSystems`): every slot empty, the
@@ -1054,6 +1089,8 @@ function writeSlot(ring: MutableRing, slot: number, frame: number, input: FakeFr
   writeSystems(c, slot, input.systems);
   c.kept[slot] = input.kept ?? Number.NaN;
   c.retakes[slot] = input.retakes ?? Number.NaN;
+  c.targetsCreated[slot] = Number.NaN;
+  c.targetsDestroyed[slot] = Number.NaN;
   c.reason[slot] = input.reason ?? 255;
 }
 
@@ -1074,14 +1111,14 @@ function kind2Of(kindNames: string[], filter: string | null | undefined): number
 /**
  * Writes the 0.15.x columns of one pass, when the ring has them.
  *
- * @param passes - The pass ring.
+ * @param ring - The ring: its pass ring and the kind names on the frame ring.
  * @param slot - The slot.
  * @param pass - The pass.
  */
-function writePassColumns(passes: MutablePasses, slot: number, pass: FakePass): void {
-  const { owner, kind2, kindNames, drawsAt, format, resolution } = passes;
+function writePassColumns(ring: MutableRing, slot: number, pass: FakePass): void {
+  const { owner, kind2, drawsAt, format, resolution } = ring.passes;
   if (owner !== undefined) owner[slot] = pass.owner ?? 0;
-  if (kind2 !== undefined && kindNames !== undefined) kind2[slot] = kind2Of(kindNames, pass.filter);
+  if (kind2 !== undefined) kind2[slot] = kind2Of(ring.kindNames, pass.filter);
   if (drawsAt !== undefined) drawsAt[slot] = pass.drawsAt ?? 0;
   if (format !== undefined) format[slot] = pass.format ?? null;
   if (resolution !== undefined) resolution[slot] = pass.resolution ?? Number.NaN;
@@ -1102,11 +1139,12 @@ function measuredAt(column: ArrayLike<number> | undefined, slot: number): number
 /**
  * The passes of the frames `frames` still in the pass ring, oldest first, as `detail` answers them.
  *
- * @param passes - The pass ring.
+ * @param ring - The ring: its pass ring and the kind names on the frame ring.
  * @param frames - The frame numbers asked for.
  * @returns The pass records.
  */
-function detailPasses(passes: MutablePasses, frames: ReadonlySet<number>): FakeDetailPass[] {
+function detailPasses(ring: MutableRing, frames: ReadonlySet<number>): FakeDetailPass[] {
+  const { passes } = ring;
   const found: FakeDetailPass[] = [];
   for (let age = passes.size - 1; age >= 0; age -= 1) {
     const slot = (passes.newest - age + passes.capacity) % passes.capacity;
@@ -1124,7 +1162,7 @@ function detailPasses(passes: MutablePasses, frames: ReadonlySet<number>): FakeD
       h: passes.height[slot] ?? 0,
       gpuMs: measuredAt(passes.gpuMs, slot),
       owner: passes.owner === undefined ? null : (passes.owner[slot] ?? 0) || null,
-      filter: kind2 === 0 ? null : (passes.kindNames?.[kind2 - 1] ?? null),
+      filter: kind2 === 0 ? null : (ring.kindNames[kind2 - 1] ?? null),
       drawsAt: measuredAt(passes.drawsAt, slot),
       format: passes.format?.[slot] ?? null,
       resolution: measuredAt(passes.resolution, slot)
@@ -1189,6 +1227,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     columns: createColumns(capacity),
     passes: createPasses(capacity * PASSES_PER_FRAME, options.passColumns !== false),
     paths: ["…"],
+    kindNames: [],
     ...(namesGrow === "none" ? {} : { systemNames: grownNames }),
     read: (into, since) => {
       fake.reads += 1;
@@ -1258,7 +1297,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     const frames: FrameRecord[] = [];
     const slots: number[] = [];
     for (let age = ring.size - 1; age >= 0; age -= 1) {
-      const record = frameAt(ring, age);
+      const record = frameAt(asEngineRing(ring), age);
       if (record === undefined || record.frame < from || record.frame > to) continue;
       frames.push(record);
       slots.push((ring.newest - age + capacity) % capacity);
@@ -1271,7 +1310,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
       held:
         first === undefined || last === undefined ? null : { from: first.frame, to: last.frame },
       frames,
-      passes: detailPasses(ring.passes, new Set(frames.map(record => record.frame))),
+      passes: detailPasses(ring, new Set(frames.map(record => record.frame))),
       systems: frames.length === 0 ? null : detailSystems(ring, slots),
       marks: null
     };
@@ -1296,7 +1335,8 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
         listeners.delete(listener);
       };
     },
-    frames: () => ring,
+    frames: () => asEngineRing(ring),
+    counts: { register: () => noCount },
     mark: label => {
       fake.marks.push(label);
       fake.emit(markLine(label));
@@ -1352,7 +1392,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
       passes.height[slot] = pass.h ?? 2340;
       passes.gpuMs[slot] = pass.gpuMs ?? Number.NaN;
       passes.label[slot] = pass.label ?? null;
-      writePassColumns(passes, slot, pass);
+      writePassColumns(ring, slot, pass);
       passes.newest = slot;
       passes.size = Math.min(passes.size + 1, passes.capacity);
       passes.written = sequence + 1;

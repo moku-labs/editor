@@ -9,6 +9,7 @@ import type {
   PerfEventLine,
   PerfEventNameNext,
   PerfMarkLine,
+  ProblemReason,
   RateMode,
   RateReason
 } from "./engine";
@@ -28,16 +29,16 @@ import { MONITOR_SECTIONS } from "./sections";
 /**
  * What a `shader` event compiled, in 0.15.x (E4): `"compile"` or `"module"`; `"variant"` and
  * `"relink"` arrive with the next change. `engine-contract.test.ts` asserts it equals the engine's
- * `SHADER_WHATS` once the engine exports it.
+ * `SHADER_WHATS` (exported from 0.15.1).
  */
 export const SHADER_WHATS = ["compile", "module"] as const;
 
 /**
- * The problem rules of 0.15.x (N3, engine U5): `filter-still` and `target-churn`; `filter-area`,
- * `late-compile`, `variants`, `pass-budget` and `retakes` come next. `engine-contract.test.ts`
- * asserts it equals the engine's `PROBLEM_RULES` once the engine exports it.
+ * The problem rules of 0.15.1 (N3, N10, engine U5), in the engine's order: `filter-still`,
+ * `target-churn` and `retakes`; `filter-area`, `late-compile`, `variants` and `pass-budget` come
+ * next. `engine-contract.test.ts` asserts it equals the engine's `PROBLEM_RULES`.
  */
-export const PROBLEM_RULES = ["filter-still", "target-churn"] as const;
+export const PROBLEM_RULES = ["filter-still", "target-churn", "retakes"] as const;
 
 /**
  * What a shader event compiled: a known value, or a newer engine's word kept as its string.
@@ -126,8 +127,11 @@ export type PerfTimelineEvent =
       threshold: number | null;
       since: number | null;
       frames: number | null;
-      /** Why `filter-still` flagged it (engine U5); null for another rule or a clear. */
-      reason: "budget" | "not-eligible" | null;
+      /**
+       * Why it opened (engine U5): `filter-still`'s `budget` / `not-eligible`, `target-churn`'s
+       * `rate` / `idle` / `after-trim`; null without one or for a clear.
+       */
+      reason: ProblemReason | null;
     }
   | {
       seq: number;
@@ -183,8 +187,9 @@ export type PerfEventsWire = {
 
 /**
  * An event line as the timeline reads it: the engine's `PerfEventLine` with the names of the 0.15.x
- * patch and the next change (`shader`, `problem`, `gc`, `sections`, `debug`), which the installed
- * engine's type does not list yet. Every `PerfEventLine` is one.
+ * patch and the next change (`shader`, `problem`, `gc`, `sections`, `debug`), which the peer floor's
+ * type (0.15.0) does not list and the dev engine's (0.15.1) lists but `gc` and `sections`. Every
+ * `PerfEventLine` is one.
  *
  * @example
  * ```ts

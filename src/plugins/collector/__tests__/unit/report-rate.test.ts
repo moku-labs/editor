@@ -69,7 +69,9 @@ describe("summarize — rates", () => {
       reason: "start",
       displayHz: 90,
       ladder: [90],
-      thermal: null
+      thermal: null,
+      asked: null,
+      heldBy: null
     } as const;
 
     expect(rateOf(headerLine(0, { rate }))).toBe(90);

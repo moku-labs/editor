@@ -29,6 +29,7 @@ import type {
   PerfStatus,
   PerfWindow,
   PerfWindowView,
+  RingNamesNext,
   TimelineEventLine
 } from "./protocol";
 
@@ -83,8 +84,10 @@ export type PerfFeedSwitches = { passes: boolean; systems: boolean; nodes: boole
 /**
  * The pass ring as perf reads it: the engine's columns and, from the 0.15.x patch, the owner, the
  * filter kind (`kind2`, 1-based into `kindNames`), the draw counter, the format and the resolution.
+ * The patch's columns stay optional although the dev engine (0.15.1) types them required: the peer
+ * floor (0.15.0) has none of them, so every read keeps its guard.
  */
-export type PassRing = FrameRing["passes"] & PassColumnsNext;
+export type PassRing = Omit<FrameRing["passes"], keyof PassColumnsNext> & PassColumnsNext;
 
 /**
  * The member of the engine's next change perf calls when the monitor has it (TC §2.7):
@@ -107,10 +110,12 @@ export type PassesAnswer = Omit<PerfPassesWire, "line"> & { readonly line: PerfP
 export type TimelineLine = TimelineEventLine | PerfMarkLine;
 
 /**
- * The frame ring as perf reads it: the engine's, with the system names (public from the 0.15.x
- * patch, present before it).
+ * The frame ring as perf reads it: the engine's, with the filter kind names `kind2` indexes and the
+ * system names (public from the 0.15.x patch; on the ring, not on its passes). Both stay optional
+ * although the dev engine (0.15.1) types them required: the peer floor (0.15.0) has no `kindNames`
+ * and keeps `systemNames` out of its type.
  */
-export type NamedRing = FrameRing & { readonly systemNames?: readonly string[] };
+export type NamedRing = Omit<FrameRing, keyof RingNamesNext> & RingNamesNext;
 
 /**
  * The pass window (spec 03 Delta 2026-10-16 D5): the pass ring copied with perf's own cursor,

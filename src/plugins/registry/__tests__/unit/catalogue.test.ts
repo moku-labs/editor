@@ -339,16 +339,21 @@ describe("the build profile of the catalogue", () => {
     });
   });
 
-  it("runs the engine's game.debug { kept } and game.frameRate on a read build as plain door commands", async () => {
+  it("runs the engine's game.debug { kept, overdraw } and game.frameRate on a read build as plain door commands", async () => {
     stubBuild({ agent: true });
-    // game.debug and game.frameRate are the engine's own doors (game@bab36ec: game.debug { nineSlice?,
-    // verifyFrames?, kept? } of spec 23, game.frameRate { fps? } of spec 21), run on a renderer
-    // stand-in. Neither gets an overlay button (spec 02 C10, decision "No built-in debug buttons").
+    // game.debug and game.frameRate are the engine's own doors (game 0.15.1: game.debug { nineSlice?,
+    // verifyFrames?, kept?, overdraw? } of specs 23 and U6, game.frameRate { fps? } of spec 21), run
+    // on a renderer stand-in. Neither gets an overlay button (spec 02 C10, decision "No built-in
+    // debug buttons"); the tools page runs game.debug { overdraw } (RE1).
+    let overdrawOn = false;
     const debug = {
       nineSlice: vi.fn(),
       verifyFrames: vi.fn(),
       kept: vi.fn(),
-      state: () => ({ nineSlice: false, verifyFrames: false, kept: false })
+      overdraw: vi.fn((on: boolean) => {
+        overdrawOn = on;
+      }),
+      state: () => ({ nineSlice: false, verifyFrames: false, kept: false, overdraw: overdrawOn })
     };
     const withRenderer: GameLike = Object.create(game.app, {
       renderer: { value: { sync: { debug } } }
@@ -361,7 +366,12 @@ describe("the build profile of the catalogue", () => {
     expect(ctx.state.commands.get("game.debug")?.descriptor).toEqual({
       id: "game.debug",
       title: "Debug drawing",
-      input: { nineSlice: "boolean?", verifyFrames: "boolean?", kept: "boolean?" },
+      input: {
+        nineSlice: "boolean?",
+        verifyFrames: "boolean?",
+        kept: "boolean?",
+        overdraw: "boolean?"
+      },
       effect: "cosmetic",
       allowed: true
     });
@@ -373,8 +383,13 @@ describe("the build profile of the catalogue", () => {
         value: { kept: false }
       }
     );
+    // Bug: the tools page's overdraw switch (RE1) refused or dropped by the registry's door wrapper.
+    await expect(
+      ctx.state.commands.get("game.debug")?.run({ overdraw: true })
+    ).resolves.toMatchObject({ value: { overdraw: true } });
     expect(debug.verifyFrames).toHaveBeenCalledExactlyOnceWith(false);
     expect(debug.kept).toHaveBeenCalledExactlyOnceWith(false);
+    expect(debug.overdraw).toHaveBeenCalledExactlyOnceWith(true);
     expect(debug.nineSlice).not.toHaveBeenCalled();
     // spec 02 C10: a cosmetic door command, allowed on a read build, no overlay marker.
     expect(ctx.state.origins.get("game.frameRate")).toBe("door");

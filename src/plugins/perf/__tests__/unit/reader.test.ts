@@ -304,7 +304,9 @@ describe("readTick", () => {
       reason: "display",
       displayHz: 60,
       ladder: [120, 60],
-      thermal: null
+      thermal: null,
+      asked: null,
+      heldBy: null
     } as const;
     const perf = perfState();
     const monitor = createFakeMonitor({ header: headerLine({ rate }) });
