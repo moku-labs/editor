@@ -6,6 +6,7 @@
 import type { VNode } from "preact";
 import type { OverlayActions } from "../actions";
 import { COLOUR } from "../model/format";
+import { READ_ONLY_NOTE } from "../model/game";
 import type { GameView } from "../model/types";
 import { Legend, legendOf } from "./Legend";
 import { Toast } from "./Toast";
@@ -53,7 +54,7 @@ export function GameTab(props: {
       {game.readOnly ? (
         <p data-part="game-note">
           <Legend legend={legendOf("READ-ONLY", COLOUR.ink2)} />
-          <span>Commands that change the game run only in a --debug=full build</span>
+          <span>{READ_ONLY_NOTE}</span>
         </p>
       ) : undefined}
       {game.toast === undefined ? (

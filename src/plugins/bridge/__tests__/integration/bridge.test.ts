@@ -2,6 +2,7 @@
 import { defineCommand } from "@moku-labs/game/control";
 import { defineSource } from "@moku-labs/game/inspect";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import type { TinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import type { AgentEvents } from "../../../../config";
@@ -319,13 +320,15 @@ function valuesOf(connection: Connection, sub: number): Json[] {
 /**
  * Creates and starts the agent app linked to the hub.
  *
+ * @param options - The game the registry wraps (the headless tiny game by default).
+ * @param options.app - Another game, e.g. the tiny game with a monitor grafted on.
  * @returns The app.
  */
-async function startAgent() {
+async function startAgent(options: { app?: GameLike } = {}) {
   const app = framework.createApp({
     plugins: [spyPlugin],
     pluginConfigs: {
-      registry: { game: game.app, modules: [testModule], name: "tiny-screen 0.0.0" },
+      registry: { game: options.app ?? game.app, modules: [testModule], name: "tiny-screen 0.0.0" },
       channel: { heartbeatMs: 100 },
       bridge: {
         hello: `http://127.0.0.1:${String(hub.port)}/__editor/hello`,
@@ -355,10 +358,11 @@ async function startAgent() {
 /**
  * Starts the agent and waits for the first connection and its session.
  *
+ * @param options - As for startAgent.
  * @returns The app and the hub side of its socket.
  */
-async function linked() {
-  const agent = await startAgent();
+async function linked(options: Parameters<typeof startAgent>[0] = {}) {
+  const agent = await startAgent(options);
   const connection = await waitFor(() => hub.connections[0]);
   await waitFor(() => agent.app.bridge.session());
   return { ...agent, connection };
@@ -487,6 +491,25 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     const beats = notes(connection, "heartbeat").length;
     await waitFor(() => (notes(connection, "heartbeat").length >= beats + 3 ? true : undefined));
     expect(valuesOf(connection, 2)).toEqual([0, 1]);
+  });
+
+  // Bug: the hub's stamp lost between the socket and the recorder, so a recording an agent started
+  // reads "started by the editor" (spec 07 B1, spec 05 R2).
+  it("a run of editor.record stamped from the agent Claude shows on editor.recorder's startedBy", async () => {
+    const monitor = createFakeMonitor({ capacity: 64 });
+    const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
+    const { connection } = await linked({ app: grafted });
+
+    const ran = await call(connection, "run", {
+      id: "editor.record",
+      input: { on: true },
+      from: "mcp",
+      client: "Claude"
+    });
+    const recorder = await call(connection, "read", { id: "editor.recorder" });
+
+    expect(ran).toMatchObject({ result: { value: { on: true } } });
+    expect(recorder).toMatchObject({ result: { startedBy: { by: "agent", name: "Claude" } } });
   });
 
   it("rejects bad command input with -32602 and a hung command with -32002 after the deadline", async () => {

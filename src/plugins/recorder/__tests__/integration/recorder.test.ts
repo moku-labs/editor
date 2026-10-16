@@ -1,7 +1,14 @@
+/* eslint-disable unicorn/no-null -- null is "no label", "no name" and "no log" in the recorder's values */
 import { defineCommand } from "@moku-labs/game/control";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
-import { createFakeMonitor, sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  createFakeMonitor,
+  passesLine,
+  rateLine,
+  sampleLine,
+  sectionsLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
 import { perfPlugin } from "../../../perf";
@@ -181,14 +188,74 @@ describe("the recorder on a game with a monitor", () => {
   });
 });
 
-describe('autoStart "device", the default', () => {
+/** The flags of a debug build: the agent flag on, the dev flag off. */
+const DEBUG_BUILD: Readonly<Record<string, boolean>> = { __MOKU_GAME_AGENT__: true };
+
+describe("autoStart", () => {
+  it('records nothing by default, also on a debug build (bug: the old "device" default still recording by itself)', async () => {
+    const editor = await startEditor(createFakeMonitor(), "memory", {}, DEBUG_BUILD);
+    vi.advanceTimersByTime(10_000);
+    expect(editor.recorder.status()).toMatchObject({ state: "idle", file: null, startedBy: null });
+    expect(editor.recorder.files()).toEqual([]);
+  });
+
   it.each([
-    ["a debug build (agent flag on, dev flag off)", { __MOKU_GAME_AGENT__: true }, "recording"],
-    ["a dev page (dev flag on)", { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true }, "idle"]
-  ])("on %s the recorder is %s at start (bug: a dev page that records without bound)", async (_label, flags, state) => {
-    const editor = await startEditor(createFakeMonitor(), "memory", {}, flags);
+    ["a debug build (agent flag on, dev flag off)", "recording", DEBUG_BUILD],
+    ["a dev page (dev flag on)", "idle", { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true }]
+  ])('"device" on %s leaves the recorder %s at start (bug: an explicit opt-in silently ignored, or a dev page that records without bound)', async (_label, state, flags) => {
+    const editor = await startEditor(createFakeMonitor(), "memory", { autoStart: "device" }, flags);
     expect(editor.recorder.status().state).toBe(state);
     expect(editor.recorder.start().current).toBe(true);
+    expect(editor.recorder.status().startedBy).toEqual({
+      by: state === "recording" ? "auto" : "code",
+      name: null
+    });
+  });
+});
+
+describe("Record from three places", () => {
+  it("an agent's editor.record starts a log named after it with the context lines first, the engine's new lines reach the store, and the phone stops it", async () => {
+    const monitor = createFakeMonitor({ capacity: 64 });
+    const editor = await startEditor(monitor, "memory", {}, DEBUG_BUILD);
+    const rate = rateLine();
+    monitor.emit(rate);
+    monitor.emit(sectionsLine());
+    expect(editor.recorder.status().state).toBe("idle");
+
+    await expect(
+      editor.channel.run("editor.record", { on: true, mark: "boss intro" }, "mcp", "Claude")
+    ).resolves.toMatchObject({
+      value: { on: true, startedBy: { by: "agent", name: "Claude" }, marked: true }
+    });
+    expect(editor.recorder.status().startedBy).toEqual({ by: "agent", name: "Claude" });
+    monitor.emit(passesLine());
+    monitor.emit(rateLine({ from: 60, to: 120, reason: "headroom" }));
+    vi.advanceTimersByTime(1000);
+
+    const lines = parsed(editor.recorder.unsentRun(100)?.lines);
+    expect(kinds(lines)).toEqual([
+      "header",
+      "event:rate",
+      "event:sections",
+      "event:recorder",
+      "mark:boss intro",
+      "event:command",
+      "passes",
+      "event:rate"
+    ]);
+    expect(lines[1]).toEqual(rate);
+    expect(lines[3]).toMatchObject({
+      detail: { action: "start", label: null, by: "agent", name: "Claude" }
+    });
+    expect(lines[5]).toMatchObject({ detail: { id: "editor.record", via: "mcp", ok: true } });
+    expect(editor.registry.source("editor.recorder")?.read(null)).toMatchObject({
+      state: "recording",
+      startedBy: { by: "agent", name: "Claude" },
+      marks: [{ label: "boss intro", auto: false }]
+    });
+
+    await editor.channel.run("editor.record", { on: false }, "overlay");
+    expect(editor.recorder.status()).toMatchObject({ state: "idle", startedBy: null });
   });
 });
 

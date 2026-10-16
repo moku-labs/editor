@@ -1,9 +1,12 @@
 /**
  * @file bridge plugin — the link step shared by page mode's open and device mode's open or
- * `paired`: streak reset, `hello { manifest }` first, a heartbeat, live or paused, log shipping.
+ * `paired`: streak reset, `hello { manifest, caps }` first, a heartbeat, live or paused, log
+ * shipping.
  * Also the heartbeat send and the URL log lines name (never a query, so never a token).
  */
-import type { Heartbeat } from "../../registry/protocol";
+import type { HelloCaps } from "../../hub/protocol";
+import { RUN_FROM_CAP } from "../../hub/protocol";
+import type { Heartbeat, HelloParams } from "../../registry/protocol";
 import { notification, toWireValue } from "../../registry/protocol";
 import { helloManifest } from "../checkpoint/checkpoint";
 import { SOCKET_OPEN, sendNow } from "../dispatch/send";
@@ -54,8 +57,9 @@ export function sendBeat(deps: BridgeDeps, beat: Heartbeat): void {
 }
 
 /**
- * The link step: sends `hello { manifest }` first (the hub closes an agent that sends anything
- * else first; the manifest carries the build, and `restored` after a checkpoint restore), then a
+ * The link step: sends `hello { manifest, caps }` first (the hub closes an agent that sends
+ * anything else first; the manifest carries the build, and `restored` after a checkpoint restore;
+ * `caps: ["run-from"]` asks the hub to stamp who ran each `run`, spec 07 B1), then a
  * heartbeat, publishes live or paused, logs the link and starts shipping the recorder's log
  * (device mode). Page mode resets the failure streak here; device mode resets it, and marks the
  * page linked, only when the hub answers with a session (`onSession`), so a hub that closes every
@@ -74,7 +78,8 @@ export function onLinked(deps: BridgeDeps): void {
   if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
   state.retryTimer = undefined;
 
-  sendNow(deps, notification("game", "hello", { manifest: toWireValue(helloManifest(deps)) }));
+  const hello: HelloParams & HelloCaps = { manifest: helloManifest(deps), caps: [RUN_FROM_CAP] };
+  sendNow(deps, notification("game", "hello", toWireValue(hello)));
   sendBeat(deps, deps.channel.heartbeat());
   deps.log.info("bridge:connected", { url: linkLabel(deps) });
   shipNext(deps);

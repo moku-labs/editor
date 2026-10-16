@@ -1,9 +1,10 @@
 /**
  * @file link plugin — routes what the hub sends: responses settle calls; `editor` requests go to
- * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice,
- * `hotReload` the hot reload state, `selection` the editor selection, `project` the project index;
- * `game` notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the
- * heap, the watches and the tap listeners (R1).
+ * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice and
+ * the session listeners, `hotReload` the hot reload state, `selection` the editor selection,
+ * `project` the project index, `devices` and `deviceTelemetry` connect's published values; `game`
+ * notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the heap, the
+ * watches and the tap listeners (R1).
  */
 
 import type { Json, Message, Notification } from "../../registry/protocol";
@@ -15,7 +16,9 @@ import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes"
 import { onEngineNote } from "../server/engine";
 import { onHotReloadNote } from "../server/hot-reload";
 import { onProjectNote } from "../server/project";
+import { onPublishedNote } from "../server/published";
 import { applySessions, closeChosen } from "../sessions/choose";
+import { notifySessions } from "../sessions/listeners";
 import { applyStatus } from "../status/machine";
 import { notifyTap } from "../subscriptions/taps";
 import { deliver } from "../subscriptions/watch";
@@ -32,16 +35,21 @@ const DEFAULT_CLOSE_REASON = "game_reloaded";
 type Route = (ctx: LinkCtx, note: Notification) => void;
 
 /**
- * `editor` · `sessions { list }`: the new session list.
+ * `editor` · `sessions { list }`: the new session list, applied, then given to the session
+ * listeners.
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
  */
 function onSessions(ctx: LinkCtx, note: Notification): void {
   const list = readSessions(note.params);
+  if (list === undefined) {
+    ctx.log.warn("link:bad-sessions", {});
+    return;
+  }
 
-  if (list === undefined) ctx.log.warn("link:bad-sessions", {});
-  else applySessions(ctx, list);
+  applySessions(ctx, list);
+  notifySessions(ctx, list);
 }
 
 /**
@@ -101,6 +109,26 @@ function onProject(ctx: LinkCtx, note: Notification): void {
  */
 function onEngine(ctx: LinkCtx, note: Notification): void {
   onEngineNote(ctx, note.params);
+}
+
+/**
+ * `editor` · `devices {DeviceDirectory}`: connect's device directory the hub keeps and replays.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onDevices(ctx: LinkCtx, note: Notification): void {
+  onPublishedNote(ctx, "devices", note.params);
+}
+
+/**
+ * `editor` · `deviceTelemetry {DeviceTelemetry}`: the wired telemetry of a watched phone.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onDeviceTelemetry(ctx: LinkCtx, note: Notification): void {
+  onPublishedNote(ctx, "deviceTelemetry", note.params);
 }
 
 /**
@@ -186,6 +214,8 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.selection", onSelection],
   ["editor.project", onProject],
   ["editor.engine", onEngine],
+  ["editor.devices", onDevices],
+  ["editor.deviceTelemetry", onDeviceTelemetry],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]

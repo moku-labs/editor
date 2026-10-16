@@ -47,20 +47,25 @@ export type ChannelState = {
 export type ChannelApi = Omit<EditorChannel, "run"> & {
   /**
    * Runs a command in a microtask, off the game's frame loop. `via` names who runs it for the
-   * registry's `registry:command` event: the overlay's Game tab passes `"overlay"`, the bridge
-   * `"bridge"`; absent, the registry records `"local"`.
+   * registry's `registry:command` event: the overlay's Game tab passes `"overlay"`; the bridge
+   * passes the hub's origin, `"tools"` (the tools page), `"mcp"` (an agent) or `"bridge"` (a hub
+   * that does not say); absent, the registry records `"local"`. `client` is the agent's MCP client
+   * name, which the bridge passes with `"mcp"` only; the command entry gets it (the recorder's
+   * `editor.record` names the agent with it).
    *
    * @param id - The command id, e.g. "game.step".
    * @param input - The command input; omit it for a command without input.
    * @param via - Who runs it; omit it for an in-process caller.
+   * @param client - The MCP client's name, with `via: "mcp"` only.
    * @returns A promise of the command's value and where the game stands after it.
    * @example
    * ```ts
-   * // The bridge runs a hub `run` request from the tools page or MCP.
-   * (await ctx.require(channelPlugin).run("game.step", { frames: 1 }, "bridge")).state; // { path: "home", frame: 1841, tainted: false }
+   * // The bridge runs a hub `run` that an agent named "Claude" sent through MCP.
+   * (await ctx.require(channelPlugin).run("editor.record", { on: true }, "mcp", "Claude")).value;
+   * // { on: true, file: "perf-20261016-1201-sm-a266b.jsonl", startedBy: { by: "agent", name: "Claude" }, marked: false }
    * ```
    */
-  run(id: string, input?: Json, via?: CommandVia): Promise<RunResult>;
+  run(id: string, input?: Json, via?: CommandVia, client?: string): Promise<RunResult>;
   /**
    * A fresh frozen beat now, from the registry clock. In Chromium it also carries the page heap
    * from `performance.memory`, in MB rounded to 0.1; elsewhere `heap` is absent.

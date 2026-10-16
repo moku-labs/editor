@@ -1,4 +1,6 @@
+/* eslint-disable unicorn/no-null -- null is the recorder's "no origin" and "no name" (RecordOrigin) */
 import { describe, expect, it } from "vitest";
+import type { RecordOrigin } from "../../../recorder/types";
 import { clockText, groupDigits, sizeText } from "../../model/format";
 import { recordTabView } from "../../model/record-tab";
 import type { LinkPayload } from "../../types";
@@ -32,6 +34,16 @@ function view(extra: Partial<Parameters<typeof recordTabView>[0]> = {}) {
   });
 }
 
+/**
+ * The origin line of a recording log.
+ *
+ * @param startedBy - Who started it.
+ * @returns The line.
+ */
+function originOf(startedBy: RecordOrigin | null): string | undefined {
+  return view({ status: { ...RECORDING, startedBy } }).origin;
+}
+
 describe("format", () => {
   it("1840 prints without grouping (it groups with a no-break space)", () => {
     expect(groupDigits(1840)).toBe("1 840");
@@ -63,20 +75,46 @@ describe("recordTabView", () => {
     expect(tab.key).toEqual({ action: "stop", label: "Stop", disabled: false, title: undefined });
   });
 
-  it("reads STOPPED and a dim clock while idle; Start is off without a monitor", () => {
+  it("an idle recorder reads STOPPED, as if a log ran by itself (it reads OFF: nothing is saved until you record); a dim clock; Start is off without a monitor", () => {
     const tab = view({ status: { ...IDLE, monitor: false } });
-    expect(tab).toMatchObject({ recording: false, clock: "00:00", dim: true });
-    expect(tab.legend).toMatchObject({ text: "STOPPED", lit: false });
+    expect(tab).toMatchObject({ recording: false, clock: "00:00", dim: true, origin: undefined });
+    expect(tab.legend).toMatchObject({ text: "OFF", lit: false, hollow: false });
     expect(tab.stats).toEqual([
-      { value: "", text: "not recording" },
-      { value: "", text: "logs kept on the phone" }
+      { value: "", text: "Nothing is saved until you record." },
+      { value: "", text: "The editor or an agent can start it too." }
     ]);
+    // An origin left on an idle status (a recorder keeping the last log's) is not shown.
+    expect(
+      view({ status: { ...IDLE, startedBy: { by: "agent", name: "Claude" } } }).origin
+    ).toBeUndefined();
     expect(tab.key).toEqual({
       action: "start",
       label: "Start",
       disabled: true,
       title: "No frame monitor in this build"
     });
+  });
+
+  it("an agent's recording shows no hint where it came from, or agent (null) (the origin line names who started it)", () => {
+    expect(originOf({ by: "agent", name: "Claude" })).toBe("started by an agent (Claude)");
+    expect(originOf({ by: "agent", name: null })).toBe("started by an agent");
+    expect(originOf({ by: "agent", name: "" })).toBe("started by an agent");
+    expect(originOf({ by: "phone", name: null })).toBe("started here");
+    expect(originOf({ by: "editor", name: "Claude" })).toBe("started from the editor");
+    // No origin on the status: the numbers alone.
+    expect(originOf(null)).toBeUndefined();
+  });
+
+  it("a long client name pushes the origin line off the row (it is cut to 12 characters with an ellipsis)", () => {
+    expect(originOf({ by: "agent", name: "Claude Code" })).toBe(
+      "started by an agent (Claude Code)"
+    );
+    expect(originOf({ by: "agent", name: "Claude Code!" })).toBe(
+      "started by an agent (Claude Code!)"
+    );
+    expect(originOf({ by: "agent", name: "Claude Code!!" })).toBe(
+      "started by an agent (Claude Code…)"
+    );
   });
 
   it("disables the key while exporting", () => {

@@ -1,13 +1,15 @@
 /* eslint-disable unicorn/no-null -- null is "no log yet" in the status the Record tab reads */
 /**
  * @file recorder plugin — the state (the queue allocated once, the memory store), and the reads
- * over it every domain file shares: the info of a log, the file list, the status and its event.
+ * over it every domain file shares: the info of a log, the file list, the status and its event,
+ * and the value of the `editor.recorder` source.
  */
 import { createMemoryStore, messageOf, NDJSON } from "./store";
 import type { LogStore } from "./store/types";
 import type {
   LogFileInfo,
   RecorderCtx,
+  RecorderSource,
   RecorderState,
   RecorderStatus,
   RecorderStatusEvent,
@@ -16,6 +18,9 @@ import type {
 
 /** Slots of the line queue: four seconds of a busy 1000-lines-a-second stream. */
 export const QUEUE_LINES = 4096;
+
+/** The newest marks the `editor.recorder` source carries (the recording popover's list). */
+export const SOURCE_MARKS = 32;
 
 /**
  * Creates the recorder's state: the queue ring of QUEUE_LINES empty slots, the memory store (the
@@ -35,6 +40,10 @@ export function createRecorderState(): RecorderState {
     header: undefined,
     startup: undefined,
     display: undefined,
+    rate: undefined,
+    sections: undefined,
+    debug: undefined,
+    startedBy: undefined,
     session: undefined,
     last: undefined,
     phase: "idle",
@@ -142,9 +151,19 @@ export function statusOf(state: RecorderState): RecorderStatus {
     sinceMs: session === undefined ? 0 : Date.now() - session.startedAt,
     storage: (session?.store ?? state.store).kind,
     dropped: state.dropped,
-    // Who started it arrives with build wave 1 (spec 05 Delta 2026-10-16 R2-R4); none is recorded yet.
-    startedBy: null
+    startedBy: state.startedBy ?? null
   };
+}
+
+/**
+ * The value of the `editor.recorder` source: the status and the newest SOURCE_MARKS marks of the
+ * current (or last) log.
+ *
+ * @param state - The recorder's state.
+ * @returns A fresh value.
+ */
+export function sourceOf(state: RecorderState): RecorderSource {
+  return { ...statusOf(state), marks: state.marks.slice(-SOURCE_MARKS) };
 }
 
 /**

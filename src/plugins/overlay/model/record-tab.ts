@@ -1,8 +1,14 @@
 /**
- * @file overlay plugin — the Record tab's view model (C5): the recording row, the sent line and
- * meter, the marks and the saved logs. Pure.
+ * @file overlay plugin — the Record tab's view model (C5): the recording row with who started the
+ * log, the sent line and meter, the marks and the saved logs. Pure.
  */
-import type { LogFileInfo, LogMark, RecorderStatus } from "../../recorder/types";
+import type {
+  LogFileInfo,
+  LogMark,
+  RecorderStatus,
+  RecordOrigin,
+  RecordStarter
+} from "../../recorder/types";
 import type { LinkPayload } from "../types";
 import { COLOUR, clockText, groupDigits, hourMinute, sizeText } from "./format";
 import { isLive } from "./link";
@@ -18,15 +24,68 @@ const REC: LegendView = {
   small: undefined
 };
 
-/** The STOPPED legend of an idle recorder. */
-const STOPPED: LegendView = {
-  text: "STOPPED",
+/** The OFF legend of an idle recorder: nothing is recorded until someone starts a log. */
+const OFF: LegendView = {
+  text: "OFF",
   colour: COLOUR.ink2,
   lit: false,
   hollow: false,
   title: undefined,
   small: undefined
 };
+
+/** The two info lines of an idle recorder. */
+const IDLE_LINES: RecordTabView["stats"] = [
+  { value: "", text: "Nothing is saved until you record." },
+  { value: "", text: "The editor or an agent can start it too." }
+];
+
+/** The origin line of each starter (an agent's adds its name). */
+const ORIGIN_TEXT: Readonly<Record<RecordStarter, string>> = {
+  phone: "started here",
+  editor: "started from the editor",
+  agent: "started by an agent",
+  remote: "started from the computer",
+  code: "started by the game",
+  auto: "started on launch"
+};
+
+/** The longest agent name the origin line shows whole; a longer one is cut to fit the row. */
+const NAME_MAX = 12;
+
+/**
+ * An agent's name cut to `NAME_MAX` characters, the last one an ellipsis.
+ *
+ * @param name - The MCP client's name.
+ * @returns The name as the row shows it.
+ * @example
+ * ```ts
+ * fitName("Claude Code"); // "Claude Code"
+ * ```
+ */
+function fitName(name: string): string {
+  const chars = [...name];
+  return chars.length <= NAME_MAX ? name : `${chars.slice(0, NAME_MAX - 1).join("")}…`;
+}
+
+/**
+ * The origin line of a log: who started it, with an agent's name when the hub named it.
+ *
+ * @param startedBy - `recorder.status().startedBy`; null while idle.
+ * @returns The line, or undefined without an origin.
+ * @example
+ * ```ts
+ * originText({ by: "agent", name: "Claude" }); // "started by an agent (Claude)"
+ * originText({ by: "phone", name: null }); // "started here"
+ * ```
+ */
+export function originText(startedBy: RecordOrigin | null): string | undefined {
+  if (startedBy === null) return undefined;
+  const text = ORIGIN_TEXT[startedBy.by];
+  const { name } = startedBy;
+  if (startedBy.by !== "agent" || name === null || name === "") return text;
+  return `${text} (${fitName(name)})`;
+}
 
 /**
  * The "Sent to the computer" line: shown in device mode only (a bridge with a device link);
@@ -137,7 +196,7 @@ export function recordTabView(input: {
   const recording = status.state === "recording" || (exporting && status.sinceMs > 0);
   return {
     recording,
-    legend: recording ? REC : STOPPED,
+    legend: recording ? REC : OFF,
     clock: recording ? clockText(status.sinceMs) : "00:00",
     dim: !recording,
     stats: recording
@@ -145,10 +204,8 @@ export function recordTabView(input: {
           { value: groupDigits(status.lines), text: " lines" },
           { value: size, text: ` ${unit}` }
         ]
-      : [
-          { value: "", text: "not recording" },
-          { value: "", text: "logs kept on the phone" }
-        ],
+      : IDLE_LINES,
+    origin: recording ? originText(status.startedBy) : undefined,
     key: recordKeyOf(status, recording, exporting),
     sent: sentOf(status, input.payload, input.hasBridge),
     draft: input.draft,

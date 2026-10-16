@@ -5,7 +5,8 @@
  * (D-63). A hub socket that closes is reconnected: one try at the close, then at most three more,
  * 1, 2 and 4 s apart, each after the discovery file was read again, so the bridge is back after the
  * bin's restart (D-32, D-57, D-59). A connection the hub drops within 5 s counts as a failed try.
- * The bridge stops only a bin it started.
+ * The MCP client's name, once `initialize` gave it, is told to every connection (the hub stamps it
+ * on the runs of the bridge). The bridge stops only a bin it started.
  */
 import { join, resolve } from "node:path/posix";
 import { isGameFolder } from "../discovery";
@@ -98,6 +99,8 @@ type LinkState = {
   launchAbort: AbortController | undefined;
   closing: boolean;
   lastError: string | undefined;
+  /** The MCP client's name (`identify`), told to every connection that opens. */
+  clientName: string | undefined;
 };
 
 /**
@@ -261,8 +264,8 @@ function onLost(ctx: LinkCtx, bin: EditorDiscovery): void {
 }
 
 /**
- * Connects to a live bin and hands the open client to `onConnected` (the door tools follow its
- * sessions). The reconnect tries end here. When a reconnect try and a tool call connect at once,
+ * Connects to a live bin, tells it the MCP client's name when one is known, and hands the open
+ * client to `onConnected` (the door tools follow its sessions). The reconnect tries end here. When a reconnect try and a tool call connect at once,
  * the first connection stays and the second one is closed. A connection that opens after
  * shutdown began is closed and never reported.
  *
@@ -293,6 +296,7 @@ async function connectTo(ctx: LinkCtx, bin: EditorDiscovery): Promise<HubClient>
   state.openedAt = ctx.deps.now();
   state.seen = bin;
   state.lastError = undefined;
+  if (state.clientName !== undefined) client.identify(state.clientName);
   ctx.onConnected(client);
   ctx.deps.ui.info(`moku-editor mcp: connected to ${bin.url}`);
   return client;
@@ -544,7 +548,8 @@ export function createEditorLink(options: EditorLinkOptions): EditorLink {
       launching: undefined,
       launchAbort: undefined,
       closing: false,
-      lastError: undefined
+      lastError: undefined,
+      clientName: undefined
     }
   };
 
@@ -561,6 +566,11 @@ export function createEditorLink(options: EditorLinkOptions): EditorLink {
       return launchOnce(ctx, input);
     },
     stopOwned: () => stopOwnedBin(ctx),
-    shutdown: () => shutdown(ctx)
+    shutdown: () => shutdown(ctx),
+    identify: name => {
+      ctx.state.clientName = name;
+      const { client } = ctx.state;
+      if (client?.isOpen() === true) client.identify(name);
+    }
   };
 }

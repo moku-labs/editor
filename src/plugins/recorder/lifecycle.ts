@@ -10,7 +10,7 @@ import { addRecorderEntries } from "./entries";
 import { flushTick } from "./flush";
 import { listen } from "./listener";
 import { rotateIfFull } from "./rotate";
-import { finishLog, startRecording } from "./session";
+import { finishLog, originOf, startRecording } from "./session";
 import { revokeDownloads } from "./share";
 import { messageOf, openStore } from "./store";
 import type { LogStore } from "./store/types";
@@ -171,8 +171,8 @@ async function withStoredLogs(ctx: RecorderCtx, store: LogStore): Promise<LogFil
 export const AUTOSTART_WAIT_TICKS = 10;
 
 /**
- * A pending autoStart: starts the log once the header is in, or at the last tick of the wait
- * without it.
+ * A pending autoStart: starts the log (started by "auto") once the header is in, or at the last
+ * tick of the wait without it.
  *
  * @param ctx - The recorder's context.
  */
@@ -180,7 +180,9 @@ function autoStartOnTick(ctx: RecorderCtx): void {
   const { state } = ctx;
   if (state.autoStartWait === 0) return;
   state.autoStartWait -= 1;
-  if (state.header !== undefined || state.autoStartWait === 0) startRecording(ctx);
+  if (state.header !== undefined || state.autoStartWait === 0) {
+    startRecording(ctx, undefined, originOf("auto"));
+  }
 }
 
 /**
@@ -233,9 +235,9 @@ export function shouldAutoStart(autoStart: boolean | "device", profile: BuildPro
 /**
  * onStart: opens the store (OPFS may answer memory with a reason) and lists its logs. With a
  * monitor it subscribes to the stream and starts the flush timer. When autoStart says so for this
- * build (`shouldAutoStart`), it starts a log: at once when the header is in, else on the first
- * tick that has it, at most AUTOSTART_WAIT_TICKS later (a native shell holds the header back until
- * it is ready).
+ * build (`shouldAutoStart`; never with the default `false`), it starts a log started by "auto": at
+ * once when the header is in, else on the first tick that has it, at most AUTOSTART_WAIT_TICKS
+ * later (a native shell holds the header back until it is ready).
  *
  * @param ctx - The recorder's context.
  */
@@ -254,7 +256,7 @@ export async function startRecorder(ctx: RecorderCtx): Promise<void> {
   state.timer = setInterval(() => tick(ctx), config.flushEveryMs);
   if (!shouldAutoStart(config.autoStart, ctx.require(registryPlugin).build().profile)) return;
   if (state.header === undefined) state.autoStartWait = AUTOSTART_WAIT_TICKS;
-  else startRecording(ctx);
+  else startRecording(ctx, undefined, originOf("auto"));
 }
 
 /**

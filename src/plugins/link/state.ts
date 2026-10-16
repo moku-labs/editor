@@ -35,6 +35,16 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
     project: undefined,
     engine: undefined,
     engineListeners: new Set(),
+    published: { devices: undefined, deviceTelemetry: undefined },
+    publishedListeners: {
+      hotReload: new Set(),
+      selection: new Set(),
+      project: new Set(),
+      engine: new Set(),
+      devices: new Set(),
+      deviceTelemetry: new Set()
+    },
+    sessionsListeners: new Set(),
     notified: new Map(),
     handlers: new Map(),
     subs: new Map(),

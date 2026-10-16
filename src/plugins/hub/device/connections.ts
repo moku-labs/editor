@@ -87,7 +87,8 @@ export function openDevice(
     address: data.address,
     id: undefined,
     ended: false,
-    deadline: undefined
+    deadline: undefined,
+    pingAt: undefined
   };
   conn.device = device;
   if (data.id === undefined) armPairDeadline(conn, device);

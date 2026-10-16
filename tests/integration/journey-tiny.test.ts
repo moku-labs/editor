@@ -876,10 +876,10 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
       previews: { flow: { size: "L", corner: "bottom-left" } }
     });
 
-    // 3. the overlay in the game
+    // 3. the overlay in the game (the hub stamps the editor page's run: the bridge names run-from)
     await workspace.setOverlayInGame(true);
     expect(agentRuns(server.tap, "editor.overlay").map(run => paramsOf(run.message))).toEqual([
-      { id: "editor.overlay", input: { mode: "card" } }
+      { id: "editor.overlay", input: { mode: "card" }, from: "page" }
     ]);
     expect(live.agent.app.overlay.isOpen()).toBe(true);
     const host = elementIn(page.gamePage, OVERLAY_HOST);
@@ -915,7 +915,8 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     expect(reopened.conn).not.toBe(oldConn);
     expect(paramsOf(reopened.message)).toEqual({
       id: "editor.overlay",
-      input: { mode: "card" }
+      input: { mode: "card" },
+      from: "page"
     });
 
     // 6. the overlay off
@@ -923,7 +924,8 @@ describe("journey-tiny: device, overlay, theme, palette", () => {
     const closed = agentRuns(server.tap, "editor.overlay").at(-1);
     expect(closed === undefined ? undefined : paramsOf(closed.message)).toEqual({
       id: "editor.overlay",
-      input: { mode: "hidden" }
+      input: { mode: "hidden" },
+      from: "page"
     });
     expect(agent.app.overlay.isOpen()).toBe(false);
     expect(workspace.overlayInGame()).toBe(false);

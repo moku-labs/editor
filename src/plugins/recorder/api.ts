@@ -5,7 +5,7 @@
 
 import { commandMark, markLog } from "./marks";
 import { ackLines, unsentRun } from "./outbox";
-import { removeLog, startRecording, stopRecording } from "./session";
+import { originOf, removeLog, startRecording, stopRecording } from "./session";
 import { shareLog } from "./share";
 import { filesOf, statusOf } from "./state";
 import type { RecorderApi, RecorderCtx } from "./types";
@@ -19,7 +19,7 @@ import type { RecorderApi, RecorderCtx } from "./types";
 export function createRecorderApi(ctx: RecorderCtx): RecorderApi {
   const { state } = ctx;
   return {
-    start: options => startRecording(ctx, options?.label),
+    start: options => startRecording(ctx, options?.label, originOf(options?.by, options?.name)),
     stop: () => stopRecording(ctx),
     mark: label => markLog(state, label),
     command: (id, input, label) => commandMark(state, id, input, label),

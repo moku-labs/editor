@@ -2,13 +2,15 @@
  * @file hub plugin — the one websocket handler of the server (Bun allows one; the device listeners
  * share it): open registers a connection of the upgrade's kind (a stale device token is closed 4401
  * at once), message refuses binary frames and decodes text, close ends agent sessions, device
- * connections and tools subscriptions, drain flushes the tools backlog.
+ * connections and tools subscriptions, drain flushes the tools backlog, pong measures a paired
+ * device's ping round trip.
  */
 import { filesPlugin } from "../../files";
 import type { FilesApi } from "../../files/types";
 import type { Message } from "../../registry/protocol";
 import { decode } from "../../registry/protocol";
 import { closeUnpaired, openDevice } from "../device/connections";
+import { onPong } from "../device/ping";
 import { replayPublished } from "../routing/publish";
 import { sessionsNotification } from "../routing/sessions";
 import type { AgentConn, HubCtx, HubSocket, HubWebSocketHandler, ToolsConn } from "../types";
@@ -88,6 +90,7 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
     conn,
     socket: ws,
     page: ws.data.page === true,
+    client: undefined,
     subs: new Map(),
     pending: 0,
     congested: false,
@@ -161,6 +164,9 @@ export function createSocketHandler(ctx: HubCtx): HubWebSocketHandler {
     drain: ws => {
       const conn = toolsConn(ctx.state, ws.data.conn);
       if (conn !== undefined) flushBacklog(conn);
+    },
+    pong: (ws, data) => {
+      onPong(ctx.state, ws, data, Date.now());
     },
     maxPayloadLength: MAX_PAYLOAD_BYTES,
     idleTimeout: IDLE_TIMEOUT_S,

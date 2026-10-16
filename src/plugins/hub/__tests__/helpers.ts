@@ -99,6 +99,8 @@ export function createLog() {
 export type FakeSocket = HubSocket & {
   readonly sent: string[];
   readonly closes: { code: number | undefined; reason: string | undefined }[];
+  /** The payload of every ping the hub sent (H4). */
+  readonly pings: string[];
   /** What send returns: 1 sent, -1 backpressure, 0 dropped. */
   result: number;
   /** Every sent message, decoded. */
@@ -132,10 +134,12 @@ export function fakeSocket(kind: ConnKind, conn: number, page = false): FakeSock
 export function socketOf(data: HubSocketData): FakeSocket {
   const sent: string[] = [];
   const closes: { code: number | undefined; reason: string | undefined }[] = [];
+  const pings: string[] = [];
   const socket: FakeSocket = {
     data,
     sent,
     closes,
+    pings,
     result: 1,
     send(text: string): number {
       sent.push(text);
@@ -143,6 +147,10 @@ export function socketOf(data: HubSocketData): FakeSocket {
     },
     close(code?: number, reason?: string): void {
       closes.push({ code, reason });
+    },
+    ping(payload?: string): number {
+      pings.push(payload ?? "");
+      return 1;
     },
     messages: () => sent.map(text => decode(text)),
     notes: (channel, method) =>
@@ -281,8 +289,11 @@ export type Harness = {
   send(socket: FakeSocket, message: Message): void;
   /** Closes a socket (handler.close). */
   close(socket: FakeSocket, code?: number): void;
-  /** Connects an agent and sends its hello; returns the socket and the session id. */
-  hello(manifest?: Manifest): { agent: FakeSocket; session: string };
+  /**
+   * Connects an agent and sends its hello (with `caps` when given); returns the socket and the
+   * session id.
+   */
+  hello(manifest?: Manifest, caps?: readonly string[]): { agent: FakeSocket; session: string };
   /** The registered agent conn of a socket. */
   agentConn(socket: FakeSocket): AgentConn;
   /** The registered tools conn of a socket. */
@@ -293,10 +304,16 @@ export type Harness = {
  * The hello notification of an agent.
  *
  * @param manifest - The manifest to send.
+ * @param caps - The capabilities it names (`["run-from"]`); none by default, like an older bridge.
  * @returns The notification.
  */
-export function helloOf(manifest: Manifest | Json = MANIFEST): Message {
-  return notification("game", "hello", { manifest: toWireValue(manifest) });
+export function helloOf(manifest: Manifest | Json = MANIFEST, caps?: readonly string[]): Message {
+  const params = { manifest: toWireValue(manifest) };
+  return notification(
+    "game",
+    "hello",
+    caps === undefined ? params : { ...params, caps: [...caps] }
+  );
 }
 
 /**
@@ -334,9 +351,9 @@ export function createHarness(overrides: Partial<HubConfig> = {}): Harness {
     close(socket, code = 1006) {
       handler.close(socket, code, "");
     },
-    hello(manifest = MANIFEST) {
+    hello(manifest = MANIFEST, caps) {
       const agent = harness.connect("agent");
-      harness.send(agent, helloOf(manifest));
+      harness.send(agent, helloOf(manifest, caps));
       const note = agent.notes("editor", "session")[0];
       const params = note !== undefined && "params" in note ? note.params : undefined;
       const id =

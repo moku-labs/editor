@@ -15,7 +15,13 @@ import type {
 } from "../perf/protocol";
 import type { Json } from "../registry/protocol";
 import type { RegistryCommandEvent } from "../registry/types";
-import type { LogMark, RecorderStatus, RecorderStatusEvent } from "./protocol";
+import type {
+  LogMark,
+  RecorderStatus,
+  RecorderStatusEvent,
+  RecordOrigin,
+  RecordStarter
+} from "./protocol";
 import type { LogStore } from "./store/types";
 
 export type {
@@ -38,9 +44,10 @@ export type {
  */
 export type RecorderConfig = {
   /**
-   * Start a log when the plugin starts. "device": only on a debug build (agent flag on, dev flag
-   * off), the build that is for measuring; a dev page records only when asked. true: always;
-   * false: never. "device".
+   * Start a log when the plugin starts. false: never, nothing is recorded until someone starts it
+   * (the phone's Record tab, the tools page's Record button, an agent's `editor.record`). "device":
+   * only on a debug build (agent flag on, dev flag off), the build that is for measuring. true:
+   * always. false.
    */
   autoStart: boolean | "device";
   /** Most MB kept in memory: lines the computer has not confirmed, plus the logs of the memory store. 64. 1 to 512. */
@@ -156,10 +163,18 @@ export type RecorderState = {
   readonly queue: (PerfLogLine | undefined)[];
   queueHead: number;
   queueSize: number;
-  /** The newest context lines, written at every log start. */
+  /** The newest context lines, written at every log start, kept by reference. */
   header: PerfHeaderLine | undefined;
   startup: PerfStartupLine | undefined;
   display: PerfEventLine | undefined;
+  /** The newest `rate` event: the rate in force (the header's `rate` is from subscribe time). */
+  rate: PerfEventLine | undefined;
+  /** The newest `sections` event: what the engine measures. */
+  sections: PerfEventLine | undefined;
+  /** The newest `debug` event: the overdraw heat map on or off (frames drawn with it are not real cost). */
+  debug: PerfEventLine | undefined;
+  /** Who started the current log; set at start, kept by a rotation, cleared at stop. */
+  startedBy: RecordOrigin | undefined;
   /** The current log; undefined while idle. */
   session: Session | undefined;
   /** The last finished log's numbers, for status() while idle. */
@@ -258,23 +273,35 @@ export type RecorderHooks = {
  */
 export type RecorderApi = {
   /**
-   * Starts a log: writes the context lines (header, startup, newest display) and a `recorder` start
-   * event, then every line of the stream until `stop`. While a log runs it answers that log and
-   * changes nothing. Removes the oldest finished logs beyond `keepFiles`.
+   * Starts a log: writes the context lines (header, startup, newest display, then the newest `rate`,
+   * `sections` and `debug` events when there are any) and a `recorder` start event
+   * `{ action: "start", label, by, name }`, then every line of the stream until `stop`. While a log
+   * runs it answers that log and changes nothing (its first `startedBy` stays). Removes the oldest
+   * finished logs beyond `keepFiles`. Nothing records until someone calls it (`autoStart` false).
    *
    * @param options - How to start.
    * @param options.label - A name for this run, written into the start event and the file list
    *   (trimmed; empty is no label).
+   * @param options.by - Who starts it, for `status().startedBy`: "code" by default (the game's own
+   *   code); the overlay passes "phone", `editor.record` the origin of its run.
+   * @param options.name - An agent's MCP client name, kept only with `by: "agent"` (trimmed, at
+   *   most 64 characters; empty is none).
    * @returns The new (or running) log.
    * @throws {Error} `[moku-editor] recorder.start: this game has no performance monitor.\n  Run a dev or debug build
    *   of `@moku-labs/game` with the monitor (block 2b).` when perf found none (a lifecycle error).
    * @example
    * ```ts
-   * // A tester starts a run on the phone before the boss.
-   * app.recorder.start({ label: "garden, A26" }); // { name: "perf-20261014-1532-sm-a266b.jsonl", current: true, lines: 0, … }
+   * // The overlay's Record tab, when the tester presses Start on the phone before the boss.
+   * const recorder = ctx.require(recorderPlugin);
+   * recorder.start({ label: "garden, A26", by: "phone" }); // { name: "perf-20261014-1532-sm-a266b.jsonl", current: true, lines: 0, … }
+   * recorder.status().startedBy; // { by: "phone", name: null }
    * ```
    */
-  start(options?: { readonly label?: string }): LogFileInfo;
+  start(options?: {
+    readonly label?: string;
+    readonly by?: RecordStarter;
+    readonly name?: string | null;
+  }): LogFileInfo;
   /**
    * Stops the log: writes the `recorder` stop event, serializes what is queued, writes everything to
    * the store and marks the log finished. When the store fails, the log stays in memory and
@@ -318,12 +345,14 @@ export type RecorderApi = {
    */
   command(id: string, input: Json, label: string): boolean;
   /**
-   * The state of the log and the outbox, for the Record tab.
+   * The state of the log and the outbox, for the Record tab: `startedBy` names who started the
+   * current log (null while idle).
    *
    * @returns A fresh RecorderStatus.
    * @example
    * ```ts
    * app.recorder.status().pending; // 50: lines the computer has not confirmed yet
+   * app.recorder.status().startedBy; // { by: "agent", name: "Claude" }: "started by agent (Claude)"
    * ```
    */
   status(): RecorderStatus;

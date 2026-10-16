@@ -347,8 +347,8 @@ export type FakeChannel = BridgeDeps["channel"] & {
   readonly holds: Map<string, Promise<void>>;
   /** Run answers per command id; missing → RAN. */
   readonly runs: Map<string, () => Promise<RunResult>>;
-  /** (id, via) of every run. */
-  readonly ran: { id: string; via: CommandVia | undefined }[];
+  /** (id, via, client) of every run. */
+  readonly ran: { id: string; via: CommandVia | undefined; client: string | undefined }[];
   /** The beat heartbeat() returns. */
   beat: Heartbeat;
   /** The onHeartbeat listeners. */
@@ -398,8 +398,8 @@ export function fakeChannel(): FakeChannel {
         channel.watchers.delete(id);
       };
     },
-    run: (id, _input, via) => {
-      channel.ran.push({ id, via });
+    run: (id, _input, via, client) => {
+      channel.ran.push({ id, via, client });
       const answer = channel.runs.get(id);
       return answer === undefined ? Promise.resolve(RAN) : answer();
     },

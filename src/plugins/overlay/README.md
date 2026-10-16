@@ -7,7 +7,8 @@ The editor's window over a running game, on a phone without a dev server or on a
 to the left or right edge, dragged by its grip, snapped to the nearer edge inside the safe area). The card has four
 tabs on a key bar: **Frames** (the frame graph of the last 6 s painted by `perf/graph`, prev / next spike keys, six
 counters, a More disclosure, the spike record), **Game** (only the commands the game marked for the overlay), **Record**
-(the device log through `recorder`) and **Link** (the device link the bridge reports). It shows the engine fingerprint
+(the device log through `recorder`: off until someone records, and who started it) and **Link** (the device link the
+bridge reports). It shows the engine fingerprint
 and the build on the Frames tab, and STALE when the phone's engine differs from the computer's. It remembers place,
 mode and tab on the device.
 
@@ -105,6 +106,47 @@ await link.run("editor.overlay", { mode: "pill" });
 // { value: { mode: "pill" }, state: { path: "garden/boss", frame: 4812, tainted: false } }
 ```
 
+## Game and Record tabs
+
+**Game.** A row's `allowed` comes from the registry's build profile (`refusalOf(profile, effect)`): a `--debug` build of
+an engine that includes control (`__MOKU_GAME_CONTROL__`, profile `full`) allows every marked command, so nothing is
+greyed and a press runs in the page through `channel.run`, offline too. A `read` profile means an engine from before
+that (its `--debug` had no control) or a deliberate `--debug=read` build; the words name both:
+
+| Where | Words |
+|---|---|
+| A refused row's second line and `title` (`read-only`) | `needs a debug build of a newer engine, or without --debug=read` |
+| A refused row (`dev-only`) | `needs a dev or debug build` |
+| The note under `READ-ONLY` | `This build only reads. Commands run on --debug builds of @moku-labs/game {CONTROL_ENGINE} or newer (not --debug=read).` |
+| The toast of a press refused -32009 `read_only` | `{title} needs a debug build of a newer engine.` |
+
+`CONTROL_ENGINE` (`model/game.ts`) is the engine release whose `--debug` includes control; it is written when the engine
+version is pinned and reads `0.15.x` until then.
+
+**Record.** The recorder starts no log by itself. Idle, the top row reads `OFF` with `Nothing is saved until you
+record.` / `The editor or an agent can start it too.` Start calls `recorder.start({ by: "phone" })`, so the tools page
+shows the log as started on the phone. While a log runs, the first info line holds the numbers and the second who
+started it, from `recorder.status().startedBy`:
+
+| `startedBy` | Line |
+|---|---|
+| `{ by: "phone" }` | `started here` |
+| `{ by: "editor" }` | `started from the editor` |
+| `{ by: "agent", name: "Claude" }` / `{ by: "agent", name: null }` | `started by an agent (Claude)` / `started by an agent` |
+| `{ by: "remote" }` | `started from the computer` |
+| `{ by: "code" }` | `started by the game` |
+| `{ by: "auto" }` | `started on launch` |
+
+An agent's name longer than 12 characters is cut to 11 and an ellipsis; a line wider than the row ends in an ellipsis.
+Stop and Add mark stop and mark any log, whoever started it. A log started or stopped elsewhere shows at the next tick;
+the header's REC follows `state` whatever the origin.
+
+**Smooth scroll on the device.** The plot's compositor slide is checked on a real phone, not by a unit test (spec 08
+Delta 2026-10-16 O3): on the A26 by wire, `chrome://inspect` → Performance, 10 s of the expanded card on the Frames tab
+— the graph moves continuously (one `transform` transition per 250 ms paint), at most four overlay paints a second, no
+long task from the overlay, and steps without a transition under reduced motion. The result is recorded in
+`.planning/e2e/`.
+
 ## Events
 
 | Direction | Event | Payload | When |
@@ -129,7 +171,7 @@ once), `overlay:fonts-unavailable` (debug).
 | `depends` | `registryPlugin` | `add` (`editor.overlay`), `envelope`, `manifest` (overlay commands, the game's name), `command(id).value()`, `build()` (engine line, profile, STALE) |
 | `depends` | `channelPlugin` | `run(id, input, "overlay")` for a Game tab press |
 | `depends` | `perfPlugin` | `status`, `readWindow` (visitors made once), `second`, `spike`, `monitor` (the agent bracket) |
-| `depends` | `recorderPlugin` | `status`, `start`, `stop`, `mark`, `command` (the auto mark of a press), `marks`, `files`, `share`, `remove` |
+| `depends` | `recorderPlugin` | `status` (the Record tab and its origin line), `start` (`{ by: "phone" }`), `stop`, `mark`, `command` (the auto mark of a press), `marks`, `files`, `share`, `remove` |
 | Presence | `ctx.has("bridge")` | The Link tab's no-bridge state; no import of `bridgePlugin` |
 
 Pure modules: `perf/graph`, `perf/protocol`, `hub/protocol` (`parseAddress`, `isLoopback`, `DeviceLink`; never the hub

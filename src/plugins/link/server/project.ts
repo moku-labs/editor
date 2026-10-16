@@ -9,24 +9,7 @@ import type { Json, ProjectDelta, ProjectState } from "../../registry/protocol";
 import { projectDelta } from "../../registry/protocol";
 import { readProjectState } from "../rpc/shapes";
 import type { LinkCtx } from "../types";
-
-/**
- * Freezes a fresh parsed value and every object and array inside it.
- *
- * @param value - A value nobody else holds yet.
- * @returns The same value, frozen all the way down.
- * @example
- * ```ts
- * const state = freezeDeep({ state: "on", revision: "r1", defs: { "flow:board": ["flows/board.ts"] }, uses: {}, broken: {} });
- * Object.isFrozen(state.defs["flow:board"]); // true
- * ```
- */
-function freezeDeep<T>(value: T): T {
-  if (typeof value !== "object" || value === null) return value;
-
-  for (const child of Object.values(value)) freezeDeep(child);
-  return Object.freeze(value);
-}
+import { freezeDeep, notifyPublished } from "./published";
 
 /**
  * True when `next` says nothing new: both off with the same reason, or both on at the same
@@ -75,8 +58,8 @@ function deltaOf(held: ProjectState | undefined, next: ProjectState): ProjectDel
 /**
  * Handles the params of an `editor.project` notification. A malformed state is the warning
  * `link:bad-project` and changes nothing; the held state again is dropped; any other state is
- * stored frozen and emitted as `link:project` with its delta (a manifest-only change lists the
- * old and the new manifest path).
+ * stored frozen, emitted as `link:project` with its delta (a manifest-only change lists the
+ * old and the new manifest path) and given to the onPublished listeners of `project`.
  *
  * @param ctx - Domain context of link.
  * @param params - The notification params.
@@ -95,4 +78,5 @@ export function onProjectNote(ctx: LinkCtx, params: Json | undefined): void {
   const state = freezeDeep(next);
   ctx.state.project = state;
   ctx.emit("link:project", { state, delta });
+  notifyPublished(ctx, "project", state);
 }

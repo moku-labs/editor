@@ -24,7 +24,8 @@ import { fakeContext } from "../helpers";
 // The agent defaults (registry, channel, perf, recorder, overlay) over the
 // headless tiny game with the root fake monitor grafted on as its renderer, a
 // `.dev` module with one overlay toggle (cosmetic) and one overlay button
-// (cheat), on the flags of a plain `--debug` build. The DOM is a happy-dom
+// (cheat), on the flags of a read-only build (an engine's `--debug` from
+// before control; test 8 adds the control flag). The DOM is a happy-dom
 // Window stubbed onto the globals; its canvas gets a recording 2D context, so
 // the real perf/graph painter draws and its hit tests answer.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +45,11 @@ const bridgeStub = createAgentPlugin("bridge", {
 
 const framework = createAgentCore(agentCoreConfig, {
   plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin, bridgeStub]
+});
+
+/** The agent defaults alone: no bridge, so nothing reaches a computer. */
+const offline = createAgentCore(agentCoreConfig, {
+  plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin]
 });
 
 /** The toggle's state, read by its `value(app)`. */
@@ -75,6 +81,27 @@ const devModule: DevModule = {
   ]
 };
 
+/** The cheat toggle's state, read by its `value(app)`. */
+let godOn = false;
+
+/** A dev module with a cheat toggle: a read-only build greys it, a build with control runs it. */
+const cheatModule: DevModule = {
+  commands: [
+    defineCommand({
+      id: "test.god",
+      title: "God mode",
+      input: { on: "boolean" },
+      effect: "cheat",
+      overlay: "toggle",
+      value: () => godOn,
+      run: (_app: GameLike, { on }) => {
+        godOn = on;
+        return on;
+      }
+    })
+  ]
+};
+
 /** A started headless tiny game. */
 type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
 
@@ -93,7 +120,7 @@ const stops: (() => Promise<void>)[] = [];
  * @returns The started app.
  */
 async function startEditor(
-  pluginConfigs: { overlay?: Partial<Config>; recorder?: { autoStart?: boolean } } = {}
+  pluginConfigs: { overlay?: Partial<Config>; recorder?: { autoStart?: boolean | "device" } } = {}
 ) {
   const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
   const app = framework.createApp({
@@ -173,6 +200,7 @@ function commit(
 
 beforeEach(async () => {
   glowOn = true;
+  godOn = false;
   connects.length = 0;
   vi.stubGlobal("__MOKU_GAME_DEV__", false);
   vi.stubGlobal("__MOKU_GAME_AGENT__", true);
@@ -282,14 +310,16 @@ describe("overlay integration", () => {
   });
 
   it("(3) the Game tab: the toggle runs { on: false }, logged once with a mark; the cheat is greyed", async () => {
-    const app = await startEditor();
+    const app = await startEditor({ recorder: { autoStart: true } });
     commit(30, 1000);
     await vi.advanceTimersByTimeAsync(1000);
     expect(app.recorder.status().state).toBe("recording");
     app.overlay.open({ tab: "game" });
     expect(part('[data-command="test.glow"]').dataset.state).toBe("on");
     expect(part('[data-command="test.boost"]').dataset.state).toBe("refused");
-    expect(part('[data-command="test.boost"]').textContent).toContain("needs a --debug=full build");
+    expect(part('[data-command="test.boost"]').textContent).toContain(
+      "needs a debug build of a newer engine, or without --debug=read"
+    );
 
     part('[data-command="test.glow"]').click();
     await vi.advanceTimersByTimeAsync(PAINT_MS);
@@ -384,6 +414,28 @@ describe("overlay integration", () => {
     expect(host()).toBeNull();
     expect(globalThis.__MOKU_GAME_OVERLAY__).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("(8) a cheat is greyed on a --debug build with control, or needs a computer to run (the row is enabled and a press runs it offline and toggles it)", async () => {
+    vi.stubGlobal("__MOKU_GAME_CONTROL__", true);
+    const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
+    const app = offline.createApp({
+      pluginConfigs: { registry: { game: grafted, modules: [cheatModule] } }
+    });
+    app.log.clearSinks();
+    await app.start();
+    stops.push(() => app.stop());
+    commit(30, 1000);
+    app.overlay.open({ tab: "game" });
+    const row = part<HTMLButtonElement>('[data-command="test.god"]');
+    expect([row.dataset.state, row.disabled]).toEqual(["off", false]);
+    expect(shadow().querySelector('[data-part="game-note"]')).toBeNull();
+
+    row.click();
+    await vi.advanceTimersByTimeAsync(PAINT_MS);
+    expect(godOn).toBe(true);
+    expect(part('[data-command="test.god"]').dataset.state).toBe("on");
+    expect(monitor.events.filter(event => event.name === "command")).toHaveLength(1);
   });
 });
 

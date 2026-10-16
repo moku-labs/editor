@@ -224,9 +224,12 @@ export type OverlayCommand = {
   /** A toggle's current value (`value(app)` of the engine command); undefined for a button. */
   readonly value: boolean | undefined;
   readonly effect: Effect;
-  /** False when this build refuses it (a route / cheat / raw command on a `--debug` page). */
+  /**
+   * False when this build refuses it: a route / cheat / raw command on a read-only page (a
+   * `--debug` build of an engine before `--debug` included control, or a `--debug=read` build).
+   */
   readonly allowed: boolean;
-  /** Why not, when not allowed: "needs a --debug=full build". */
+  /** Why not, when not allowed: "needs a debug build of a newer engine, or without --debug=read". */
   readonly reason: string | undefined;
 };
 
@@ -537,7 +540,7 @@ export type OverlayApi = {
    * @returns Fresh copies.
    * @example
    * ```ts
-   * // A Memory Missing on a `--debug` (read-only) build.
+   * // A Memory Missing on a read-only build (an older engine's `--debug`, or `--debug=read`).
    * app.overlay.commands().map(command => [command.id, command.value, command.allowed]);
    * // [["garden.glow", false, true], ["garden.fog", false, true], ["story.skipDialogue", undefined, false]]
    * ```

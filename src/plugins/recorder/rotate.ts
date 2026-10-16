@@ -3,7 +3,7 @@
  * carry the log past its budget (maxLogMb less the headroom, in UTF-8 bytes) and marks the log
  * full; the rotation carries the lines still queued out, finishes the full log (its stop event,
  * every line written, the meta rewritten) and starts the next one at once with the same label and
- * the context lines, followed by the carried lines. The switch is synchronous: `finishLog`
+ * the context lines, followed by the carried lines; `startedBy` stays. The switch is synchronous: `finishLog`
  * detaches the full log before its first await, so no line falls between the two logs or goes into
  * both. The outbox keeps the full log's unsent lines; the bridge ships them first, acked per log.
  */
@@ -28,8 +28,10 @@ export function rotateIfFull(ctx: RecorderCtx): Promise<void> | undefined {
   const { session } = state;
   if (session?.full !== true) return undefined;
 
-  // Carry: the lines that did not fit leave the queue; they follow the next log's start.
+  // Carry: the lines that did not fit leave the queue; they follow the next log's start, which
+  // keeps who started the full one.
   const carry = takeQueue(state);
+  const origin = state.startedBy;
 
   // Finish: the stop event goes into the full log, which is detached at once (the rest is IO).
   const failed = (error: unknown): void => {
@@ -50,8 +52,9 @@ export function rotateIfFull(ctx: RecorderCtx): Promise<void> | undefined {
     finishing.then(done => warnFailure(ctx, session.name, done?.failure), failed)
   );
 
-  // Next: the same label, the context lines again, the start event, then the carried lines.
-  const next = startRecording(ctx, session.label ?? undefined);
+  // Next: the same label and origin, the context lines again, the start event, then the carried
+  // lines.
+  const next = startRecording(ctx, session.label ?? undefined, origin);
   for (const line of carry) enqueue(state, line);
   ctx.log.info("recorder:rotated", { from: session.name, to: next.name });
   return finished;

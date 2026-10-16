@@ -1,8 +1,16 @@
 /* eslint-disable unicorn/no-null -- null is "no label" of a log */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFakeMonitor, DISPLAY, eventLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  createFakeMonitor,
+  DISPLAY,
+  debugLine,
+  displayLine,
+  eventLine,
+  rateLine,
+  sectionsLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import { logFileName } from "../../session";
-import type { LogFileInfo } from "../../types";
+import type { LogFileInfo, RecordStarter } from "../../types";
 import { kinds, queued, recorder, settle, startupLine } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +47,23 @@ function finished(name: string, startedAt: number): LogFileInfo {
   };
 }
 
+/**
+ * The detail of the `recorder` start event of a log started with a label and an origin.
+ *
+ * @param by - Who starts it; none for the default.
+ * @param name - The agent's name; none for the default.
+ * @returns The start event's detail.
+ */
+function starts(by?: RecordStarter, name?: string | null) {
+  const t = recorder();
+  t.api.start({
+    label: "boss",
+    ...(by === undefined ? {} : { by }),
+    ...(name === undefined ? {} : { name })
+  });
+  return t.monitor.events.find(event => event.name === "recorder")?.detail;
+}
+
 describe("start", () => {
   it("writes the header, the startup, the newest display, then the recorder start event (bug: a log the collector cannot read without a header)", () => {
     const t = recorder();
@@ -69,6 +94,47 @@ describe("start", () => {
       label: "garden, A26",
       storage: "memory"
     });
+  });
+
+  it("a log started mid-run begins with header, startup, display, rate, sections, debug, then the start event (bug: a log whose reader thinks the game runs at the header's 120 fps)", () => {
+    const t = recorder();
+    const display = { ...displayLine(120), t: 1_760_454_003_000 };
+    const older = rateLine({ from: 60, to: 120, reason: "headroom" });
+    const rate = rateLine();
+    const sections = sectionsLine();
+    const debug = debugLine(true);
+    t.monitor.emit(startupLine());
+    for (const line of [display, older, rate, sections, debug]) t.monitor.emit(line);
+    t.api.start();
+    const lines = queued(t.state);
+    expect(kinds(lines)).toEqual([
+      "header",
+      "startup",
+      "event:display",
+      "event:rate",
+      "event:sections",
+      "event:debug",
+      "event:recorder"
+    ]);
+    expect(lines.slice(3, 6)).toEqual([rate, sections, debug]);
+    expect(lines[3]).toBe(rate);
+  });
+
+  it("names who started it in the start event: by (code by default) and, for an agent only, the name", () => {
+    expect(starts()).toEqual({ action: "start", label: "boss", by: "code", name: null });
+    expect(starts("phone")).toEqual({ action: "start", label: "boss", by: "phone", name: null });
+    expect(starts("agent", "Claude")).toMatchObject({ by: "agent", name: "Claude" });
+    expect(starts("editor", "Claude")).toMatchObject({ by: "editor", name: null });
+    expect(starts("agent", "   ")).toMatchObject({ by: "agent", name: null });
+  });
+
+  it("status().startedBy is set while recording and null while idle (the Record tab's origin line)", async () => {
+    const t = recorder();
+    expect(t.api.status().startedBy).toBeNull();
+    t.api.start({ by: "phone" });
+    expect(t.api.status().startedBy).toEqual({ by: "phone", name: null });
+    await t.api.stop();
+    expect(t.api.status().startedBy).toBeNull();
   });
 
   it("does not repeat a display older than the header", () => {

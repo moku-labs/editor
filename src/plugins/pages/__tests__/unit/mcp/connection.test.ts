@@ -342,8 +342,10 @@ function handClient(bin: EditorDiscovery, options: HubClientOptions) {
   const close = vi.fn(() => {
     open = false;
   });
+  const identify = vi.fn<HubClient["identify"]>();
   const client: HubClient = {
     bin,
+    identify,
     request: () => Promise.reject(new Error("[moku-editor] no hub.")),
     watch: () => Promise.resolve(() => undefined),
     sessions: () => [],
@@ -364,7 +366,7 @@ function handClient(bin: EditorDiscovery, options: HubClientOptions) {
     open = false;
     options.onClose?.();
   };
-  return { client, close, drop };
+  return { client, close, drop, identify };
 }
 
 /**
@@ -911,6 +913,39 @@ describe("reconnect tries (the bin's restart, D-57, D-59)", () => {
     expect(onConnected).toHaveBeenCalledOnce();
     expect(editor.connected()).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("identify (the MCP client's name for the hub's run stamping)", () => {
+  it("names the MCP client to the open connection and again to each reconnect (bug: an unnamed agent forever after a hub restart)", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, made } = scripted(["open", "open"]);
+    await editor.start();
+    expect(made[0]?.identify).not.toHaveBeenCalled();
+
+    editor.identify("Claude");
+    expect(made[0]?.identify.mock.calls).toEqual([["Claude"]]);
+
+    made[0]?.drop();
+    await settle();
+    expect(editor.connected()).toBe(made[1]?.client);
+    expect(made[1]?.identify.mock.calls).toEqual([["Claude"]]);
+    expect(made[0]?.identify).toHaveBeenCalledOnce();
+    await editor.shutdown();
+  });
+
+  it("names a connection that opens after the name came", async () => {
+    writeDiscovery(root, hub.discovery(root));
+    const { editor, made, onConnected } = scripted(["open"]);
+
+    editor.identify("Claude");
+    await editor.start();
+
+    expect(made[0]?.identify.mock.calls).toEqual([["Claude"]]);
+    expect(made[0]?.identify.mock.invocationCallOrder[0]).toBeLessThan(
+      onConnected.mock.invocationCallOrder[0] ?? 0
+    );
+    await editor.shutdown();
   });
 });
 

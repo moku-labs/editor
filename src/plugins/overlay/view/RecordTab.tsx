@@ -1,9 +1,10 @@
 /**
- * @file overlay plugin — the Record tab (C5): REC or STOPPED with the clock and counts, Start /
- * Stop, the sent line and meter, the mark field, the marks, the saved logs with Share and Delete,
- * the toast.
+ * @file overlay plugin — the Record tab (C5): REC or OFF with the clock, the counts and who started
+ * the log, Start / Stop, the sent line and meter, the mark field, the marks, the saved logs with
+ * Share and Delete, the toast.
  */
 import type { VNode } from "preact";
+import { Fragment } from "preact";
 import type { OverlayActions } from "../actions";
 import type { LogRow, RecordTabView } from "../model/types";
 import { Legend } from "./Legend";
@@ -24,6 +25,62 @@ function LogMeta(props: { readonly row: LogRow }): VNode {
   return (
     <span>
       {row.size}, {row.time}, {status}
+    </span>
+  );
+}
+
+/** One info item of the recording row. */
+type Stat = RecordTabView["stats"][number];
+
+/**
+ * One info item: the number bold, then its unit or the words.
+ *
+ * @param props - The item.
+ * @param props.stat - The number and its unit, or the words alone.
+ * @returns The item's text.
+ */
+function StatText(props: { readonly stat: Stat }): VNode {
+  const { stat } = props;
+  return (
+    <>
+      {stat.value === "" ? undefined : <b>{stat.value}</b>}
+      {stat.text}
+    </>
+  );
+}
+
+/**
+ * The info lines of the recording row: one line per item; with an origin, the numbers share the
+ * first line and the origin is the second.
+ *
+ * @param props - The Record tab view.
+ * @param props.tab - The Record tab view.
+ * @returns The lines.
+ */
+function RecStats(props: { readonly tab: RecordTabView }): VNode {
+  const { tab } = props;
+  if (tab.origin === undefined) {
+    return (
+      <span data-part="rec-stats" data-idle={tab.recording ? undefined : ""}>
+        {tab.stats.map(stat => (
+          <span key={stat.text}>
+            <StatText stat={stat} />
+          </span>
+        ))}
+      </span>
+    );
+  }
+  return (
+    <span data-part="rec-stats">
+      <span>
+        {tab.stats.map((stat, index) => (
+          <Fragment key={stat.text}>
+            {index === 0 ? undefined : ", "}
+            <StatText stat={stat} />
+          </Fragment>
+        ))}
+      </span>
+      <span data-part="origin">{tab.origin}</span>
     </span>
   );
 }
@@ -49,14 +106,7 @@ export function RecordTab(props: {
         <b data-part="clock" data-dim={tab.dim ? "" : undefined}>
           {tab.clock}
         </b>
-        <span data-part="rec-stats">
-          {tab.stats.map(stat => (
-            <span key={stat.text}>
-              {stat.value === "" ? undefined : <b>{stat.value}</b>}
-              {stat.text}
-            </span>
-          ))}
-        </span>
+        <RecStats tab={tab} />
         <button
           type="button"
           data-part="button"

@@ -505,9 +505,34 @@ function readDevice(value: Json | undefined): SessionDevice | undefined {
 }
 
 /**
- * Reads one session: the five R1 fields, and the device of a device session (spec 01 C8). The
- * hub's `heartbeat` readout and other keys are dropped; the link computes silence itself from
- * forwarded heartbeats. A malformed device is left out (the session reads as a browser session).
+ * Reads the hub's heartbeat readout of a session (`SessionInfo.heartbeat`): the frame and paused
+ * flag of its last heartbeat and the hub's silent flag. The hub re-sends the list when paused or
+ * silent flips, so activeSource reads from it whether the local preview was already paused
+ * (spec 11 § 4 B4, L9).
+ *
+ * @param value - The `heartbeat` member of a session.
+ * @returns The readout, frozen; undefined when absent or when a field has the wrong type.
+ * @example
+ * ```ts
+ * readHeartbeat({ frame: 1840, paused: true, silent: false }); // { frame: 1840, paused: true, silent: false }
+ * readHeartbeat({ frame: 1840, paused: "yes", silent: false }); // undefined
+ * ```
+ */
+function readHeartbeat(value: Json | undefined): SessionInfo["heartbeat"] {
+  const object = objectOf(value);
+  const frame = object && numberOf(object, "frame");
+  const paused = object && flagOf(object, "paused");
+  const silent = object && flagOf(object, "silent");
+  if (frame === undefined || paused === undefined || silent === undefined) return undefined;
+
+  return Object.freeze({ frame, paused, silent });
+}
+
+/**
+ * Reads one session: the five R1 fields, the hub's heartbeat readout (L9) and the device of a
+ * device session (spec 01 C8). A malformed readout or device is left out, never the session: it
+ * then reads as not yet beating, or as a browser session. Other keys are dropped. link's own
+ * status still comes from the forwarded heartbeats of the chosen session, not from the readout.
  *
  * @param value - A Json value.
  * @returns The session, or undefined.
@@ -528,8 +553,10 @@ function readSession(value: Json): SessionInfo | undefined {
   if (id === undefined || game === undefined || page === undefined) return undefined;
   if (embedded === undefined || connectedAt === undefined) return undefined;
 
+  const heartbeat = readHeartbeat(object.heartbeat);
   const device = readDevice(object.device);
-  const session = { id, game, page, embedded, connectedAt };
+  const base = { id, game, page, embedded, connectedAt };
+  const session = heartbeat === undefined ? base : { ...base, heartbeat };
   return device === undefined ? session : { ...session, device };
 }
 

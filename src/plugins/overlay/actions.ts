@@ -7,7 +7,7 @@
 import type { Json } from "../registry/protocol";
 import { bareMessage, errorCode, toWireError } from "../registry/protocol";
 import { clockText } from "./model/format";
-import { overlayCommands, READ_ONLY_TEXT, reasonText } from "./model/game";
+import { overlayCommands, READ_ONLY_TOAST, reasonText } from "./model/game";
 import { ADDRESS_HINT, checkAddress } from "./model/link";
 import { closeOverlay, openOverlay, setMode, setTab } from "./modes";
 import { mountCanvas, mountFixed } from "./paint/graph";
@@ -99,8 +99,8 @@ function errorText(error: unknown): string {
  * Presses a Game tab command: a toggle runs `{ on: !value }`, a button `{}`, through
  * `channel.run(id, input, "overlay")` (the recorder's `registry:command` hook writes the one
  * `command` line); a success adds the recorder's auto mark and toasts; a -32009 refusal toasts its
- * reason (`read_only`: a --debug=full build, `dev_only`: a dev or debug build); any other failure
- * toasts and warns. Ignored while busy or for a refused command.
+ * reason (`read_only`: a debug build of a newer engine, `dev_only`: a dev or debug build); any
+ * other failure toasts and warns. Ignored while busy or for a refused command.
  *
  * @param octx - Domain context.
  * @param id - The command id.
@@ -141,7 +141,7 @@ export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> 
 
 /**
  * Toasts a press that failed: a -32009 refusal names its reason (`dev_only`: a dev or debug build,
- * else a --debug=full build); any other failure shows its message and warns
+ * else a debug build of a newer engine); any other failure shows its message and warns
  * `overlay:command-failed`.
  *
  * @param octx - Domain context.
@@ -151,7 +151,7 @@ export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> 
 function toastPressFailure(octx: OverlayCtx, command: OverlayCommand, error: unknown): void {
   const wire = toWireError(error);
   if (wire.code === errorCode.readOnly) {
-    const why = wire.data?.reason === "dev_only" ? reasonText("dev-only") : READ_ONLY_TEXT;
+    const why = wire.data?.reason === "dev_only" ? reasonText("dev-only") : READ_ONLY_TOAST;
     showToast(octx, `${command.title} ${why}.`, "error");
     return;
   }
@@ -164,7 +164,8 @@ function toastPressFailure(octx: OverlayCtx, command: OverlayCommand, error: unk
 }
 
 /**
- * Starts or stops the recorder, with a toast either way.
+ * Starts or stops the recorder, with a toast either way. A start names the phone as its origin
+ * (`by: "phone"`), so the tools page shows who started the log.
  *
  * @param octx - Domain context.
  * @param action - "start" or "stop".
@@ -173,7 +174,7 @@ function toastPressFailure(octx: OverlayCtx, command: OverlayCommand, error: unk
 export async function switchRecording(octx: OverlayCtx, action: "start" | "stop"): Promise<void> {
   try {
     if (action === "start") {
-      octx.recorder.start();
+      octx.recorder.start({ by: "phone" });
       showToast(octx, "Recording started.", "info");
     } else {
       await octx.recorder.stop();

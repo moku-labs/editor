@@ -12,9 +12,12 @@ import { describe, expect, it } from "vitest";
 /** The folder under test. */
 const PROTOCOL = path.join(import.meta.dirname, "../../protocol");
 
-/** The module specifiers of a source text: static and re-export, side-effect, dynamic imports. */
+/**
+ * The module specifiers of a source text: static and re-export, side-effect, dynamic imports. A
+ * `from` inside a word such as the string "run-from" is not an import.
+ */
 const SPECIFIERS: readonly RegExp[] = [
-  /\bfrom\s*["']([^"']+)["']/g,
+  /(?<![\w-])from\s*["']([^"']+)["']/g,
   /\bimport\s*["']([^"']+)["']/g,
   /\bimport\(\s*["']([^"']+)["']/g
 ];
@@ -35,7 +38,11 @@ async function sources(): Promise<{ file: string; text: string }[]> {
 describe("hub/protocol boundary", () => {
   it("imports nothing outside its own folder: no plugin, kernel, node:, engine or registry/protocol", async () => {
     const found = await sources();
-    expect(found.map(source => source.file).toSorted()).toEqual(["device-link.ts", "index.ts"]);
+    expect(found.map(source => source.file).toSorted()).toEqual([
+      "device-link.ts",
+      "index.ts",
+      "tools-link.ts"
+    ]);
 
     for (const { file, text } of found) {
       const specifiers = SPECIFIERS.flatMap(pattern =>
@@ -59,12 +66,22 @@ describe("hub/protocol boundary", () => {
   it("re-exports its types with export type, so a consumer's import stays type-only", async () => {
     const found = await sources();
     const barrel = found.find(source => source.file === "index.ts")?.text ?? "";
-    const valueExports = (/export\s*\{([^}]*)\}/.exec(barrel)?.[1] ?? "")
-      .split(",")
-      .map(name => name.trim());
+    const valueExports = [...barrel.matchAll(/export\s*\{([^}]*)\}/g)].flatMap(match =>
+      (match[1] ?? "").split(",").map(name => name.trim())
+    );
 
     expect(valueExports).toContain("parseAddress");
-    for (const name of ["LinkJson", "EngineInfo", "SessionDevice", "DeviceLink", "PairParams"]) {
+    expect(valueExports).toContain("clientNameOf");
+    for (const name of [
+      "LinkJson",
+      "EngineInfo",
+      "SessionDevice",
+      "DeviceLink",
+      "PairParams",
+      "ClientParams",
+      "RunFrom",
+      "StampedRunParams"
+    ]) {
       expect(valueExports).not.toContain(name);
     }
   });

@@ -5,17 +5,21 @@
  * as a missing field. Runtime-free.
  */
 import type {
+  GcEventDetail,
   MonitorLike,
   OverlayWhat,
   PerfDisplay,
   PerfEventLine,
+  PerfHeaderLine,
   PoolTrimDetail,
+  ProblemEventDetail,
   RateChange,
   RateMode,
   RateReason,
+  ShaderEventDetail,
   ThermalStatus
 } from "./engine";
-import type { PerfFrameEvent, PerfOffReason, PerfRenderStats } from "./values";
+import type { PerfCaps, PerfFrameEvent, PerfOffReason, PerfRenderStats } from "./values";
 
 /** The members a monitor must have as functions for perf to use it (11:1153-1158). */
 const MONITOR_MEMBERS = ["stream", "frames", "mark", "event", "beginAgent", "endAgent"] as const;
@@ -39,6 +43,18 @@ const RATE_REASONS: readonly RateReason[] = [
   "forced",
   "auto"
 ];
+
+/** The severities of a flagged problem (N3). */
+const SEVERITIES: readonly ("info" | "warn")[] = ["info", "warn"];
+
+/** Why `filter-still` flagged a filter (engine U5). */
+const STILL_REASONS: readonly ("budget" | "not-eligible")[] = ["budget", "not-eligible"];
+
+/** The number fields of a flagged problem, each a number or null. */
+const PROBLEM_NUMBERS = ["value", "threshold", "since", "frames"] as const;
+
+/** What the recorder did, in its own `recorder` event lines. */
+const RECORDER_ACTIONS: readonly ("start" | "stop" | "export")[] = ["start", "stop", "export"];
 
 /** The thermal statuses of spec 21. */
 const THERMAL_STATUSES: readonly ThermalStatus[] = [
@@ -340,9 +356,9 @@ export function frameEventOf(line: PerfEventLine): PerfFrameEvent | undefined {
   }
 
   if (name === "pool-trim") {
-    const { reason, freedMb } = detail;
-    if (!isOneOf(reason, TRIM_REASONS) || !isFiniteNumber(freedMb)) return undefined;
-    return { kind: "pool-trim", frame, reason, freedMb };
+    return isPoolTrimDetail(detail)
+      ? { kind: "pool-trim", frame, reason: detail.reason, freedMb: detail.freedMb }
+      : undefined;
   }
 
   if (name === "warm" && isFiniteNumber(detail.draws)) {
@@ -375,4 +391,294 @@ export function isRateChange(value: unknown): value is RateChange {
     (thermal === null || isOneOf(thermal, THERMAL_STATUSES)) &&
     hasNumbers(fieldOf(value, "window"), ["drawn", "missed", "heavy"])
   );
+}
+
+/**
+ * Whether a value is a string or null.
+ *
+ * @param value - Any value.
+ * @returns Whether it is one.
+ * @example
+ * ```ts
+ * isTextOrNull(undefined); // false: a missing field is not null
+ * ```
+ */
+function isTextOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+/**
+ * Whether a value is a finite number or null.
+ *
+ * @param value - Any value.
+ * @returns Whether it is one.
+ * @example
+ * ```ts
+ * isNumberOrNull(Number.NaN); // false
+ * ```
+ */
+function isNumberOrNull(value: unknown): value is number | null {
+  return value === null || isFiniteNumber(value);
+}
+
+/**
+ * Whether a value is the detail of a `pool-trim` event line (spec 25 M1.8): a known reason and a
+ * finite `freedMb`.
+ *
+ * @param value - The detail.
+ * @returns Whether it is a pool trim.
+ * @example
+ * ```ts
+ * isPoolTrimDetail({ reason: "rest", freedMb: 41.5 }); // true
+ * ```
+ */
+export function isPoolTrimDetail(value: unknown): value is PoolTrimDetail {
+  return (
+    isOneOf(fieldOf(value, "reason"), TRIM_REASONS) && isFiniteNumber(fieldOf(value, "freedMb"))
+  );
+}
+
+/**
+ * Whether a value is the detail of a `shader` event line (E4): a string `what` (a newer engine's
+ * word included), a label or null, finite `ms` and `frame`, a boolean `boot`, and the pass it ran
+ * during (`pass`, `owner` numbers or null; `filter`, `view` strings or null).
+ *
+ * @param value - The detail.
+ * @returns Whether it is a shader compile.
+ * @example
+ * ```ts
+ * isShaderDetail({ what: "compile", label: null, ms: 3, frame: 4851, boot: false }); // false: no `during`
+ * ```
+ */
+export function isShaderDetail(value: unknown): value is ShaderEventDetail {
+  const during = fieldOf(value, "during");
+  return (
+    typeof fieldOf(value, "what") === "string" &&
+    isTextOrNull(fieldOf(value, "label")) &&
+    hasNumbers(value, ["ms", "frame"]) &&
+    typeof fieldOf(value, "boot") === "boolean" &&
+    isObject(during) &&
+    isNumberOrNull(fieldOf(during, "pass")) &&
+    isTextOrNull(fieldOf(during, "filter")) &&
+    isNumberOrNull(fieldOf(during, "owner")) &&
+    isTextOrNull(fieldOf(during, "view"))
+  );
+}
+
+/**
+ * Whether a value is the detail of a `problem` event line (N3): a string `rule` (a newer engine's
+ * rule included) with an owner and a view, then either `cleared: true`, or a severity, a filter,
+ * the numbers `value`, `threshold`, `since`, `frames` (each a number or null) and an optional
+ * `filter-still` reason.
+ *
+ * @param value - The detail.
+ * @returns Whether it is a problem.
+ * @example
+ * ```ts
+ * isProblemDetail({ rule: "filter-still", cleared: true, owner: 412, view: "fogLayer" }); // true
+ * ```
+ */
+export function isProblemDetail(value: unknown): value is ProblemEventDetail {
+  if (typeof fieldOf(value, "rule") !== "string") return false;
+  if (!isNumberOrNull(fieldOf(value, "owner")) || !isTextOrNull(fieldOf(value, "view"))) {
+    return false;
+  }
+  if (fieldOf(value, "cleared") === true) return true;
+
+  const reason = fieldOf(value, "reason");
+  return (
+    isOneOf(fieldOf(value, "severity"), SEVERITIES) &&
+    isTextOrNull(fieldOf(value, "filter")) &&
+    PROBLEM_NUMBERS.every(key => isNumberOrNull(fieldOf(value, key))) &&
+    (reason === undefined || isOneOf(reason, STILL_REASONS))
+  );
+}
+
+/**
+ * Whether a value is the detail of a `gc` event line (N6): a finite `freedMb`, the heap after it
+ * (a number or null) and a boolean `hint`.
+ *
+ * @param value - The detail.
+ * @returns Whether it is a GC.
+ * @example
+ * ```ts
+ * isGcDetail({ freedMb: 4.2, heapMb: 41.9, hint: true }); // true
+ * ```
+ */
+export function isGcDetail(value: unknown): value is GcEventDetail {
+  return (
+    isFiniteNumber(fieldOf(value, "freedMb")) &&
+    isNumberOrNull(fieldOf(value, "heapMb")) &&
+    typeof fieldOf(value, "hint") === "boolean"
+  );
+}
+
+/**
+ * Whether a value is a list of strings.
+ *
+ * @param value - Any value.
+ * @returns Whether it is one.
+ * @example
+ * ```ts
+ * isNameList(["passes", 3]); // false
+ * ```
+ */
+function isNameList(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every(name => typeof name === "string");
+}
+
+/**
+ * Whether a value is the detail of a `sections` event line (N1): `on` and `off` lists of section
+ * names. A name the editor does not know (a newer engine's section) is a string here; the reader
+ * keeps the names it knows.
+ *
+ * @param value - The detail.
+ * @returns Whether it has the shape.
+ * @example
+ * ```ts
+ * isSectionsDetail({ on: ["passes"], off: [] }); // true
+ * ```
+ */
+export function isSectionsDetail(
+  value: unknown
+): value is { readonly on: readonly string[]; readonly off: readonly string[] } {
+  return isNameList(fieldOf(value, "on")) && isNameList(fieldOf(value, "off"));
+}
+
+/**
+ * Whether a value is the detail of the recorder's own `recorder` event line: a known action and,
+ * for a start, who started it (`by`, absent from an older recorder).
+ *
+ * @param value - The detail.
+ * @returns Whether it is a recorder action.
+ * @example
+ * ```ts
+ * isRecorderDetail({ action: "start", label: "boss", by: "agent", name: "Claude" }); // true
+ * ```
+ */
+export function isRecorderDetail(value: unknown): value is {
+  readonly action: "start" | "stop" | "export";
+  readonly by?: string | null;
+} {
+  const by = fieldOf(value, "by");
+  return (
+    isOneOf(fieldOf(value, "action"), RECORDER_ACTIONS) && (by === undefined || isTextOrNull(by))
+  );
+}
+
+/**
+ * Whether a pass ring column is a typed array of exactly `capacity` cells (the 0.15.x columns are
+ * pre-sized at attach, the same slot rule as `frame`).
+ *
+ * @param value - The column.
+ * @param capacity - The pass ring's capacity.
+ * @returns Whether perf can read it slot by slot.
+ * @example
+ * ```ts
+ * isRingColumn(new Uint16Array(4096), 4096); // true
+ * ```
+ */
+function isRingColumn(value: unknown, capacity: number): boolean {
+  return ArrayBuffer.isView(value) && fieldOf(value, "length") === capacity;
+}
+
+/**
+ * Whether a pass ring column is a plain array of exactly `capacity` cells (`format`).
+ *
+ * @param value - The column.
+ * @param capacity - The pass ring's capacity.
+ * @returns Whether perf can read it slot by slot.
+ * @example
+ * ```ts
+ * isListColumn([null, "bgra8unorm"], 2); // true
+ * ```
+ */
+function isListColumn(value: unknown, capacity: number): boolean {
+  return Array.isArray(value) && value.length === capacity;
+}
+
+/**
+ * The header's `measured` list, as strings (an engine after the patch lists `problems` and `gc`,
+ * names the installed engine's type does not have yet); empty without a header.
+ *
+ * @param header - The header, or undefined.
+ * @returns The list.
+ * @example
+ * ```ts
+ * measuredOf(undefined); // []
+ * ```
+ */
+function measuredOf(header: PerfHeaderLine | undefined): readonly unknown[] {
+  const measured = fieldOf(header, "measured");
+  return Array.isArray(measured) ? measured : [];
+}
+
+/**
+ * How far the header's heap number can be trusted (D6): none without `heap` in `measured` (iOS,
+ * WebKit), untrusted in a WebView (frozen on Android), trusted otherwise. The frozen-counter test
+ * runs per sample (`memoryWhy`).
+ *
+ * @param header - The header, or undefined.
+ * @param measured - Its `measured` list.
+ * @returns The trust.
+ * @example
+ * ```ts
+ * heapOf(header, ["gpu", "heap"]); // "untrusted" when header.device.webview is "141"
+ * ```
+ */
+function heapOf(
+  header: PerfHeaderLine | undefined,
+  measured: readonly unknown[]
+): PerfCaps["heap"] {
+  if (!measured.includes("heap")) return "none";
+  return typeof fieldOf(fieldOf(header, "device"), "webview") === "string"
+    ? "untrusted"
+    : "trusted";
+}
+
+/**
+ * What this page's engine and build measure (spec 03 Delta 2026-10-16 D2), from the ring, the header
+ * and the monitor, read structurally once per header (each column tested once with
+ * `ArrayBuffer.isView` / `Array.isArray` and its length, so the read loop branches on cached
+ * booleans only). `shaderEvents` is true on an engine with the pass ring's 0.15.x columns or
+ * `systemNames` (the release that sends `shader` lines); a seen `shader`, `problem`, `gc` or
+ * `passes` line turns its capability on later (perf's reader). Never throws; allocates its answer.
+ *
+ * @param ring - `monitor.frames()` (any value).
+ * @param header - The newest header line, or undefined before one.
+ * @param monitor - `renderer.monitor` (any value).
+ * @returns The capabilities.
+ * @example
+ * ```ts
+ * capsOf({ passes: { capacity: 4096 } }, undefined, undefined).passDraws; // false: an engine before 0.15.x
+ * ```
+ */
+export function capsOf(
+  ring: unknown,
+  header: PerfHeaderLine | undefined,
+  monitor: unknown
+): PerfCaps {
+  const passes = fieldOf(ring, "passes");
+  const capacity = fieldOf(passes, "capacity");
+  const slots = isFiniteNumber(capacity) ? capacity : -1;
+  const passOwners =
+    isRingColumn(fieldOf(passes, "owner"), slots) && isRingColumn(fieldOf(passes, "kind2"), slots);
+  const systemNames = Array.isArray(fieldOf(ring, "systemNames"));
+  const measured = measuredOf(header);
+  return {
+    passOwners,
+    passDraws: isRingColumn(fieldOf(passes, "drawsAt"), slots),
+    passFormat:
+      isListColumn(fieldOf(passes, "format"), slots) &&
+      isRingColumn(fieldOf(passes, "resolution"), slots),
+    systemNames,
+    shaderEvents: passOwners || systemNames,
+    problems: measured.includes("problems"),
+    gc: measured.includes("gc"),
+    sections: typeof fieldOf(monitor, "sections") === "function",
+    detail: typeof fieldOf(monitor, "detail") === "function",
+    passesLine: false,
+    gpuTimer: typeof fieldOf(fieldOf(header, "gpu"), "timer") === "string",
+    heap: heapOf(header, measured)
+  };
 }

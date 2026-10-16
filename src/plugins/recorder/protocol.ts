@@ -122,4 +122,7 @@ export type RecorderStatus = RecorderStatusEvent & {
  *   startedBy: { by: "editor", name: null }, marks: [{ atMs: 150_000, label: "boss intro", auto: false }] };
  * ```
  */
-export type RecorderSource = RecorderStatus & { readonly marks: readonly LogMark[] };
+export type RecorderSource = RecorderStatus & {
+  /** A plain array (not `readonly`), so the value is a registry `Json` as it travels the wire. */
+  readonly marks: LogMark[];
+};

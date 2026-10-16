@@ -218,7 +218,10 @@ export type RecordTabView = {
   readonly legend: LegendView;
   readonly clock: string;
   readonly dim: boolean;
+  /** The two info lines: the numbers while recording, else the idle words. */
   readonly stats: readonly { readonly value: string; readonly text: string }[];
+  /** Who started the log ("started here", "started by an agent (Claude)"); undefined while idle. */
+  readonly origin: string | undefined;
   readonly key: {
     readonly action: "start" | "stop";
     readonly label: "Start" | "Stop";

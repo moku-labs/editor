@@ -17,7 +17,14 @@ own listeners on `127.0.0.1:<devicePort>` (a phone reaches it through `adb rever
 `deviceLan`, on the computer's LAN address. A game page in a native WebView connects there as
 `kind=agent role=device`, pairs with a 4-digit code, and then runs as an ordinary agent session
 that every tools page sees, plus `perf.lines`: batches of the device's performance log, handed on
-as the per-plugin event `hub:device`. See [Device mode](#device-mode).
+as the per-plugin event `hub:device`. While device mode runs, `listenLan()` / `stopLan()` turn the
+LAN listener on and off without dropping the phones by wire, and every paired phone is pinged once
+a second for its link latency. Other server plugins (`connect`) register editor-channel methods
+with `addEditorMethods`; only tools connections reach them. A `run` a tools connection sends is
+stamped with `from` (`"page"` or `"mcp"`) and, for an agent, the MCP client's name, when the
+target agent's `hello` named the `run-from` capability. See
+[Device mode](#device-mode), [Editor methods of other plugins](#editor-methods-of-other-plugins)
+and [Run stamping](#run-stamping).
 
 ## Configuration
 
@@ -65,12 +72,15 @@ createApp({ pluginConfigs: { hub: { allow: ["http://192.168.1.4:3000"] } } });
 | `websocket` | `HubWebSocketHandler` | The one websocket handler. 32 MiB frames, 60 s idle, no deflate. |
 | `addRoutes` | `(routes: EditorRoutes) => void` | Registers editor routes under the path. `serve` and the adb listener of `listenDevices` merge them; both freeze them. |
 | `guard` | `(req: Request, server: HubServer, mode: GuardMode) => Response \| undefined` | The shared Host / Origin / Sec-Fetch-Site check. `undefined` means allowed, else a 403. |
-| `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`, `project` a `ProjectState`, `engine` an `EngineInfo`. A tools page that connects later gets it right after `sessions {list}`. |
+| `publish` | `<M extends PublishMethod>(method: M, params: PublishParams[M]) => void` | Sends server state to every tools page as `editor.<method>` and keeps the last value per method. `hotReload` takes a `HotReload`, `selection` a `SelectionInfo` or `null`, `project` a `ProjectState`, `engine` an `EngineInfo`, `devices` connect's `DeviceDirectory`, `deviceTelemetry` connect's `DeviceTelemetry`. A tools page that connects later gets it right after `sessions {list}`. The held `deviceTelemetry` is dropped when device mode stops. |
 | `closeAll` | `(code: number, reason: string) => Promise<void>` | Closes every agent, tools and device socket with one code and reason, and resolves when Bun reported the closes (at most 500 ms). The hub keeps running and keeps its token; a phone reconnects with its device token. |
 | `path` | `() => string` | `config.path`. |
 | `listenDevices` | `(options: DeviceListenOptions) => Promise<DeviceListen>` | Turns device mode on: the adb listener and, with `deviceLan`, the LAN listener. Emits `hub:device { kind: "listening" }`. |
 | `stopDevices` | `() => Promise<void>` | Turns device mode off: `closed` per connected device, then `stopped`. Does nothing while off. |
-| `devices` | `() => LinkedDevice[]` | The paired devices of this device-mode run, by `pairedAt`, frozen copies without tokens. `[]` while off. |
+| `devices` | `() => LinkedDevice[]` | The paired devices of this device-mode run, by `pairedAt`, frozen copies without tokens, each with its `latencyMs`. `[]` while off. |
+| `listenLan` | `() => Promise<DeviceListen>` | Adds the LAN listener while device mode runs; the phones by wire stay. Idempotent. Emits `hub:device { kind: "listening" }`. |
+| `stopLan` | `() => Promise<void>` | Removes the LAN listener: LAN phones close 1001 `lan off`, phones by wire stay. Emits `listening` with `lan: null`. Does nothing without one. |
+| `addEditorMethods` | `(methods: Readonly<Record<string, EditorMethod>>) => void` | Registers `<plugin>.<verb>` editor-channel methods of another server plugin, reachable from tools connections only. Before the server starts. |
 
 The hub has no `engine()` member: the fingerprint is `files.engine()`; the hub publishes it as
 `editor.engine`.
@@ -197,6 +207,8 @@ editor.hub.publish("selection", null);
 | `selection` | `SelectionInfo \| null` | the hub, from the editor page's `selection` notification; `null` when the last page closes |
 | `project` | `ProjectState` | the hub, from the files event `files:project`: the project index on (revision, key maps, broken files, last change) or off with its reason |
 | `engine` | `EngineInfo` `{ id, version, dist, patch? }` | the hub, from `files.engine()` on start, and again after a phone pairs or reconnects when `files.refreshEngine()` answers another id |
+| `devices` | `DeviceDirectory` (`connect/protocol`) | connect: the phones by wire, asking to link and linked |
+| `deviceTelemetry` | `DeviceTelemetry` (`connect/protocol`) | connect: the wired telemetry of a watched phone, ~1 Hz. Dropped from `state.published` when device mode stops, so it is never replayed from an older run. |
 
 The value is stored through `toWireValue` in `state.published`, also before start. A
 `SelectionInfo` with readonly `items` is not `Json`; the conversion makes it plain. `null` goes
@@ -233,7 +245,7 @@ Agent connection:
 | Incoming | Result |
 |---|---|
 | Anything before `hello` | close 1008 `hello first` |
-| `hello {manifest}`, manifest valid (`restored` absent or `{ bookmark: string, frame: number }`) | session opens, id `s-` + 4 hex. The agent gets `session {id, game, open: true, engine}` (`engine`: the computer's engine id, once published). Tools get `session {id, game, open}` and `sessions {list}`. `hub:session` is emitted. |
+| `hello {manifest, caps?}`, manifest valid (`restored` absent or `{ bookmark: string, frame: number }`) | session opens with the known capabilities of `caps` (`capsOf`: `["run-from"]` from a current bridge, `[]` from an older one; unknown names are ignored), id `s-` + 4 hex. The agent gets `session {id, game, open: true, engine}` (`engine`: the computer's engine id, once published). Tools get `session {id, game, open}` and `sessions {list}`. `hub:session` is emitted. |
 | `hello` with a bad manifest | close 1008 `bad manifest` |
 | `hello` a second time | close 1008 `hello twice` |
 | `heartbeat {frame, paused, at, heap?}` | stored, a silent session comes back, forwarded to every tools connection. When `paused` flips against the last beat, or a silent session comes back, tools first get `sessions {list}` again. `heap {usedMb, limitMb}` is kept when both are finite numbers. A malformed `heap` is dropped and the beat still goes through. |
@@ -251,7 +263,7 @@ Tools connection requests:
 |---|---|---|---|
 | `game` | `manifest` | `{}` | `Manifest` of the chosen session |
 | `game` | `read` | `{ id, input? }` | forwarded, `Json` |
-| `game` | `run` | `{ id, input? }` | forwarded, `RunResult` |
+| `game` | `run` | `{ id, input? }` (a `from` or `client` of the tools client is taken and dropped) | forwarded as `{ id, input? }`, with the hub's `from` and `client` for an agent that named `run-from` ([Run stamping](#run-stamping)), `RunResult` |
 | `game` | `watch` | `{ sub, id, input? }` | `null`, then `value {sub, value}` notifications |
 | `game` | `unwatch` | `{ sub }` | `null` (an unknown sub is fine) |
 | `files` | `list` | `{ dir }` | `FileEntry[]` |
@@ -265,6 +277,7 @@ Tools connection requests:
 | `editor` | `device` | `DeviceParams` `{ preset?, orientation?, folded? }`. `{}` reads the device. | `DeviceInfo`, relayed to the editor page |
 | `editor` | `show` | `ShowParams` `{ workspace? }`. `{}` reads the active workspace. | `ShowInfo`, relayed to the editor page |
 | `editor` | `node` | `NodeParams` `{ id }`, 1 to 256 chars | `NodeInfo`, relayed to the editor page |
+| `editor` | a registered `<plugin>.<verb>` | the method's own | the method's answer ([Editor methods of other plugins](#editor-methods-of-other-plugins)) |
 | other | any | | -32601 |
 
 Before a game call is forwarded, the hub checks the session choice, the id in the manifest and
@@ -293,6 +306,8 @@ Tools connection notifications and responses:
 | editor page | `selection` without params | nothing is selected: `null` is published. |
 | editor page | `selection` with a bad value | one strike, nothing published |
 | editor page | response | settles a call relayed to this page; else `hub:late-response` |
+| editor page | `client` | ignored, `hub:tools-ignored` (its runs are always `from: "page"`) |
+| plain tools | `client { name }` | the MCP client's name, cleaned by `clientNameOf`; last value wins, an empty name clears it. Logged `hub:tools-client` at debug. |
 | plain tools | `selection`, any response | ignored, `hub:tools-ignored` |
 | any | other notification | ignored, `hub:tools-ignored` |
 
@@ -318,7 +333,7 @@ Errors the hub builds (message prefix `[moku-editor]`):
 | -32601 | | no | unknown channel or method |
 | -32602 | `invalid_input` | no | bad params or input; `sub` not a safe integer ≥ 0; `select`, `device`, `show` or `node` params that do not fit `SelectParams`, `DeviceParams`, `ShowParams` or `NodeParams` |
 | -32600 | | no | duplicate `sub` on one connection; more than 256 pending calls |
-| -32007 | `unauthorized` | no | a request from an agent |
+| -32007 | `unauthorized` | no | a request from an agent (a registered editor method included) |
 
 Files errors keep their own code and data. Any other throw becomes -32000 with the message
 only, never a stack.
@@ -330,6 +345,48 @@ Deadline of a forwarded call: `callTimeoutMs`. A `run` of `editor.series` waits 
 `input.durationMs` on top, and a `run` of `editor.sheet` its `input.frames × input.everyMs`, up to
 60 s more. The same rule runs in bridge and link. A relayed `select` with a card waits
 `3 × callTimeoutMs` on top, under the same 60 s cap.
+
+### Run stamping
+
+A `run` a tools connection sends reaches the agent with the hub's own origin (spec 11 § 5.1,
+delta-data cross-unit row "hub") when the agent can read it: its `hello` names the capability
+`run-from` (`RUN_FROM_CAP`, `hub/protocol`; the hub keeps the known `caps` on the session). The
+game's bridge turns `from` into the registry's `via` and passes `client` to the command (spec 07
+B1), so the recorder can say "started by agent (Claude Code)".
+
+| Target agent | Sender | Forwarded params |
+|---|---|---|
+| hello names `run-from` | editor page (`role=page`) | `{ id, input?, from: "page" }` |
+| hello names `run-from` | plain tools (the MCP bridge) before a `client` notification | `{ id, input?, from: "mcp" }` |
+| hello names `run-from` | plain tools after `client { name: "Claude Code" }` | `{ id, input?, from: "mcp", client: "Claude Code" }` |
+| no `run-from` (an older bridge, an installed debug build) | anyone | `{ id, input? }`, as before: an agent that checks its run params strictly would refuse `from` with -32602 |
+
+A `from` or `client` the tools client wrote into the run params is never forwarded: only the
+checked `id` and `input` are read (`runParamsOf`). A `read` is forwarded as sent. `clientNameOf`
+(`hub/protocol`) drops control and bidi characters, trims, and cuts at 64 characters; an empty
+result is no name.
+
+### Editor methods of other plugins
+
+`addEditorMethods(methods)` registers editor-channel request handlers another server plugin owns,
+in its `onInit` (spec 11 § 5.1 H2):
+
+```ts
+// connect registers its methods in onInit, before the server starts.
+ctx.require(hubPlugin).addEditorMethods({ "connect.scan": async () => ({ wire: [] }) });
+// a tools page's request editor.connect.scan is answered { wire: [] }
+```
+
+| Rule | What |
+|---|---|
+| Who reaches it | tools connections only (hub token, loopback Host and Origin). An agent's or a paired phone's request is -32007 before routing; the LAN listener has no tools socket. |
+| Order | `selection` → the relayed `select`, `device`, `show`, `node` → a registered method → -32601 |
+| Handler | `EditorMethod` `(params: Json \| undefined, caller: { conn }) => Promise<Json>`; counts as a pending call (256 per connection) |
+| Errors | a throw or a rejection is answered through `toWireError`; the socket stays open |
+| Closed caller | the answer is dropped |
+| Registration | names are checked first, so a refused batch registers nothing. Two-line `Error` after `serve()` / `listenDevices()` (`hub.addEditorMethods() ran after hub.serve() or hub.listenDevices().`), for a name registered before, a name of the hub (`selection`, `select`, `device`, `show`, `node`) and a name that is not `<plugin>.<verb>`; a `TypeError` for a handler that is not a function. |
+
+### Fan-out and backpressure
 
 Fan-out: one agent-side watch per `(session, source, input)`. The key sorts object keys, so
 `{a, b}` and `{b, a}` share a watch. A late subscriber gets `null` and then the last value. The
@@ -382,18 +439,44 @@ two-line `[moku-editor] …`):
 | `confirm` not a function | `TypeError` |
 
 `stopDevices()` emits `hub:device { kind: "closed", device, reason: "stopped" }` for each paired
-device with a connection, then the state-only `teardownDevices(state)` runs: pending pairings are
-aborted, the device records (and their tokens) are forgotten, device connections close with 1001
-`device mode off`, both listeners stop (at most 500 ms). Then `hub:devices-off` is logged and
+device with a connection, then the state-only `teardownDevices(state)` runs: the device ping
+stops, pending pairings are aborted, the device records (and their tokens) are forgotten, device
+connections close with 1001 `device mode off`, the held `deviceTelemetry` publish is dropped (a
+tools page never gets one of an older run), both listeners stop (at most 500 ms). Then `hub:devices-off` is logged and
 `hub:device { kind: "stopped" }` emitted. A call while device mode is off does nothing. `onStop`
 runs `teardownDevices` only: no emit, no log line (the teardown context has neither).
 
-`devices()` answers `LinkedDevice[]`: `SessionDevice` plus `pairedAt` and `online`.
+`devices()` answers `LinkedDevice[]`: `SessionDevice` plus `pairedAt`, `online` and `latencyMs`.
 
 ```ts
 // After a Galaxy A26 paired over adb reverse.
-editor.hub.devices(); // [{ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true }]
+editor.hub.devices(); // [{ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true, latencyMs: 9 }]
 ```
+
+### The LAN listener on and off
+
+`listenLan()` adds the LAN listener while device mode runs (`connect`'s "On the network"):
+
+| Case | Result |
+|---|---|
+| Device mode off | `Error`: `hub.listenLan() needs device mode.` / `Call hub.listenDevices() first.` |
+| LAN listener on (also from `deviceLan`) | nothing starts; the current `DeviceListen` |
+| Otherwise | the address as for `deviceLan` (`lanAddress`, else the picked card; none: the no-LAN `Error`), the LAN listener on the adb listener's real port with `{path}/ws` only, `lan` set, `hub:devices-lan { lan }` logged, `hub:device { kind: "listening", listen }` emitted. A port in use is the port `Error`; device mode stays as it was. |
+
+`stopLan()` closes every LAN device connection 1001 `lan off` (a paired one is announced `closed`
+with reason `stopped`, `online: false`, and stays paired: it may come back with its token; a
+pairing one loses its question), sets `lan: null`, logs `hub:devices-lan { lan: null }`, emits
+`listening` and stops the LAN listener (at most 500 ms). Phones by wire keep their sessions.
+Without a LAN listener it does nothing. `teardownDevices` stops a LAN listener `listenLan` started.
+
+### Link latency
+
+While device mode runs, each paired device connection is pinged once a second (`ws.ping()` with
+the send time as the payload). The pong that echoes the payload of the connection's last ping sets
+the record's `latencyMs` (the last value; `null` before the first pong), reported in
+`LinkedDevice.latencyMs`. A ping no pong answered is replaced by the next one; Bun's own keep-alive
+pongs carry another payload and are ignored. A WebView answers pings at the protocol level, so the
+phone needs nothing. The interval is unref'd and cleared by `teardownDevices`.
 
 ### The device upgrade
 
@@ -497,9 +580,10 @@ opens. The overlay compares it with the phone's `__MOKU_GAME_ENGINE__`.
 
 ### `hub/protocol`
 
-The device-link wire module, runtime-free: `src/plugins/hub/protocol/` imports nothing (no
-plugin, no kernel, no `node:` module, no Bun global, not `registry/protocol`; it declares its own
-`LinkJson`). The agent's bridge and overlay import it as `../hub/protocol`, never the hub plugin.
+The device-link and tools-link wire module, runtime-free: `src/plugins/hub/protocol/` imports
+nothing outside its folder (no plugin, no kernel, no `node:` module, no Bun global, not
+`registry/protocol`; it declares its own `LinkJson`). The agent's bridge and overlay and the MCP
+bridge import it as `../hub/protocol`, never the hub plugin.
 
 | Export | Kind | What |
 |---|---|---|
@@ -515,6 +599,12 @@ plugin, no kernel, no `node:` module, no Bun global, not `registry/protocol`; it
 | `parsePerfLinesParams(params)` | function | the checked `perf.lines` params, or `undefined` |
 | `parseAddress(text)` | function | `{ host, port, text }` of `host:port` or `[ipv6]:port` (trimmed, port 1–65535), or `undefined` |
 | `isLoopback(host)` | function | `true` for 127.0.0.0/8, `localhost`, `::1` |
+| `RunFrom` | type | `"page" \| "mcp"`: who sent a run through the hub |
+| `RUN_FROM_CAP`, `AgentCap`, `HelloCaps` | const, type | `"run-from"`, the capability names, and `{ caps? }`: what an agent adds to its `hello` when its bridge reads a stamped run |
+| `capsOf(raw)` | function | the known capabilities of a hello's `caps`, each once (`["sections", "run-from"]` → `["run-from"]`; no list → `[]`) |
+| `CLIENT_METHOD`, `ClientParams` | const, type | `"client"` and `{ name }`: the tools→hub notification that names the MCP client |
+| `StampedRunParams` | type | `{ id, input?, from, client? }`: a run as the agent gets it |
+| `clientNameOf(raw)` | function | `" Claude\nCode "` → `"ClaudeCode"`: control and bidi characters dropped, trimmed, at most 64 characters (`MAX_CLIENT_NAME`); empty or no string → `undefined` |
 
 ## Events
 
@@ -523,10 +613,10 @@ plugin, no kernel, no `node:` module, no Bun global, not `registry/protocol`; it
 | `hub:session` | emitted (global, `ServerEvents`) | `HubSession` `{ id, game, open, reason? }`, `reason` is `"bye"` or `"game_reloaded"` | a valid `hello` (`open: true`) and an agent close (`open: false`) |
 
 | `files:project` | hooked (global, `ServerEvents`) | `ProjectState` | published as `editor.project` (kept, replayed to each tools page that opens) |
-| `hub:device` | emitted (per-plugin, the hub's own; hooked by plugins that list `hubPlugin` in `depends`, the collector) | `HubDeviceEvent` | `listening` (`listenDevices`), `connected` (a pairing or a token reconnect), `lines` (a `perf.lines` batch with new items or a gap), `closed` (`bye`, `lost`, `replaced`, `stopped`), `stopped` (`stopDevices`) |
+| `hub:device` | emitted (per-plugin, the hub's own; hooked by plugins that list `hubPlugin` in `depends`, the collector) | `HubDeviceEvent` | `listening` (`listenDevices`, `listenLan`, `stopLan`: the new `listen`), `connected` (a pairing or a token reconnect), `lines` (a `perf.lines` batch with new items or a gap), `closed` (`bye`, `lost`, `replaced`, `stopped`), `stopped` (`stopDevices`) |
 
 ```ts
-const event: HubDeviceEvent = { kind: "connected", device: { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true } };
+const event: HubDeviceEvent = { kind: "connected", device: { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true, latencyMs: null } };
 ```
 
 `hub:session` and `hub:device` are not emitted from `onStop`. A throwing emit is logged as
@@ -544,6 +634,7 @@ Log events (`ctx.log`):
 | `hub:emit-failed` | error | `id`, `error`; for `hub:device`: `event`, `kind`, `error` |
 | `hub:devices-on` | info | `port`, `lan` |
 | `hub:devices-off` | info | |
+| `hub:devices-lan` | info | `lan` (the LAN listener's address after `listenLan`, `null` after `stopLan`) |
 | `hub:paired` | info | `id`, `model`, `link` (never the token) |
 | `hub:pair-refused` | info | `address`, `model` |
 | `hub:pair-failed` | warn | `error` |
@@ -552,7 +643,8 @@ Log events (`ctx.log`):
 | `hub:open`, `hub:close` | debug | `kind`, `conn` |
 | `hub:late-response` | debug | `id`. Also a page answer to a call that was not relayed to it. |
 | `hub:unknown-notification` | debug | `channel`, `method` |
-| `hub:tools-ignored` | debug | `method`. Also a `selection` or a response from a plain tools connection. |
+| `hub:tools-ignored` | debug | `method`. Also a `selection` or a response from a plain tools connection, and a `client` from the editor page. |
+| `hub:tools-client` | debug | `conn`, `client` (the cleaned MCP client's name, or undefined) |
 | `hub:published` | debug | `method`; for `project` also `bytes` (the frame size) and `conns` (the tools connections it went to) |
 
 ## Dependencies
@@ -638,12 +730,13 @@ Lifecycle:
 | `serve.ts` | `serve()`, `addRoutes` |
 | `security/` | `guard.ts` (Host / Origin), `token.ts`, `upgrade.ts` (the normal `{path}/ws`) |
 | `sockets/` | `handler.ts` (the one websocket handler), `agent.ts`, `tools.ts`, `send.ts`, `close.ts` |
-| `routing/` | sessions, calls, subscriptions, files channel, editor page relay, publish |
-| `device/listen.ts` | `listenDevices`, `stopDevices`, `teardownDevices` |
+| `routing/` | sessions (with the hello's `caps`), calls (with `runParamsOf`), subscriptions, files channel, editor page relay, publish, `editor-methods.ts` (`addEditorMethods`, the call of a registered method) |
+| `device/listen.ts` | `listenDevices`, `stopDevices`, `teardownDevices`, `listenLan`, `stopLan` |
+| `device/ping.ts` | the once-a-second device ping and `latencyMs` |
 | `device/lan.ts` | `lanAddressOf`: the LAN address to bind |
 | `device/upgrade.ts` | `handleDeviceUpgrade`: the device listeners' `{path}/ws` |
 | `device/pairing.ts` | pairing: the queue, the question, confirm and refusal |
 | `device/connections.ts` | device sockets' open (4401, token reconnect) and close |
 | `device/lines.ts` | `perf.lines`: `acceptLines`, `isLineShape`, the ack |
 | `device/records.ts` | device ids, `LinkedDevice` copies, the `hub:device` emit |
-| `protocol/` | the runtime-free device-link module (`device-link.ts`, `index.ts`) |
+| `protocol/` | the runtime-free wire module (`device-link.ts`, `tools-link.ts`, `index.ts`) |

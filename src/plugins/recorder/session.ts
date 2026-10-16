@@ -1,8 +1,8 @@
-/* eslint-disable unicorn/no-null -- null is "no label" of a log */
+/* eslint-disable unicorn/no-null -- null is "no label" of a log and "no name" of its starter */
 /**
- * @file recorder plugin — the life of a log: its file name, the start (the context lines first,
- * then the `recorder` start event), the finish shared by `stop` and onStop, `remove`, and the
- * keepFiles bound.
+ * @file recorder plugin — the life of a log: its file name, who started it, the start (the context
+ * lines first, then the `recorder` start event), the finish shared by `stop` and onStop, `remove`,
+ * and the keepFiles bound.
  */
 
 import type { MonitorLike, PerfEventLine, PerfHeaderLine, PerfLogLine } from "../perf/protocol";
@@ -11,11 +11,38 @@ import { drain, MEGABYTE, moveToMemory, persistAll, utf8Length, warnFailure } fr
 import { clearQueue, enqueue, takeQueue } from "./listener";
 import { dropLog, emitStatus, findFile, infoOf } from "./state";
 import { messageOf } from "./store";
-import type { LogFileInfo, RecorderCtx, RecorderState, Session } from "./types";
+import type {
+  LogFileInfo,
+  RecorderCtx,
+  RecorderState,
+  RecordOrigin,
+  RecordStarter,
+  Session
+} from "./types";
 
 /** The message of a start without a monitor. */
 const NO_MONITOR =
   "[moku-editor] recorder.start: this game has no performance monitor.\n  Run a dev or debug build of @moku-labs/game with the monitor (block 2b).";
+
+/** The longest agent name a log keeps (the hub cuts to the same length). */
+export const NAME_LENGTH = 64;
+
+/**
+ * Who started a log: the starter, and for an agent only its MCP client's name, trimmed and cut to
+ * NAME_LENGTH characters (an empty name is none).
+ *
+ * @param by - The starter; "code" (the game's own code) when not given.
+ * @param name - The agent's name, as the run carried it.
+ * @returns The origin.
+ * @example
+ * ```ts
+ * originOf("agent", " Claude "); // { by: "agent", name: "Claude" }
+ * ```
+ */
+export function originOf(by: RecordStarter = "code", name?: string | null): RecordOrigin {
+  const trimmed = by === "agent" ? (name?.trim() ?? "") : "";
+  return { by, name: trimmed === "" ? null : trimmed.slice(0, NAME_LENGTH) };
+}
 
 /**
  * What finishing a log did: the finished log (the last continuation when the stop went over the
@@ -126,16 +153,37 @@ function isDisplayAfterHeader(
 }
 
 /**
- * Queues the context lines of a log start: the newest header, the startup, and the newest display
- * when it came after the header.
+ * Queues the context lines of a log start: the newest header, the startup, the newest display
+ * when it came after the header, then the newest `rate`, `sections` and `debug` events (a log
+ * started mid-run says the rate in force, what is measured and whether the overdraw heat map is
+ * on), each only when there is one.
  *
  * @param state - The recorder's state.
  */
 function queueContext(state: RecorderState): void {
-  const { header, startup, display } = state;
+  const { header, startup, display, rate, sections, debug } = state;
   if (header !== undefined) enqueue(state, header);
   if (startup !== undefined) enqueue(state, startup);
   if (isDisplayAfterHeader(display, header)) enqueue(state, display);
+  for (const line of [rate, sections, debug]) {
+    if (line !== undefined) enqueue(state, line);
+  }
+}
+
+/**
+ * Writes the `recorder` start event of a log through the engine: its label and who started it.
+ *
+ * @param monitor - The engine monitor.
+ * @param session - The new log.
+ * @param origin - Who started it.
+ */
+function writeStartEvent(monitor: MonitorLike, session: Session, origin: RecordOrigin): void {
+  monitor.event("recorder", {
+    action: "start",
+    label: session.label,
+    by: origin.by,
+    name: origin.name
+  });
 }
 
 /**
@@ -209,14 +257,16 @@ function createSession(
 }
 
 /**
- * Makes a session the current log: its phase (exporting while a share runs), no marks, no failures,
- * no pending autoStart, an empty queue.
+ * Makes a session the current log: its origin, its phase (exporting while a share runs), no marks,
+ * no failures, no pending autoStart, an empty queue.
  *
  * @param state - The recorder's state.
  * @param session - The new log.
+ * @param origin - Who started it.
  */
-function resetForNewLog(state: RecorderState, session: Session): void {
+function resetForNewLog(state: RecorderState, session: Session, origin: RecordOrigin): void {
   state.session = session;
+  state.startedBy = origin;
   state.phase = state.exports > 0 ? "exporting" : "recording";
   state.marks = [];
   state.failures = 0;
@@ -225,16 +275,21 @@ function resetForNewLog(state: RecorderState, session: Session): void {
 }
 
 /**
- * Starts a log (`start`, `editor.record`, autoStart): the session, the context lines and the
- * `recorder` start event in the queue, the log in the list, keepFiles, the status. A running log
- * is answered as it is.
+ * Starts a log (`start`, `editor.record`, autoStart, a rotation): the session and who started it,
+ * the context lines and the `recorder` start event in the queue, the log in the list, keepFiles,
+ * the status. A running log is answered as it is, its origin unchanged.
  *
  * @param ctx - The recorder's context.
  * @param label - A name for the run; trimmed, empty is none.
+ * @param origin - Who starts it; the game's own code when not given.
  * @returns The new (or running) log.
  * @throws {Error} When perf found no monitor.
  */
-export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
+export function startRecording(
+  ctx: RecorderCtx,
+  label?: string,
+  origin: RecordOrigin = originOf()
+): LogFileInfo {
   const { state } = ctx;
   // Guard: a running log is answered as it is; without a monitor nothing can be recorded.
   if (state.session !== undefined) return infoOf(state.session);
@@ -245,12 +300,13 @@ export function startRecording(ctx: RecorderCtx, label?: string): LogFileInfo {
   const taken = takenNames(state);
   const session = createSession(state, label, Date.now(), taken, ctx.config.maxLogMb * MEGABYTE);
 
-  // Reset: the new log is the current one, with an empty queue and no marks.
-  resetForNewLog(state, session);
+  // Reset: the new log is the current one, with its origin, an empty queue and no marks.
+  resetForNewLog(state, session, origin);
 
-  // Queue context: the header, startup and newest display first, then the start event.
+  // Queue context: the header, startup, newest display, rate, sections and debug first, then the
+  // start event.
   queueContext(state);
-  monitor.event("recorder", { action: "start", label: session.label });
+  writeStartEvent(monitor, session, origin);
 
   // Announce: the log in the list (keepFiles applied), the status event, the log line.
   state.files.push(infoOf(session));
@@ -308,8 +364,8 @@ function isStopEvent(line: PerfLogLine | undefined): line is PerfEventLine {
 }
 
 /**
- * Opens the continuation of a log a stop closed at its cap: the next name, the same label and cap,
- * the context lines and the start event; listed as current until it is written.
+ * Opens the continuation of a log a stop closed at its cap: the next name, the same label, cap and
+ * origin, the context lines and the start event; listed as current until it is written.
  *
  * @param state - The recorder's state.
  * @param part - The log closed at its cap.
@@ -319,9 +375,10 @@ function isStopEvent(line: PerfLogLine | undefined): line is PerfEventLine {
 function openContinuation(state: RecorderState, part: Session, monitor: MonitorLike): Session {
   const taken = takenNames(state);
   const next = createSession(state, part.label ?? undefined, Date.now(), taken, part.capBytes);
-  resetForNewLog(state, next);
+  const origin = state.startedBy ?? originOf();
+  resetForNewLog(state, next, origin);
   queueContext(state);
-  monitor.event("recorder", { action: "start", label: next.label });
+  writeStartEvent(monitor, next, origin);
   state.files.push(infoOf(next));
   return next;
 }
@@ -451,9 +508,10 @@ export async function finishLog(state: RecorderState): Promise<Finished | undefi
     monitor.endAgent();
   }
 
-  // Detach: the recorder is idle (or exporting); each closed log stays current in the list (keepMb
-  // and keepFiles leave it alone) until its text is in the store.
+  // Detach: the recorder is idle (or exporting) and nobody's log runs; each closed log stays
+  // current in the list (keepMb and keepFiles leave it alone) until its text is in the store.
   state.session = undefined;
+  state.startedBy = undefined;
   state.phase = state.exports > 0 ? "exporting" : "idle";
   for (const part of parts) replaceFile(state, infoOf(part));
 

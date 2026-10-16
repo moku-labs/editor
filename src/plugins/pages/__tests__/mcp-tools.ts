@@ -61,6 +61,7 @@ export async function toolSetup(
   const client = await connectHub(hub.discovery(root));
   const status: EditorStatus = { running: true, owned: false, bin: client.bin };
   const editor = {
+    identify: (name: string) => client.identify(name),
     start: () => Promise.resolve(),
     hub: () => Promise.resolve(client),
     connected: () => client,

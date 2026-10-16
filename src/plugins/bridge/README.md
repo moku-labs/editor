@@ -22,9 +22,12 @@ What it does:
    with `token` and `kind=agent` on the query. In a Bun process (told by the `Bun` global, not by
    `document`) it sends the hello origin as the `Origin` header, on the fetch and through Bun's
    `WebSocket` `headers` option. A browser sets `Origin` itself.
-3. **Hello first.** The first message is `hello { manifest }`, then a `heartbeat`.
+3. **Hello first.** The first message is `hello { manifest, caps: ["run-from"] }`, then a
+   `heartbeat`. `caps` asks the hub to stamp who sent each `run` (an older hub ignores it).
 4. **Requests.** It serves the hub's `manifest`, `read`, `watch`, `unwatch` and `run` through the
-   in-process `channel`. Every request gets exactly one response.
+   in-process `channel`. Every request gets exactly one response. A `run` runs with the `via` of
+   the hub's `from` stamp and, for an agent, its MCP client's name (see
+   [Who ran a command](#who-ran-a-command)).
 5. **Values.** A `watch` of an `edge` or `commit` source follows `channel.watch`. A `frame` source is
    re-read once per heartbeat. After every `run`, every watched source is re-read. A value is sent
    only when its JSON text changed. An `edge` or `commit` value that a run changed opens its
@@ -334,7 +337,7 @@ The bridge hooks no events.
 | Plugin | Used |
 |---|---|
 | `registry` | `manifest()` for `hello` and the `manifest` request. `source(id)` for the `changes` kind of a watched source. `command(id)` for `game.bookmark`, `game.restore` and `game.pause` of the checkpoint, `clock()` for its frame and its pause flag (`held`) and for the value of `editor.clock`. `add(entry)` for `editor.reload` and `editor.clock` in `onInit`, `envelope()` for their `state`. `build()` for the engine and build id in `pair`. |
-| `channel` | `read`, `watch`, `run` for every game request; a hub `run` passes `via: "bridge"`, so `registry:command` names the tools page and MCP as its source. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
+| `channel` | `read`, `watch`, `run` for every game request; a hub `run` passes the `via` of the hub's `from`: `tools`, `mcp`, or `bridge` for an older hub, and the MCP client's name with `mcp` only, so `registry:command` and the recorder name who ran it. `heartbeat()` and `onHeartbeat(fn)` for beats, the status, the backlog and frame sampling. |
 | `recorder` | `unsentRun(max)` and `ack(log, next)` for log shipping (device mode). |
 
 `depends: [registryPlugin, channelPlugin]`. Global event used: `bridge:status` (emitted).
@@ -409,8 +412,8 @@ Log events:
 
 | Direction | Message |
 |---|---|
-| agent to hub | `hello { manifest }` (first; `manifest.restored` once after a checkpoint restore), `heartbeat Heartbeat` (with `heap` in Chromium), `value { sub, value }`, `tap Tap`, `bye` (channel `game`), and the responses |
-| hub to agent | requests `manifest`, `read { id, input? }`, `watch { sub, id, input? }`, `unwatch { sub }`, `run { id, input? }` (channel `game`). Notification `session { id, game, open, engine? }` (channel `editor`). |
+| agent to hub | `hello { manifest, caps }` (first; `manifest.restored` once after a checkpoint restore; `caps: ["run-from"]`, `HelloCaps` of `hub/protocol`), `heartbeat Heartbeat` (with `heap` in Chromium), `value { sub, value }`, `tap Tap`, `bye` (channel `game`), and the responses |
+| hub to agent | requests `manifest`, `read { id, input? }`, `watch { sub, id, input? }`, `unwatch { sub }`, `run { id, input?, from?, client? }` (channel `game`; `from` and `client` only from a hub that read `run-from`). Notification `session { id, game, open, engine? }` (channel `editor`). |
 | agent to hub, device mode | `pair PairParams` (first on a socket without credentials), `perf.lines PerfLinesParams` (channel `editor`) |
 | hub to agent, device mode | `paired PairedParams`, `perf.ack PerfAckParams` (channel `editor`) |
 
@@ -443,6 +446,51 @@ In a build without the bridge the event never fires.
 **`capture`.** Added next to the bridge. Its `editor.series` and `editor.sheet` commands are the
 long calls: `durationMs`, or `frames × everyMs`, on top of the deadline. `hub` and `link` use the
 same rule.
+
+## Who ran a command
+
+The hub stamps every `run` it forwards to this bridge (its hello names `run-from`) with `from`:
+`"page"` for the editor page, `"mcp"` for an agent's MCP bridge, and with `"mcp"` the MCP client's
+name as `client` when the agent gave one. The bridge never trusts more than that:
+
+| `from` | `via` (`registry:command`, the recorder) | `client` handed to the command |
+|---|---|---|
+| `"page"` | `tools` | none |
+| `"mcp"` | `mcp` | the `client` string, cut to 64 characters; none when it is no string or empty |
+| absent (an older hub) | `bridge` | none |
+| anything else (a newer hub's origin) | `bridge`, and the command still runs (never -32602) | none |
+
+`viaOf(from)` and `clientOf(from, client)` (pure, `dispatch/params.ts`) make the two columns. The
+recorder's `editor.record` turns them into `startedBy`, e.g. "started by agent (Claude)".
+
+## Command paths of the tools page
+
+No method of its own: each is a registry command on the device, reached by the hub's `run` and
+answered once within `callTimeoutMs`. The answer's `value` and a refusal's `code`, `message` and
+`data` reach the hub unchanged (`toWireError`); the bridge adds no rule. After every `run` the
+bridge re-reads every watched source at once, so the new rate (`editor.perf.second`) or the
+recording (`editor.recorder`) shows one round trip after the answer, not at the next heartbeat.
+
+| Command | Input | Answer | Refusal on the wire |
+|---|---|---|---|
+| `game.frameRate` | `{ fps: 60 }`, `{ fps: 120 }` (pin); `{}` (adaptive) | the engine's `FrameRate`, with `asked` and `heldBy: "panel" \| null` as the engine names them | a build without control: -32009 `dev_only`; a wrong `fps`: -32000 with the engine's first line |
+| `game.debug` | `{ overdraw: boolean }` | `{ overdraw }` | a build without control: -32009 `dev_only`; an engine without the view: -32000 |
+| `editor.perf.sections` | any of `gpu`, `passes`, `shaders`, `problems`, `memory`, `systems`, `nodes`, `longFrames` (booleans) | `PerfMonitorState` | -32009 `dev_only` or `read_only` (perf maps the engine's refusal) |
+| `editor.record` | `{ on?, label?, mark? }` | `{ on, file, startedBy, marked }` | no monitor: -32000; empty input: -32602 |
+| `editor.mark` | `{ label }` | `{ marked }` | none |
+
+The manifest the bridge sends already says what the build runs (`build.profile`, each command's
+`allowed`), so the tools page can grey a control before any press.
+
+## Read paths of the tools page
+
+| Source | How the tools page reads it |
+|---|---|
+| `editor.perf.frames { after }`, `editor.perf.events { after }` | `read` about once a second; each answer carries only what is new, and perf bounds its size |
+| `editor.perf.passes`, `editor.perf.second`, `editor.recorder` | `watch` (`changes: "frame"`): re-read once per heartbeat and after every `run` |
+| `editor.perf.detail { from, to }` | `read` once per selection, within the normal deadline |
+
+Only `editor.series` and `editor.sheet` get the long-call extension of the deadline.
 
 ## Limits
 

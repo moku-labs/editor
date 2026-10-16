@@ -311,6 +311,12 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       project: () => link.projectValue,
       engine: () => undefined,
       onEngine: () => noop,
+      published: () => undefined,
+      onPublished: () => noop,
+      onSessions: () => noop,
+      ownSession: () => undefined,
+      runIn: vi.fn(() => Promise.reject(new Error("link.runIn is not for views"))),
+      callEditor: vi.fn(() => Promise.reject(new Error("link.callEditor is not for views"))),
       files: store
     },
     send(id, value) {

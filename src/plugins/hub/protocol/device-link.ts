@@ -240,7 +240,8 @@ type MutablePairDevice = { -readonly [K in keyof PairParams["device"]]: PairPara
 type LinkObject = { [key: string]: LinkJson };
 
 /**
- * True for a control or bidi character (one of UNSAFE_RANGES).
+ * True for a control or bidi character (one of UNSAFE_RANGES). Also the rule of a tools client's
+ * name (`clientNameOf` in tools-link.ts); not re-exported by the barrel.
  *
  * @param char - One character (one code point).
  * @returns Whether it is unsafe in a device's text.
@@ -249,7 +250,7 @@ type LinkObject = { [key: string]: LinkJson };
  * isUnsafeChar("\u202E"); // true
  * ```
  */
-function isUnsafeChar(char: string): boolean {
+export function isUnsafeChar(char: string): boolean {
   const code = char.codePointAt(0) ?? 0;
   return UNSAFE_RANGES.some(([low, high]) => code >= low && code <= high);
 }

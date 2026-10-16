@@ -7,7 +7,7 @@ import { createServerCore, serverCoreConfig } from "../../../../config";
 import { filesPlugin } from "../../../files";
 import { notification, request, toWireValue } from "../../../registry/protocol";
 import { hubPlugin } from "../..";
-import type { HubSocketData, PairConfirm } from "../../types";
+import type { EditorMethod, HubSocketData, PairConfirm } from "../../types";
 import type { Client } from "./clients";
 import {
   AGENT_MANIFEST,
@@ -483,6 +483,44 @@ describe.skipIf(!hasIpv6Loopback())(
       expect(
         await upgradeStatus(port, { address: "[::1]", host: `[::1]:${port}`, path: "/__editor/" })
       ).toBe(404);
+    });
+
+    it("reaches no editor method from the LAN listener that listenLan adds: a tools upgrade is 403, a phone's connect.network is -32007 (bug: a phone calling connect.network)", async () => {
+      const network = vi.fn<EditorMethod>(async () => ({ lan: "[::1]" }));
+      const app = framework.createApp({
+        pluginConfigs: {
+          files: { root: base, project: false },
+          hub: { devicePort: 0, lanAddress: "::1" }
+        }
+      });
+      app.hub.addEditorMethods({ "connect.network": network });
+      await app.start();
+      lanApps.push(app);
+      const { port } = await app.hub.listenDevices({ confirm: async () => true });
+      const listen = await app.hub.listenLan();
+      const lanHost = `[::1]:${port}`;
+      expect(listen.lan).toBe(lanHost);
+
+      expect(
+        await upgradeStatus(port, {
+          address: "[::1]",
+          host: lanHost,
+          origin: `http://${lanHost}`,
+          token: app.hub.token()
+        })
+      ).toBe(403);
+
+      const phone = keep(await connectDevice(lanHost));
+      phone.send(notification("editor", "pair", { code: "4821", device: { model: "Pixel 8" } }));
+      await phone.next(isNote("editor", "paired"));
+      phone.send(notification("game", "hello", { manifest: toWireValue(AGENT_MANIFEST) }));
+      await phone.next(isNote("editor", "session"));
+      phone.send(request(1, "editor", "connect.network"));
+
+      expect(await phone.next(isResponseTo(1))).toMatchObject({
+        error: { code: -32_007, data: { reason: "unauthorized" } }
+      });
+      expect(network).not.toHaveBeenCalled();
     });
 
     it("pairs a LAN phone only after the person confirms", async () => {

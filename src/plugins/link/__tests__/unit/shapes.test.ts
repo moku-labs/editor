@@ -33,14 +33,19 @@ describe("readSessions", () => {
     expect(list).toEqual([sessionOf("s-1"), sessionOf("s-2", { embedded: true })]);
   });
 
-  it("reads a session that carries the hub heartbeat readout and drops the readout", () => {
+  it("keeps the hub heartbeat readout, frozen; a malformed readout is dropped and the session kept", () => {
+    // Bug: activeSource cannot see that the person paused the local preview (spec 11 § 4 B4), so
+    // it pauses and later resumes a game the developer paused on purpose.
+    const heartbeat = { frame: 1840, paused: true, silent: false };
     const list = readSessions({
       list: [
-        { ...toObject(sessionOf("s-1")), heartbeat: { frame: 1840, paused: true, silent: false } }
+        { ...toObject(sessionOf("s-1")), heartbeat },
+        { ...toObject(sessionOf("s-2")), heartbeat: { frame: 1840, paused: "yes", silent: false } }
       ]
     });
 
-    expect(list).toEqual([sessionOf("s-1")]);
+    expect(list).toEqual([sessionOf("s-1", { heartbeat }), sessionOf("s-2")]);
+    expect(Object.isFrozen(list?.[0]?.heartbeat)).toBe(true);
   });
 
   it("keeps the device of a device session and leaves a malformed device out", () => {

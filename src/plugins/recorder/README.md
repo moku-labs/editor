@@ -18,17 +18,50 @@ from the registry's `registry:command`) and `recorder` (start, stop, export).
 Without a monitor (a headless game, an engine before block 2b) it records nothing: `start` throws, earlier logs can
 still be listed, shared and removed.
 
+## Off by default, three ways to start
+
+Nothing is recorded until someone starts it (`autoStart` is `false`; owner decision 2026-10-16). Three places start,
+stop and mark the same log, and any of them can stop or mark a log another one started:
+
+| Who | How | `startedBy` |
+|---|---|---|
+| The phone | the overlay's Record tab: `recorder.start({ by: "phone" })`, `stop()`, `mark(label)` in process | `{ by: "phone", name: null }` |
+| The tools page | its Record button runs `editor.record` through the hub and the bridge (`via: "tools"`) | `{ by: "editor", name: null }` |
+| An agent | `editor.record` through MCP (`via: "mcp"`); the hub stamps the MCP client's name (`client`) | `{ by: "agent", name: "Claude" }` |
+
+`startedBy` (`RecordOrigin`, in `status()` and the `editor.recorder` source) says who started the current log, and is
+`null` while idle. `by` follows the `via` of the `editor.record` run: `overlay` → `"phone"`, `tools` → `"editor"`,
+`mcp` → `"agent"`, `bridge` (a hub that does not say who) → `"remote"`, `local` or none → `"code"`; `autoStart` starts
+as `"auto"`, and `start()` from the game's own code as `"code"`. `name` is kept for an agent only (trimmed, at most 64
+characters; empty is none). A second start while a log runs answers that log and keeps its first `startedBy`; a
+rotation keeps it too.
+
 ## The log format
 
 One JSON object per line, exactly as the stream handed it (`JSON.stringify(line)`, the engine's `PerfLogLine` v1); the
 recorder adds no field. Order inside a log:
 
-1. The context lines, re-written at every start: the newest `header`, the `startup` line once measured, and the newest
-   `display` event when it came after the header.
-2. The `recorder` event `{ action: "start", label }`.
+1. The context lines, re-written at every start: the newest `header`, the `startup` line once measured, the newest
+   `display` event when it came after the header, then the newest `rate` event (the rate in force: the header's `rate`
+   is from subscribe time), the newest `sections` event (what is measured) and the newest `debug` event (the overdraw
+   heat map: frames drawn with it on are not real cost), each only when there is one. A log usually starts mid-run, so
+   its reader needs them.
+2. The `recorder` event `{ action: "start", label, by, name }` (who started it, see above).
 3. Every line of the stream while recording (samples, spikes, long frames, events, marks, `thermal`). A `header` that
    arrives while recording is written where it arrives.
 4. The `recorder` event `{ action: "stop" }`.
+
+The recorder keeps no allow-list of kinds or event names: what an engine adds arrives in the log unchanged. A log holds
+the samples, spikes and long frames, the per-second `passes` summaries, the `shader` compiles, the flagged `problem`s,
+the `gc`s, the `rate` changes (every adaptive change, with its frame) and `display` changes, the `sections` switches,
+the `debug` overdraw switches, the editor's `command` and `devtools` events, and the marks. With the engine's 0.15.x
+patch `shader` (`what` `compile` or `module`), `problem` (`filter-still`, `target-churn`) and `debug` arrive; `passes`,
+`gc` and `sections` come with the next engine change. A rate switched from the tools page is in the log twice by
+design: the `command` event says who switched, the engine's `rate` event what changed.
+
+The log is self-describing: its clock anchor is the header's `timeOrigin` (`epochMs = timeOrigin + t`) and the app is
+the header's `app.id` (with the `.debug` suffix on a native debug install), both in the header as the engine wrote it.
+The collector's `telemetry` and `gap` lines are written on the computer, never into the phone's own log.
 
 File name: `perf-<yyyymmdd>-<hhmm>-<model>.jsonl` in local time, `model` = `header.device.model` lower-cased with every
 character outside `[a-z0-9-]` turned into `-`, `device` without one; a taken name gains `-2`, `-3`, … before `.jsonl`.
@@ -44,7 +77,7 @@ perf-20261014-1532-sm-a266b.jsonl
 
 | Option | Default | Range | Meaning |
 |---|---|---|---|
-| `autoStart` | `"device"` | `true`, `false`, `"device"` | Start a log when the plugin starts: `"device"` only on a debug build (agent flag on, dev flag off; the registry's build profile `read` or `full`), `true` always, `false` never. A dev page records only when asked (`start()`, `editor.record`, the overlay's Record tab). |
+| `autoStart` | `false` | `true`, `false`, `"device"` | Start a log when the plugin starts: `false` never (nothing records until the phone, the tools page or an agent starts it), `"device"` only on a debug build (agent flag on, dev flag off; the registry's build profile `read` or `full`), `true` always. A game that wants a log from launch opts in with `"device"` or `true`. |
 | `keepMb` | `64` | 1 to 512 | Most MB in memory: unconfirmed outbox lines, memory-store logs, pending text. |
 | `flushEveryMs` | `1000` | 100 to 10000 | How often the queue is serialized. |
 | `persistEveryMs` | `5000` | 1000 to 60000 | How often text is written to the store (also at 64 KB pending, and at stop). |
@@ -53,13 +86,13 @@ perf-20261014-1532-sm-a266b.jsonl
 | `maxLogMb` | `32` | whole, 1 to 512 | The size of one log: at it the recorder rotates to a new log. 32 is the native share's cap, so every log stays shareable; the store holds at most about `keepFiles × maxLogMb`. |
 
 ```ts
-createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: true, maxLogMb: 16 } } });
+createApp({ pluginConfigs: { registry: { game }, recorder: { autoStart: "device", maxLogMb: 16 } } });
 ```
 
 A bad value throws a `TypeError` at `createApp`:
 `[moku-editor] recorder.keepMb is 0.` / `  Give megabytes from 1 to 512; 64 keeps about 12 hours of samples.`
 
-When `autoStart` finds no header at start (a native shell holds the engine's header back until it is ready), the log
+When an opted-in `autoStart` finds no header at start (a native shell holds the engine's header back until it is ready), the log
 starts on the first flush tick that has the header, so its file is named after the device and its first line is the
 header; after 10 ticks without one it starts anyway (named `device`).
 
@@ -69,11 +102,11 @@ header; after 10 ticks without one it starts anyway (named `device`).
 
 | Member | Answers |
 |---|---|
-| `start({ label? })` | The new log (or the running one). Throws an `Error` without a monitor. |
+| `start({ label?, by?, name? })` | The new log (or the running one, its `startedBy` unchanged). `by` defaults to `"code"`; `name` is kept with `by: "agent"` only. Throws an `Error` without a monitor. |
 | `stop()` | The finished log; `undefined` while idle. A store failure keeps the log in memory and warns. |
 | `mark(label)` | `true` when the mark went into a running log (`monitor.mark`). |
 | `command(id, input, label)` | The overlay's automatic mark of a command it ran: the `mark` line and `{ auto: true, command }` in `marks()`; never a `command` event. |
-| `status()` | `{ state, lines, bytes, sent, pending, monitor, file, label, sinceMs, storage, dropped }`. |
+| `status()` | `{ state, lines, bytes, sent, pending, monitor, file, label, sinceMs, storage, dropped, startedBy }`; `startedBy` is `null` while idle. |
 | `marks()` | The marks of the current log, or of the last one while idle. A copy. |
 | `files()` | The logs, oldest first, the current one last. A copy. |
 | `share(name)` | `"shared"` / `"cancelled"` (native share sheet) or `"downloaded"`. The current log is written first. A log over 32 MiB is refused before the native share is called (the shell takes no more): an `Error` naming its size; pull it with the collector over adb (`moku-editor perf`) instead. |
@@ -90,7 +123,7 @@ status shows `exporting` while any share runs; the last one to end sets it back 
 ## The pipeline
 
 - **Listener** (`listener.ts`): called synchronously inside the engine's commit. Keeps the newest `header`, `startup`
-  and `display`; while a log runs (also while it is exported) pushes the reference into a ring of 4096 slots; a full
+  and `display`, `rate`, `sections` and `debug` events, by reference (also while idle); while a log runs (also while it is exported) pushes the reference into a ring of 4096 slots; a full
   ring drops its oldest reference and counts it. Without a log (also while a finished log is exported) it queues
   nothing, and a new log empties the ring before its context lines. It allocates nothing and never serializes.
 - **Flush tick** (`flush.ts`, every `flushEveryMs`): inside the agent span it drains the queue (each line's text goes
@@ -106,8 +139,8 @@ status shows `exporting` while any share runs; the last one to end sets it back 
   (`ROTATE_HEADROOM_BYTES`, 64 KiB, at most 1/16 of the cap: room for the stop event and for the lines a manual stop
   finds in the queue) and marks the log full; a line bigger than half of that goes in anyway, so a rotation always
   makes progress. The rotation carries the lines still queued out, finishes the full log (the stop event, every line
-  written, the meta rewritten) and starts the next one at once with the same label and the header/startup/display
-  context again, followed by the carried lines (`recorder:started`, then `recorder:rotated { from, to }`). So no
+  written, the meta rewritten) and starts the next one at once with the same label and `startedBy` and the context lines
+  again, followed by the carried lines (`recorder:started`, then `recorder:rotated { from, to }`). So no
   finished log passes `maxLogMb` on disk (the native share's cap at the default 32), and no line falls between two
   logs or goes into both. A finish that fails before it detached the log rotates nothing (`recorder:rotate-failed`).
   The status shows the new log as the current one; the finished part is listed in `files()` and can be shared or
@@ -165,12 +198,23 @@ recorder.ack(log, next);
 
 | Id | Kind | Input | Value |
 |---|---|---|---|
-| `editor.record` | command, `cosmetic` | `{ on: "boolean", label: "string?" }` | `{ on, file }`: `on: true` starts, `on: false` stops |
+| `editor.record` | command, `cosmetic` | `{ on: "boolean?", label: "string?", mark: "string?" }` | `{ on, file, startedBy, marked }`: `on: true` starts, `on: false` stops, `mark` marks after that (so `{ on: true, mark: "boss intro" }` starts and marks in one call); `on` is whether a log records now, `marked` null without a mark |
 | `editor.mark` | command, `cosmetic` | `{ label: "string" }` | `{ marked }` |
-| `editor.recorder` | source, `changes: "frame"`, no probe | `{}` | `status()`; its watch is called wherever `recorder:status` is emitted, each watch isolated (a throw warns `recorder:watcher-failed` once per streak) |
+| `editor.recorder` | source, `changes: "frame"`, no probe | `{}` | `RecorderSource`: `status()` plus the last 32 marks of the current (or last) log; its watch is called wherever `recorder:status` is emitted, each watch isolated (a throw warns `recorder:watcher-failed` once per streak) |
 
-The commands answer `state: registry.envelope()`; a `start` without a monitor rejects -32000 through the registry's
-guard.
+The commands answer `state: registry.envelope()`. `editor.record` takes the `via` and the `client` the registry hands
+every command entry: `by` from `via`, `name` from `client` when `via` is `"mcp"`. An input with neither `on` nor a
+non-empty `mark` rejects -32602 (`[moku-editor] editor.record needs on or mark.` / `  Pass { on: true } to start,
+{ on: false } to stop, { mark: "boss intro" } to mark.`) and changes nothing. A `start` without a monitor rejects
+-32000 through the registry's guard.
+
+```ts
+// An agent, through MCP: start before the boss, mark it, stop after.
+await channel.run("editor.record", { on: true, mark: "boss intro" }, "mcp", "Claude");
+// { value: { on: true, file: "perf-20261014-1532-sm-a266b.jsonl", startedBy: { by: "agent", name: "Claude" }, marked: true }, … }
+await channel.run("editor.record", { on: false }, "mcp", "Claude");
+// { value: { on: false, file: "perf-20261014-1532-sm-a266b.jsonl", startedBy: null, marked: null }, … }
+```
 
 ## Events
 
@@ -198,8 +242,8 @@ onStop logs nothing.
 | `depends` | `perfPlugin` | `monitor()` in `onInit`: the one place that finds the engine monitor |
 | global event | `overlay:changed` | hooked: the `devtools` monitor event |
 | per-plugin event | `recorder:status` | emitted, declared with `register<RecorderStatusEvent>()`; the overlay and the bridge hook it through `depends` |
-| protocol | `../perf/protocol` | type only: `PerfLogLine` of the queued lines |
-| protocol | `../registry/protocol` | `checkInput`, `toWireValue` and the `Json` type of the entries |
+| protocol | `../perf/protocol` | type only: `PerfLogLine` of the queued lines, `TimelineEventLine` for the newer event names |
+| protocol | `../registry/protocol` | `checkInput`, `toWireValue`, `wireError` / `errorCode` and the `Json`, `CommandVia` types of the entries |
 
 The recorder never imports the bridge or the overlay: the bridge pulls with `unsentRun` / `ack`, and the overlay
 calls the API.
@@ -209,7 +253,7 @@ calls the API.
 | Phase | What |
 |---|---|
 | `onInit` | Checks the config (a two-line `TypeError` at `createApp`), takes `perf.monitor()`, adds the three registry entries, and logs `recorder:no-monitor` at info without a monitor. |
-| `onStart` | Opens the store (`openStore(storage)`: OPFS, or memory with the reason logged as `recorder:storage`); with OPFS lists the logs an earlier launch left (a failed list warns `recorder:list-failed`). Without a monitor it stops here. Otherwise subscribes to `monitor.stream` and starts the flush timer every `flushEveryMs` (a throwing tick warns `recorder:flush-failed`). When `autoStart` says so for this build (`"device"`: a debug build only), a log starts now when the engine's header is there, else on the first tick that has it, at most 10 ticks later. |
+| `onStart` | Opens the store (`openStore(storage)`: OPFS, or memory with the reason logged as `recorder:storage`); with OPFS lists the logs an earlier launch left (a failed list warns `recorder:list-failed`). Without a monitor it stops here. Otherwise subscribes to `monitor.stream` and starts the flush timer every `flushEveryMs` (a throwing tick warns `recorder:flush-failed`). When `autoStart` says so for this build (never with the default `false`; `"device"`: a debug build only), a log started by `"auto"` starts now when the engine's header is there, else on the first tick that has it, at most 10 ticks later. |
 | `onStop` | Clears the timer and the autoStart wait, revokes the download URLs still waiting, finishes the running log (`finishLog`: the stop event, the queue drained in the agent span, every pending text written, the meta rewritten), unsubscribes the stream and drops the watches. No emit and no log line: the teardown context has neither. |
 
 ## Files
@@ -218,17 +262,18 @@ calls the API.
 |---|---|
 | `index.ts` | Wiring: depends, config, the `recorder:status` event, state, api, hooks, lifecycle. |
 | `types.ts` | Config, log and outbox shapes, the per-plugin event, state, ctx, hooks, the API (contracts and examples on its members). |
-| `state.ts` | `createRecorderState` (the queue allocated once, the memory store) and the shared reads: a log's info, the file list, the status and its event. |
+| `protocol.ts` | Types only, importing nothing: the wire shapes the tools page imports (`RecordStarter`, `RecordOrigin`, `LogMark`, `RecorderStatusEvent`, `RecorderStatus`, `RecorderSource`). |
+| `state.ts` | `createRecorderState` (the queue allocated once, the memory store) and the shared reads: a log's info, the file list, the status and its event, the `editor.recorder` source value. |
 | `api.ts` | `createRecorderApi`: thin calls into the domain files. |
 | `lifecycle.ts` | The config check, `initRecorder`, `startRecorder`, `stopRecorder`. |
-| `listener.ts` | The `monitor.stream` listener: references in a ring of 4096 slots; allocates nothing, never serializes. |
+| `listener.ts` | The `monitor.stream` listener: references in a ring of 4096 slots, the newest context lines; allocates nothing, never serializes. |
 | `flush.ts` | The flush tick inside the agent span, the `keepMb` bound, the chunk writes and their failures. |
 | `rotate.ts` | Rotation at `maxLogMb`: finish the full log, start the next with the same label. |
-| `session.ts` | The life of a log: file name, start (context lines first), `finishLog`, `remove`, the `keepFiles` bound. |
+| `session.ts` | The life of a log: file name, who started it (`originOf`), start (context lines first), `finishLog`, `remove`, the `keepFiles` bound. |
 | `marks.ts` | A user mark and the overlay's automatic mark of a game command (`monitor.mark`). |
 | `outbox.ts` | The unconfirmed lines: `unsentRun`, `ack`, the head splice. |
 | `share.ts` | The native share sheet (32 MiB limit), else a download link, else an error. |
-| `entries.ts` | `editor.record`, `editor.mark` and the source `editor.recorder`. |
+| `entries.ts` | `editor.record` (start, stop and mark; `starterOf(via)`), `editor.mark` and the source `editor.recorder`. |
 | `handlers.ts` | The hooks: `registry:command` → `command`, `overlay:changed` → `devtools`. |
 | `store/` | `index.ts` (`openStore`), `opfs.ts` (chunk files and `meta.json` under `moku-editor-perf/`), `memory.ts`, `types.ts` (the `LogStore` shape and the structural OPFS handles). |
 

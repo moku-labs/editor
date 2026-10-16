@@ -1,6 +1,16 @@
 /* eslint-disable unicorn/no-null -- null is "no input", "no header" and "between frames" of the engine */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DISPLAY, eventLine, sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  DISPLAY,
+  debugLine,
+  eventLine,
+  passesLine,
+  problemLine,
+  rateLine,
+  sampleLine,
+  sectionsLine
+} from "../../../../../tests/fixtures/fake-monitor";
+import { flushTick } from "../../flush";
 import { QUEUE_LINES } from "../../state";
 import { kinds, queued, recorder, startupLine } from "../helpers";
 
@@ -51,5 +61,33 @@ describe("the stream listener", () => {
       display
     ]);
     expect(kinds(queued(t.state))).toEqual([]);
+  });
+
+  it("while recording queues a line of an unknown kind and an event of an unknown name, and writes them byte-identical (bug: a future allow-list dropping the engine's additions)", () => {
+    const t = recorder();
+    t.api.start();
+    const passes = passesLine();
+    const problem = problemLine();
+    t.monitor.emit(passes);
+    t.monitor.emit(problem);
+    expect(queued(t.state).slice(-2)).toEqual([passes, problem]);
+    flushTick(t.ctx);
+    expect(t.state.session?.pending.slice(-2)).toEqual([
+      JSON.stringify(passes),
+      JSON.stringify(problem)
+    ]);
+  });
+
+  it("while idle keeps the newest rate, sections and debug lines, an older one replaced (bug: the context line of an old rate)", () => {
+    const t = recorder();
+    const rate = rateLine({ from: 60, to: 120, reason: "headroom" });
+    const sections = sectionsLine({ on: [], off: ["passes"] });
+    const debug = debugLine(false);
+    for (const line of [rateLine(), sectionsLine(), debugLine(true), rate, sections, debug]) {
+      t.monitor.emit(line);
+    }
+    expect([t.state.rate, t.state.sections, t.state.debug]).toEqual([rate, sections, debug]);
+    expect(t.state.rate).toBe(rate);
+    expect(t.state.queueSize).toBe(0);
   });
 });

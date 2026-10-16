@@ -18,7 +18,7 @@ import type {
   SessionInfo,
   SubId
 } from "../registry/protocol";
-import type { DeviceLinkKind, SessionDevice } from "./protocol";
+import type { AgentCap, DeviceLinkKind, SessionDevice } from "./protocol";
 
 /**
  * Hub configuration.
@@ -94,6 +94,14 @@ export type HubSocket = {
   readonly data: HubSocketData;
   send(text: string): number;
   close(code?: number, reason?: string): void;
+  /**
+   * Sends a WebSocket ping with a payload the pong echoes (Bun's `ServerWebSocket.ping`). Optional
+   * so a wrapped socket without it (a test tap) is simply not pinged.
+   *
+   * @param payload - The text the pong carries back.
+   * @returns Bun's send status.
+   */
+  ping?(payload?: string): number;
 };
 
 /**
@@ -214,6 +222,14 @@ export type HubWebSocketHandler = {
    * @param ws - The socket.
    */
   drain(ws: HubSocket): void;
+  /**
+   * A pong: when it echoes the payload of the last ping the hub sent a paired device, the round trip
+   * becomes the device's `latencyMs` (H4). Any other pong (Bun's own keep-alive) is ignored.
+   *
+   * @param ws - The socket.
+   * @param data - The pong payload.
+   */
+  pong(ws: HubSocket, data: Uint8Array): void;
   /** 32 MiB: captures travel as data URLs. */
   readonly maxPayloadLength: number;
   /** 60 s; Bun sends pings. */
@@ -225,8 +241,9 @@ export type HubWebSocketHandler = {
 /**
  * The device side of an agent connection that came through a device listener. `id` is set once
  * the device is paired (at once for a token upgrade). `ended` is set when the hub already announced
- * the end of this connection (it was replaced): its close then emits nothing. `deadline` is the
- * first-message timer of a pairing socket (`PAIR_FIRST_MS`), cleared by a valid `pair` or a close.
+ * the end of this connection (it was replaced, or the LAN listener went off): its close then emits
+ * nothing. `deadline` is the first-message timer of a pairing socket (`PAIR_FIRST_MS`), cleared by a
+ * valid `pair` or a close. `pingAt` is the send time of the ping no pong answered yet (H4).
  */
 export type DeviceConn = {
   readonly link: DeviceLinkKind;
@@ -234,6 +251,8 @@ export type DeviceConn = {
   id: string | undefined;
   ended: boolean;
   deadline: ReturnType<typeof setTimeout> | undefined;
+  /** Epoch ms of the last ping, also its payload; undefined once its pong came, or before one. */
+  pingAt: number | undefined;
 };
 
 /**
@@ -251,13 +270,17 @@ export type AgentConn = {
 
 /**
  * A tools page connection. `page` is true for the editor page (`role=page`); a plain tools client
- * (the MCP bridge) has false.
+ * (the MCP bridge) has false. `client` is the MCP client's name from the bridge's `client`
+ * notification, cleaned by `clientNameOf` (never set on the editor page): the hub stamps it on
+ * the runs of this connection.
  */
 export type ToolsConn = {
   kind: "tools";
   conn: number;
   socket: HubSocket;
   page: boolean;
+  /** The MCP client's name, last value wins; undefined before one came. */
+  client: string | undefined;
   subs: Map<SubId, string>;
   pending: number;
   congested: boolean;
@@ -287,6 +310,11 @@ export type Session = {
   nextSub: SubId;
   /** The phone of a device session; absent for a game page served by `serve()`. */
   device?: SessionDevice;
+  /**
+   * The known capabilities the agent named in its hello (`run-from`: its bridge reads a stamped
+   * run); [] for an older agent.
+   */
+  caps: readonly AgentCap[];
 };
 
 /**
@@ -415,7 +443,7 @@ export type DeviceListen = {
  *
  * @example
  * ```ts
- * const device: LinkedDevice = { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true };
+ * const device: LinkedDevice = { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true, latencyMs: 9 };
  * ```
  */
 export type LinkedDevice = SessionDevice & {
@@ -423,6 +451,8 @@ export type LinkedDevice = SessionDevice & {
   readonly pairedAt: number;
   /** Whether a connection is open now. */
   readonly online: boolean;
+  /** The last WebSocket ping round trip in ms (pinged once a second); null before the first pong. */
+  readonly latencyMs: number | null;
 };
 
 /**
@@ -441,6 +471,8 @@ export type DeviceRecord = {
   conn: number | undefined;
   /** Next expected line index per device log (de-duplication across reconnects), oldest first. */
   logs: Map<string, number>;
+  /** The last ping round trip in ms, set by a matching pong; null at pairing. */
+  latencyMs: number | null;
 };
 
 /**
@@ -530,6 +562,27 @@ export type HubDeviceEvent =
   | { readonly kind: "stopped" };
 
 /**
+ * An editor-channel method another server plugin registers with `addEditorMethods` (H2). Only
+ * tools connections (hub token, loopback Host and Origin) reach it; a throw or a rejection is
+ * answered as a wire error.
+ *
+ * @example
+ * ```ts
+ * // An editor method that answers its params and the tools connection that asked.
+ * const echo: EditorMethod = async (params, caller) => ({ params: params ?? null, conn: caller.conn });
+ * ```
+ */
+export type EditorMethod = (
+  params: Json | undefined,
+  caller: { readonly conn: number }
+) => Promise<Json>;
+
+/**
+ * Editor methods by name, `<plugin>.<verb>`.
+ */
+export type EditorMethods = Readonly<Record<string, EditorMethod>>;
+
+/**
  * The hub's per-plugin events, visible to plugins that list `hubPlugin` in `depends`.
  */
 export type HubEvents = { readonly "hub:device": HubDeviceEvent };
@@ -574,6 +627,10 @@ export type HubState = {
   pairing: { queue: PairTicket[]; asking: PairTicket | undefined; cooldown: Map<string, number> };
   /** The engine id last published as `editor.engine` (the fingerprint itself is files'). */
   engineId: string | undefined;
+  /** Editor-channel methods of other server plugins by name (`addEditorMethods`, H2). */
+  editorMethods: Map<string, EditorMethod>;
+  /** The once-a-second ping of the paired devices (H4); undefined while device mode is off. */
+  pingTimer: ReturnType<typeof setInterval> | undefined;
 };
 
 /**
@@ -709,10 +766,13 @@ export type HubApi = {
    * is stored through `toWireValue`. A `null` selection goes out as a `selection` notification
    * without params (the wire refuses null params).
    *
-   * @param method - The state: `"hotReload"`, `"selection"`, `"project"` or `"engine"`.
+   * @param method - The state: `"hotReload"`, `"selection"`, `"project"`, `"engine"`, `"devices"`
+   * or `"deviceTelemetry"`.
    * @param params - Its value: a HotReload, a SelectionInfo or null for the selection, a
-   * ProjectState (the hub publishes `project` itself from `files:project`), or an EngineInfo (the
-   * hub publishes `engine` itself from `files.engine()` on start and when a phone pairs).
+   * ProjectState (the hub publishes `project` itself from `files:project`), an EngineInfo (the
+   * hub publishes `engine` itself from `files.engine()` on start and when a phone pairs), or
+   * connect's DeviceDirectory or DeviceTelemetry. The held `deviceTelemetry` is dropped when device
+   * mode stops, so a tools page never gets one of an older run.
    * @example
    * ```ts
    * // pages tells every tools page whether Bun reloads the game page on a save.
@@ -799,10 +859,70 @@ export type HubApi = {
    * @example
    * ```ts
    * // After a Galaxy A26 paired over adb reverse.
-   * editor.hub.devices(); // [{ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true }]
+   * editor.hub.devices(); // [{ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: "0.14.12+9c41e0", build: "debug-20261014T160000Z", pairedAt: 1791986083963, online: true, latencyMs: 9 }]
    * ```
    */
   devices(): LinkedDevice[];
+
+  /**
+   * Adds the LAN listener while device mode runs: the computer's LAN address on the device port,
+   * device upgrades only, pairing confirmed by the person. The adb listener and its phones stay.
+   * The address is found as for `deviceLan`: `lanAddress`, else the first non-internal IPv4 of a
+   * Wi-Fi or wired card. With the LAN listener on already it starts nothing and answers the current
+   * listen. Logs `hub:devices-lan` and emits `hub:device { kind: "listening" }` with the new `lan`.
+   *
+   * @returns Where device mode listens now.
+   * @throws {Error} `[moku-editor] hub.listenLan() needs device mode.` with `Call
+   * hub.listenDevices() first.` while device mode is off; the no-LAN-address and port errors of
+   * `listenDevices`.
+   * @example
+   * ```ts
+   * // connect's "On the network": device mode is on by wire, now the Wi-Fi path too.
+   * await ctx.require(hubPlugin).listenLan();
+   * // { port: 47600, adb: "127.0.0.1:47600", lan: "192.168.1.5:47600" }
+   * ```
+   */
+  listenLan(): Promise<DeviceListen>;
+
+  /**
+   * Removes the LAN listener: every LAN device connection closes with 1001 "lan off" (a paired one
+   * is announced `closed` with reason `stopped` and stays paired), the listener stops, `lan` becomes
+   * null and `hub:device { kind: "listening" }` goes out. Phones by wire keep their sessions. Does
+   * nothing without a LAN listener.
+   *
+   * @returns When the LAN listener stopped (at most 500 ms).
+   * @example
+   * ```ts
+   * // connect turns the Wi-Fi path off; the Galaxy A26 by wire stays linked.
+   * const hub = ctx.require(hubPlugin);
+   * await hub.stopLan();
+   * hub.devices().filter(device => device.online).map(device => device.link); // ["adb"]
+   * ```
+   */
+  stopLan(): Promise<void>;
+
+  /**
+   * Registers editor-channel methods of another server plugin (`connect.scan` …). Only tools
+   * connections reach them (hub token, loopback Host and Origin): a game page's or a phone's
+   * request is refused -32007, and the LAN listener has no tools socket. A tools request
+   * `editor.<name>` runs the handler with its params and the caller's connection, counted as a
+   * pending call; a throw or a rejection is answered as a wire error, and the answer is dropped when
+   * the connection closed meanwhile. The hub's own `selection` and its relayed methods come first.
+   * Names are checked first, so a refused batch registers nothing.
+   *
+   * @param methods - Name (`<plugin>.<verb>`) → handler.
+   * @throws {Error} After `serve()` or `listenDevices()` (frozen with the routes), for a name
+   * registered before, a name without a dot, and for `selection`, `select`, `device`, `show` and
+   * `node` (two-line messages).
+   * @throws {TypeError} When a handler is not a function.
+   * @example
+   * ```ts
+   * // connect registers its methods in onInit, before the server starts.
+   * ctx.require(hubPlugin).addEditorMethods({ "connect.scan": async () => ({ wire: [] }) });
+   * // a tools page's request editor.connect.scan is answered { wire: [] }
+   * ```
+   */
+  addEditorMethods(methods: EditorMethods): void;
 };
 
 /**

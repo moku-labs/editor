@@ -347,12 +347,17 @@ export function fakePerf(): FakePerf {
   return perf;
 }
 
+/** What the overlay passed to `recorder.start`. */
+export type StartOptions = Parameters<OverlayCtx["recorder"]["start"]>[0];
+
 /** The fake recorder: a settable status, marks and files; spies for the actions. */
 export type FakeRecorder = OverlayCtx["recorder"] & {
   statusValue: RecorderStatus;
   marksValue: LogMark[];
   filesValue: LogFileInfo[];
   readonly calls: string[];
+  /** The options of every `start`, in order. */
+  readonly starts: StartOptions[];
   shareAnswer: ShareResult;
   failStart: Error | undefined;
 };
@@ -417,13 +422,15 @@ export function fakeRecorder(): FakeRecorder {
     marksValue: [],
     filesValue: [],
     calls: [],
+    starts: [],
     shareAnswer: "shared",
     failStart: undefined,
     status: () => recorder.statusValue,
     marks: () => recorder.marksValue,
     files: () => recorder.filesValue,
-    start: () => {
+    start: options => {
       recorder.calls.push("start");
+      recorder.starts.push(options);
       if (recorder.failStart) throw recorder.failStart;
       recorder.statusValue = RECORDING;
       return logFile("perf-20261014-1532-sm-a266b.jsonl", { current: true });

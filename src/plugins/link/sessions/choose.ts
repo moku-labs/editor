@@ -15,30 +15,9 @@ import { expectReload } from "../status/reload";
 import { detachAll, resubscribeAll, unwatchAll } from "../subscriptions/watch";
 import type { LinkCtx } from "../types";
 import { EMPTY_AFTER_LOST_MS } from "../types";
-import { frameOf, isOtherFrame } from "./frame";
+import { isOtherFrame } from "./frame";
 import { notifyManifest } from "./manifest";
-
-/**
- * The session with the largest `connectedAt` (the first of equals).
- *
- * @param list - Sessions.
- * @returns The newest, or undefined for none.
- * @example
- * ```ts
- * newest([
- *   { id: "a", game: "g", page: "/", embedded: false, connectedAt: 100 },
- *   { id: "b", game: "g", page: "/", embedded: false, connectedAt: 200 },
- *   { id: "c", game: "g", page: "/", embedded: true, connectedAt: 200 }
- * ])?.id; // "b": the first of the two newest
- * ```
- */
-function newest(list: readonly SessionInfo[]): SessionInfo | undefined {
-  let best: SessionInfo | undefined;
-  for (const session of list) {
-    if (best === undefined || session.connectedAt > best.connectedAt) best = session;
-  }
-  return best;
-}
+import { newest, ownSessionOf } from "./own";
 
 /**
  * True when a session is the game frame of another tools tab: embedded, with a frame id in its
@@ -75,8 +54,8 @@ export function pickSession(
   // Leave the other tabs' frames out, then: own frame, any other embedded, current, newest.
   const open = frame === undefined ? list : list.filter(session => !isOtherTab(session, frame));
   const embedded = open.filter(session => session.embedded);
-  const own = frame === undefined ? [] : embedded.filter(({ page }) => frameOf(page) === frame);
-  const pick = newest(own) ?? newest(embedded);
+  const own = frame === undefined ? undefined : ownSessionOf(embedded, frame);
+  const pick = own ?? newest(embedded);
   if (pick !== undefined) return pick.id;
   if (open.some(({ id }) => id === current)) return current;
   return newest(open)?.id;

@@ -99,7 +99,9 @@ export const TABS = `
     [data-part="rec-top"] { display: flex; align-items: center; gap: 8px; height: 44px; }
     [data-part="clock"] { color: var(--ink); font: 600 30px/1 var(--font-cond); letter-spacing: .02em; }
     [data-part="clock"][data-dim] { color: var(--ink-3); }
-    [data-part="rec-stats"] { display: flex; flex-direction: column; color: var(--ink-2); font: 500 12px/1.2 var(--font-cond); }
+    [data-part="rec-stats"] { display: flex; flex-direction: column; min-width: 0; color: var(--ink-2); font: 500 12px/1.2 var(--font-cond); }
+    [data-part="rec-stats"] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    [data-part="rec-stats"][data-idle] { color: var(--ink-3); }
     [data-part="rec-stats"] b { color: var(--measured); font-weight: 600; }
     [data-part="rec-top"] [data-part="button"] { min-width: 64px; margin-left: auto; }
     [data-part="sent"] {

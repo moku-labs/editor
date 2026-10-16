@@ -98,7 +98,8 @@ function recordOf(id: string): DeviceRecord {
     build: null,
     pairedAt: 1,
     conn: undefined,
-    logs: new Map()
+    logs: new Map(),
+    latencyMs: null
   };
 }
 
@@ -354,7 +355,7 @@ function openDeviceConn(ctx: TestCtx, address: string, id?: string): void {
     session: undefined,
     bye: false,
     invalid: 0,
-    device: { link: "lan", address, id, ended: false, deadline: undefined }
+    device: { link: "lan", address, id, ended: false, deadline: undefined, pingAt: undefined }
   });
 }
 

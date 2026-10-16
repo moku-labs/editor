@@ -53,7 +53,8 @@ function sessionOf(id: string, connectedAt: number, embedded = false): Session {
     heartbeat: null,
     lastBeatAt: connectedAt,
     silent: false,
-    nextSub: 1
+    nextSub: 1,
+    caps: []
   };
 }
 

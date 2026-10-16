@@ -9,23 +9,59 @@
  * log lines. Its shape is checked
  * against the real engine by perf's `engine-contract.test.ts` (the engine's own `frameAt` reads its
  * ring).
+ *
+ * Mission control (spec 03 Delta 2026-10-16 D1, D14; engine reconciliation 2026-10-16): the pass
+ * ring is written with `commitPass` (slot `written % capacity`, the engine's `writePass`) and
+ * carries the 0.15.x columns `owner`, `kind2` (1-based: 0 none, else `kindNames[kind2 - 1]`),
+ * `kindNames`, `drawsAt`, `format` and `resolution` unless `passColumns: false` models an older
+ * engine; `ring.systemNames` grows by `addSystem` with a new array (the patch) or in place (0.15.0);
+ * `monitor.sections(next?)` and `monitor.detail({ from, to })` of the next change exist unless
+ * switched `"absent"`, and refuse with an error tagged `reason: "read-only"` / `"dev-only"` when
+ * switched so; `emit` also delivers the lines of a newer engine (`passes`, and the event names
+ * `shader`, `problem`, `gc`, `sections`, `debug`), and the builders write them, the patch's header
+ * (`app.id` with the `.debug` suffix, `debug.overdraw`) and its sample (`targets`, `counts`).
+ * `ENGINE_0_15_0` is the options of the engine installed here.
  */
+import { frameAt } from "@moku-labs/game";
 import type {
+  DebugEventDetail,
   FrameColumns,
   FrameRecord,
   FrameRing,
+  GcEventDetail,
   MonitorLike,
+  MonitorSectionName,
+  MonitorSections,
+  PassColumnsNext,
+  PassKind,
+  PassRecord,
   PerfDisplay,
   PerfEventLine,
   PerfEventName,
+  PerfEventNameNext,
   PerfHeaderLine,
+  PerfHeaderNext,
   PerfLogLine,
   PerfMarkLine,
+  PerfPassesLine,
   PerfSampleLine,
+  PerfSampleNext,
   PerfSpikeLine,
-  RateChange
+  ProblemEventDetail,
+  RateChange,
+  SectionsEventDetail,
+  ShaderEventDetail,
+  TimelineEventLine
 } from "../../src/plugins/perf/protocol";
+import { MONITOR_SECTIONS, SECTION_DEFAULTS } from "../../src/plugins/perf/protocol/sections";
 import type { Json } from "../../src/plugins/registry/protocol";
+
+/** One of the five slowest systems of a frame: its registration index and its ms. */
+export type FakeSystemTime = {
+  /** The `sysIdx` value: an index into `ring.systemNames` (`addSystem` answers it). */
+  readonly idx: number;
+  readonly ms: number;
+};
 
 /** One frame to commit; every field but `t` has a default (a plain 60 fps frame, drawn). */
 export type FakeFrame = {
@@ -67,14 +103,57 @@ export type FakeFrame = {
   readonly reason?: number;
   /** The frame ran under the idle cap (time's `idle`). */
   readonly idle?: boolean;
+  /** Demand marks of the frame (nodes updated); NaN (not measured) by default. */
+  readonly marks?: number;
+  /**
+   * The slowest systems of the frame, slowest first, at most five. Absent: the frame had no
+   * timing table (the first `sysMs` slot NaN, the record's `systems` null); `[]`: a table with
+   * every system at 0 ms.
+   */
+  readonly systems?: readonly FakeSystemTime[];
 };
+
+/** One render pass to write into the pass ring; every field has a default (a canvas pass). */
+export type FakePass = {
+  /** The frame it belongs to; the last committed frame by default. */
+  readonly frame?: number;
+  /** Its index in the frame; 0 for a frame's first pass, one more than the previous by default. */
+  readonly index?: number;
+  /** "canvas" by default. */
+  readonly kind?: PassKind;
+  readonly label?: string | null;
+  /** With a depth-stencil attachment; not measured (the engine's 255) by default. */
+  readonly stencil?: boolean;
+  /** Target width in pixels: 1080 by default. */
+  readonly w?: number;
+  /** Target height in pixels: 2340 by default. */
+  readonly h?: number;
+  /** NaN by default: the GPU time lands later (`landPassGpu`), as the engine's timer does. */
+  readonly gpuMs?: number;
+  /** The owner entity (0.15.x column `owner`); 0 (none) by default. */
+  readonly owner?: number;
+  /** The filter kind's name (0.15.x `kind2`, interned into `kindNames`); null (none) by default. */
+  readonly filter?: string | null;
+  /** The draw-call counter at the pass's start (0.15.x `drawsAt`); 0 by default. */
+  readonly drawsAt?: number;
+  /** The target's format (0.15.x `format`); null by default. */
+  readonly format?: string | null;
+  /** The target's resolution (0.15.x `resolution`); NaN (not measured) by default. */
+  readonly resolution?: number;
+};
+
+/**
+ * How a member of the next engine change (`monitor.sections`, `monitor.detail`) behaves: present
+ * on a build with control, refusing with an error tagged by the reason, or not there at all.
+ */
+export type FakeControl = "control" | "read-only" | "dev-only" | "absent";
 
 /** How to build a fake monitor. */
 export type FakeMonitorOptions = {
   /** Ring capacity; 0 = a build without the agent flag (or a renderer not attached yet). 64 by default. */
   readonly capacity?: number;
   /** The header delivered at subscribe; `null` for none. A default header by default. */
-  readonly header?: PerfHeaderLine | null;
+  readonly header?: FakeHeaderLine | null;
   /** False: the ring has no `budgetMs` column (an engine before the 11-monitor addendum). */
   readonly budgetColumn?: boolean;
   /**
@@ -82,6 +161,39 @@ export type FakeMonitorOptions = {
    * (`(newest + 1) % capacity`), not to `written % capacity`.
    */
   readonly legacyReset?: boolean;
+  /**
+   * False: the pass ring has none of the 0.15.x columns (`owner`, `kind2`, `kindNames`, `drawsAt`,
+   * `format`, `resolution`), an engine before the patch. True by default.
+   */
+  readonly passColumns?: boolean;
+  /**
+   * How `ring.systemNames` grows at `addSystem`: "copy" (the 0.15.x patch, E8: a new array on
+   * growth, the same reference across frames) by default; "in-place" (0.15.0: the same array
+   * grows); "none" (the ring has no `systemNames`).
+   */
+  readonly systemNames?: "copy" | "in-place" | "none";
+  /**
+   * `monitor.sections(next?)` (next change, N1): "control" by default (reads and writes); with
+   * "read-only" or "dev-only" a read answers and a write throws the tagged refusal; "absent" leaves
+   * the member out.
+   */
+  readonly sections?: FakeControl;
+  /**
+   * `monitor.detail({ from, to })` (next change, N5): "control" by default; "read-only" or
+   * "dev-only" refuse every call with the tagged error; "absent" leaves the member out.
+   */
+  readonly detail?: FakeControl;
+};
+
+/**
+ * The options of the engine installed here (0.15.0): no 0.15.x pass columns, `systemNames` grown in
+ * place, no `monitor.sections`, no `monitor.detail`.
+ */
+export const ENGINE_0_15_0: FakeMonitorOptions = {
+  passColumns: false,
+  systemNames: "in-place",
+  sections: "absent",
+  detail: "absent"
 };
 
 /** A monitor event the fake recorded. */
@@ -90,10 +202,69 @@ export type FakeEvent = {
   readonly detail: Readonly<Record<string, Json>>;
 };
 
+/** A call of `sections` or `detail`, with whether an agent span (`beginAgent`) was open. */
+export type FakeControlCall = {
+  readonly method: "sections" | "detail";
+  /** The argument: the sections to write (undefined for a read), or the range. */
+  readonly input:
+    | Partial<MonitorSections>
+    | { readonly from: number; readonly to: number }
+    | undefined;
+  readonly inAgent: boolean;
+};
+
+/** A pass of a `detail` answer: the engine's record, its frame and the 0.15.x fields. */
+export type FakeDetailPass = PassRecord & {
+  readonly frame: number;
+  readonly owner: number | null;
+  readonly filter: string | null;
+  readonly drawsAt: number | null;
+  readonly format: string | null;
+  readonly resolution: number | null;
+};
+
+/**
+ * The answer of `monitor.detail({ from, to })` (N5, the editor's proposal): the frames of the range
+ * still held, their passes, their five slowest systems (rows × 5, `idx` −1 = none) and the demand
+ * marks (null: the mark ring is a later change).
+ */
+export type FakeDetail = {
+  readonly from: number;
+  readonly to: number;
+  readonly held: { readonly from: number; readonly to: number } | null;
+  readonly frames: readonly FrameRecord[];
+  readonly passes: readonly FakeDetailPass[];
+  readonly systems: {
+    readonly names: readonly string[];
+    readonly idx: readonly number[];
+    readonly ms: readonly number[];
+  } | null;
+  readonly marks: null;
+};
+
+/** The pass ring as the fake writes it: the engine's columns plus the 0.15.x ones when present. */
+export type FakePassColumns = FrameRing["passes"] & PassColumnsNext;
+
+/** The ring of the fake: the engine's `FrameRing`, its pass ring with the 0.15.x columns, and the system names. */
+export type FakeRing = Omit<FrameRing, "passes"> & {
+  readonly passes: FakePassColumns;
+  /** Absent with `systemNames: "none"`. */
+  readonly systemNames?: readonly string[];
+};
+
+/** A header of the 0.15.x patch or later: the engine's header plus `app`, `debug` and `sections`. */
+export type FakeHeaderLine = PerfHeaderLine & PerfHeaderNext;
+
+/** A sample of the 0.15.x patch or later: the engine's sample plus `targets`, `counts` and the next change's fields. */
+export type FakeSampleLine = PerfSampleLine & PerfSampleNext;
+
+/** A line a fake can deliver: the installed engine's, an event of a newer name, or a `passes` line. */
+export type FakeLogLine = PerfLogLine | TimelineEventLine | PerfPassesLine;
+
 /** The fake monitor: a `MonitorLike` plus the test's controls and records. */
 export type FakeMonitor = MonitorLike & {
   /** The ring `frames()` answers (the same object every call). */
-  readonly ring: FrameRing;
+  readonly ring: FakeRing;
   /** `beginAgent` calls. */
   begins: number;
   /** `endAgent` calls. */
@@ -104,6 +275,8 @@ export type FakeMonitor = MonitorLike & {
   readonly marks: string[];
   /** Events passed to `event`. */
   readonly events: FakeEvent[];
+  /** Calls of `sections` and `detail`, oldest first. */
+  readonly controlCalls: FakeControlCall[];
   /** Listeners subscribed now. */
   readonly listeners: number;
   /** The next `read` throws this. */
@@ -119,13 +292,36 @@ export type FakeMonitor = MonitorLike & {
    * bits. False when the slot no longer holds the frame.
    */
   landGpu(frame: number, gpuMs: number, causes?: number): boolean;
-  /** Delivers a line to every listener, deeply frozen. */
-  emit(line: PerfLogLine): void;
+  /**
+   * Writes one render pass into the pass ring at slot `written % capacity` (the engine's
+   * `writePass`), its `gpuMs` NaN unless given, the 0.15.x columns when the ring has them.
+   *
+   * @returns The pass's sequence number: the pass ring's `written` before it.
+   */
+  commitPass(pass?: FakePass): number;
+  /**
+   * A late GPU time lands for the pass of `sequence` while the ring still holds it
+   * (`written − sequence ≤ capacity`). False when it was overwritten.
+   */
+  landPassGpu(sequence: number, gpuMs: number): boolean;
+  /**
+   * Registers a world system: its name at the next index of `ring.systemNames`, a new array
+   * ("copy") or the same one grown ("in-place"). Throws on a ring without names.
+   *
+   * @returns Its index: the `sysIdx` value of its frames.
+   */
+  addSystem(name: string): number;
+  /** Delivers a line to every listener, deeply frozen; a newer engine's line as it is. */
+  emit(line: FakeLogLine): void;
   /**
    * Resets the ring the way the engine's stop does (`stopPerf`): `size` 0 and `newest` -1, `written`
    * kept. The next frame k goes to slot `k % capacity` (engine fix A), or to slot 0 with `legacyReset`.
    */
   restart(): void;
+  /** `monitor.sections(next?)` of the next change; absent with `sections: "absent"`. */
+  sections?: (next?: Partial<MonitorSections>) => MonitorSections;
+  /** `monitor.detail({ from, to })` of the next change; absent with `detail: "absent"`. */
+  detail?: (range: { readonly from: number; readonly to: number }) => FakeDetail;
 };
 
 /** The frame columns and their values per frame (stride). */
@@ -172,6 +368,24 @@ const STRIDES: Readonly<Record<keyof FrameColumns, number>> = {
 /** The column names in a fixed order. */
 const COLUMN_NAMES = Object.keys(STRIDES) as (keyof FrameColumns)[];
 
+/** An empty `sysIdx` slot (the engine's `NO_SYSTEM`). */
+const NO_SYSTEM = 0xff_ff;
+
+/** The slowest systems a frame keeps (`sysIdx` / `sysMs` stride). */
+const SYSTEMS_PER_FRAME = 5;
+
+/** Pass ring slots per frame of capacity (the engine's `capacity * 4`). */
+const PASSES_PER_FRAME = 4;
+
+/** A stencil cell that was not measured (the engine's `NO_STENCIL`). */
+const NO_STENCIL = 255;
+
+/** The pass ring's `kind` byte of each pass kind (the engine's `writePass`: 0 canvas, 1 texture, 2 filter). */
+const PASS_KIND_BYTE: Readonly<Record<PassKind, number>> = { canvas: 0, texture: 1, filter: 2 };
+
+/** The pass kinds by their byte. */
+const PASS_KIND_NAMES: readonly PassKind[] = ["canvas", "texture", "filter"];
+
 /**
  * Allocates the 35 columns of a ring of `capacity` frames.
  *
@@ -210,13 +424,70 @@ function createColumns(capacity: number): FrameColumns {
     changed: new Uint8Array(capacity),
     causes: new Uint8Array(capacity),
     reason: new Uint8Array(capacity),
-    sysIdx: new Uint16Array(capacity * 5),
-    sysMs: new Float32Array(capacity * 5),
+    sysIdx: new Uint16Array(capacity * SYSTEMS_PER_FRAME),
+    sysMs: new Float32Array(capacity * SYSTEMS_PER_FRAME),
     fltKind: new Uint8Array(capacity * 4),
     fltApplies: new Uint16Array(capacity * 4),
     fltMpx: new Float32Array(capacity * 4),
     kept: new Float32Array(capacity).fill(Number.NaN),
     retakes: new Float32Array(capacity).fill(Number.NaN)
+  };
+}
+
+/** The pass ring the fake writes. */
+type MutablePasses = {
+  capacity: number;
+  size: number;
+  newest: number;
+  written: number;
+  frame: Uint32Array;
+  index: Uint8Array;
+  kind: Uint8Array;
+  stencil: Uint8Array;
+  width: Uint16Array;
+  height: Uint16Array;
+  gpuMs: Float32Array;
+  label: (string | null)[];
+  owner?: Uint32Array;
+  kind2?: Uint8Array;
+  kindNames?: string[];
+  drawsAt?: Uint16Array;
+  format?: (string | null)[];
+  resolution?: Float32Array;
+};
+
+/**
+ * Allocates the pass ring: `slots` pre-sized cells per column (labels and formats `null`), the
+ * 0.15.x columns only when the engine has them.
+ *
+ * @param slots - Passes the ring holds.
+ * @param withColumns - The 0.15.x columns exist.
+ * @returns The pass ring.
+ */
+function createPasses(slots: number, withColumns: boolean): MutablePasses {
+  const passes: MutablePasses = {
+    capacity: slots,
+    size: 0,
+    newest: -1,
+    written: 0,
+    frame: new Uint32Array(slots),
+    index: new Uint8Array(slots),
+    kind: new Uint8Array(slots),
+    stencil: new Uint8Array(slots),
+    width: new Uint16Array(slots),
+    height: new Uint16Array(slots),
+    gpuMs: new Float32Array(slots),
+    label: Array.from<string | null>({ length: slots }).fill(null)
+  };
+  if (!withColumns) return passes;
+  return {
+    ...passes,
+    owner: new Uint32Array(slots),
+    kind2: new Uint8Array(slots),
+    kindNames: [],
+    drawsAt: new Uint16Array(slots),
+    format: Array.from<string | null>({ length: slots }).fill(null),
+    resolution: new Float32Array(slots).fill(Number.NaN)
   };
 }
 
@@ -248,14 +519,18 @@ export const DISPLAY: PerfDisplay = {
   orientation: "portrait"
 };
 
+/** The app id of a native debug install (engine S-E3: the `.debug` suffix), in the patch's header. */
+export const APP_ID = "com.moku.garden.debug";
+
 /**
  * A valid header line (11:944-958): a debug build in an Android WebView at 120 fps, budget "rate",
- * with a GPU timer and no `rate` key (a block-2b engine); the display's Hz not learned yet.
+ * with a GPU timer and no `rate` key (a block-2b engine); the display's Hz not learned yet. The
+ * clock anchor is `timeOrigin` (`epochMs = timeOrigin + t` of the page clock).
  *
- * @param overrides - Fields to replace.
+ * @param overrides - Fields to replace (or add: `app`, `debug`, `sections` of a newer engine).
  * @returns The header.
  */
-export function headerLine(overrides: Partial<PerfHeaderLine> = {}): PerfHeaderLine {
+export function headerLine(overrides: Partial<FakeHeaderLine> = {}): FakeHeaderLine {
   return {
     v: 1,
     kind: "header",
@@ -289,13 +564,29 @@ export function headerLine(overrides: Partial<PerfHeaderLine> = {}): PerfHeaderL
 }
 
 /**
+ * The header of an engine with the 0.15.x patch: the app id with the `.debug` suffix of a native
+ * debug install (S-E3) and the overdraw heat map off (U6), on top of `headerLine`.
+ *
+ * @param overrides - Fields to replace.
+ * @returns The header.
+ */
+export function patchedHeaderLine(overrides: Partial<FakeHeaderLine> = {}): FakeHeaderLine {
+  return headerLine({
+    engine: "0.15.1",
+    app: { id: APP_ID },
+    debug: { overdraw: false },
+    ...overrides
+  });
+}
+
+/**
  * A valid sample line (11:977-1004), `kept` null (no kept picture in the second).
  *
  * @param frame - The newest frame of the second.
- * @param overrides - Fields to replace.
+ * @param overrides - Fields to replace (or add: `targets`, `counts` and the next change's fields).
  * @returns The sample.
  */
-export function sampleLine(frame: number, overrides: Partial<PerfSampleLine> = {}): PerfSampleLine {
+export function sampleLine(frame: number, overrides: Partial<FakeSampleLine> = {}): FakeSampleLine {
   const meanMax = { mean: 0.5, max: 1 };
   return {
     v: 1,
@@ -344,6 +635,26 @@ export function sampleLine(frame: number, overrides: Partial<PerfSampleLine> = {
     kept: null,
     ...overrides
   };
+}
+
+/**
+ * The sample of an engine with the 0.15.x patch: render-target churn (E5) and the object counters
+ * (engine U3: entities, views, timers, frame listeners and a registered count), on top of
+ * `sampleLine`.
+ *
+ * @param frame - The newest frame of the second.
+ * @param overrides - Fields to replace.
+ * @returns The sample.
+ */
+export function patchedSampleLine(
+  frame: number,
+  overrides: Partial<FakeSampleLine> = {}
+): FakeSampleLine {
+  return sampleLine(frame, {
+    targets: { created: 6, destroyed: 6 },
+    counts: { entities: 104, views: 180, timers: 3, frameListeners: 2, inputListeners: 5 },
+    ...overrides
+  });
 }
 
 /**
@@ -439,6 +750,23 @@ export function eventLine(
 }
 
 /**
+ * An event line of a name the 0.15.x patch or the next change adds (`shader`, `problem`, `debug`,
+ * `gc`, `sections`), or of any older name.
+ *
+ * @param name - The event name.
+ * @param frame - Its frame; null between frames.
+ * @param detail - Its detail.
+ * @returns The event line.
+ */
+export function nextEventLine(
+  name: PerfEventNameNext,
+  frame: number | null,
+  detail: Readonly<Record<string, Json>> = {}
+): TimelineEventLine {
+  return { v: 1, kind: "event", t: 1_760_454_001_200, build: null, frame, name, detail };
+}
+
+/**
  * A valid mark line (11-monitor), as `monitor.mark(label)` writes it.
  *
  * @param label - What follows.
@@ -469,6 +797,183 @@ export function rateChange(overrides: Partial<RateChange> = {}): RateChange {
   };
 }
 
+/**
+ * A `rate` event line (engine lead 2026-10-16: every adaptive change is one), its detail the
+ * `RateChange` and its frame the frame of the change (null between frames).
+ *
+ * @param overrides - Fields of the rate change to replace.
+ * @param frame - The frame of the change; 4855 by default.
+ * @returns The event line.
+ */
+export function rateLine(
+  overrides: Partial<RateChange> = {},
+  frame: number | null = 4855
+): PerfEventLine {
+  return eventLine("rate", frame, rateChange(overrides));
+}
+
+/**
+ * A `display` event line (game@0fda201): the display of the default header with its refresh rate
+ * learned.
+ *
+ * @param hz - The display's refresh rate.
+ * @returns The event line.
+ */
+export function displayLine(hz: number | null = 120): PerfEventLine {
+  return eventLine("display", null, { ...DISPLAY, hz });
+}
+
+/**
+ * A `shader` event line of the 0.15.x patch (E4): a compile of `fog.blur` during a filter pass,
+ * after boot. `frame` is on the line and in the detail.
+ *
+ * @param overrides - Fields of the detail to replace.
+ * @returns The event line.
+ */
+export function shaderLine(overrides: Partial<ShaderEventDetail> = {}): TimelineEventLine {
+  const detail: ShaderEventDetail = {
+    what: "compile",
+    label: "fog.blur",
+    ms: 38.2,
+    frame: 4851,
+    boot: false,
+    during: { pass: 2, filter: "fog.blur", owner: 412, view: "fogLayer" },
+    ...overrides
+  };
+  return nextEventLine("shader", detail.frame, detail);
+}
+
+/** A still filter flagged on the fog layer, over its budget (`problem`, rule `filter-still`). */
+export const FLAGGED_PROBLEM: ProblemEventDetail = {
+  rule: "filter-still",
+  severity: "warn",
+  owner: 412,
+  view: "fogLayer",
+  filter: "fog.blur",
+  value: 6.2,
+  threshold: 2,
+  since: 4802,
+  frames: 53,
+  reason: "budget"
+};
+
+/**
+ * A `problem` event line (N3, two rules in 0.15.x): a still filter flagged on an owner and view,
+ * over its budget; or the given detail (a `cleared` one, another rule).
+ *
+ * @param detail - The detail; `FLAGGED_PROBLEM` by default.
+ * @param frame - Its frame; 4853 by default.
+ * @returns The event line.
+ */
+export function problemLine(
+  detail: ProblemEventDetail = FLAGGED_PROBLEM,
+  frame: number | null = 4853
+): TimelineEventLine {
+  return nextEventLine("problem", frame, detail);
+}
+
+/**
+ * A `gc` event line (N6, next change): fired only when the heap moved.
+ *
+ * @param overrides - Fields of the detail to replace.
+ * @param frame - Its frame; 4818 by default.
+ * @returns The event line.
+ */
+export function gcLine(
+  overrides: Partial<GcEventDetail> = {},
+  frame: number | null = 4818
+): TimelineEventLine {
+  const detail: GcEventDetail = { freedMb: 4.2, heapMb: 41.9, hint: true, ...overrides };
+  return nextEventLine("gc", frame, detail);
+}
+
+/** A write that switched the passes and shaders sections on (`sections` event). */
+export const PASSES_ON: SectionsEventDetail = { on: ["passes", "shaders"], off: [] };
+
+/**
+ * A `sections` event line (N1, next change): the sections a write switched on and off.
+ *
+ * @param detail - The switched sections; `PASSES_ON` by default.
+ * @returns The event line, between frames.
+ */
+export function sectionsLine(detail: SectionsEventDetail = PASSES_ON): TimelineEventLine {
+  return nextEventLine("sections", null, { on: [...detail.on], off: [...detail.off] });
+}
+
+/**
+ * A `debug` event line (engine U6): the overdraw heat map turned on or off; frames drawn with it on
+ * are not real cost.
+ *
+ * @param overdraw - The heat map is on.
+ * @returns The event line, between frames.
+ */
+export function debugLine(overdraw = true): TimelineEventLine {
+  const detail: DebugEventDetail = { overdraw };
+  return nextEventLine("debug", null, detail);
+}
+
+/**
+ * A per-second `passes` summary line (N4, next change): the fog layer's blur chain of the second and
+ * the heaviest frame's passes.
+ *
+ * @param overrides - Fields to replace.
+ * @returns The line.
+ */
+export function passesLine(overrides: Partial<PerfPassesLine> = {}): PerfPassesLine {
+  return {
+    v: 1,
+    kind: "passes",
+    t: 1_760_454_001_000,
+    chains: [
+      {
+        owner: 412,
+        view: "fogLayer",
+        kinds: ["fog.blur", "fog.blur"],
+        applies: 120,
+        mpx: 221.2,
+        draws: 4,
+        gpuMs: { p50: 6.2, max: 6.9 }
+      }
+    ],
+    heaviest: {
+      frame: 4852,
+      passes: [
+        { index: 0, kind: "canvas", label: "main", stencil: null, w: 1080, h: 2340, gpuMs: 3.1 }
+      ]
+    },
+    ...overrides
+  };
+}
+
+/**
+ * A line of a newer engine as the installed engine's listener type names it: the 0.15.x patch and
+ * the next change hand the same listener line kinds (`passes`) and event names the installed
+ * `PerfLogLine` does not list yet.
+ *
+ * @param line - The line.
+ * @returns The same line.
+ */
+function asStreamLine(line: FakeLogLine): PerfLogLine {
+  // boundary: the engine delivers a newer line unchanged to a listener typed by the older union
+  return line as PerfLogLine;
+}
+
+/**
+ * The tagged error of a member that needs control (the engine's control refusal, TC §3).
+ *
+ * @param reason - "read-only" (a `--debug=read` build) or "dev-only" (missing from the build).
+ * @param method - The member refused.
+ * @returns The error.
+ */
+function refusal(reason: "read-only" | "dev-only", method: string): Error & { reason: string } {
+  return Object.assign(
+    new Error(
+      `[game] monitor.${method} needs a build with control.\n  Build with moku-game build --debug.`
+    ),
+    { reason }
+  );
+}
+
 /** The mutable ring the fake writes. */
 type MutableRing = {
   capacity: number;
@@ -476,10 +981,37 @@ type MutableRing = {
   newest: number;
   written: number;
   columns: FrameColumns;
-  passes: FrameRing["passes"];
+  passes: MutablePasses;
   paths: string[];
+  systemNames?: readonly string[];
   read: FrameRing["read"];
 };
+
+/**
+ * Writes the five slowest systems of a frame (the engine's `writeSystems`): every slot empty, the
+ * first `sysMs` NaN without a timing table, else the given systems slowest first.
+ *
+ * @param c - The columns.
+ * @param slot - The slot.
+ * @param systems - The frame's systems, or none.
+ */
+function writeSystems(
+  c: FrameColumns,
+  slot: number,
+  systems: readonly FakeSystemTime[] | undefined
+): void {
+  const base = slot * SYSTEMS_PER_FRAME;
+  c.sysIdx.fill(NO_SYSTEM, base, base + SYSTEMS_PER_FRAME);
+  c.sysMs.fill(0, base, base + SYSTEMS_PER_FRAME);
+  if (systems === undefined) {
+    c.sysMs[base] = Number.NaN;
+    return;
+  }
+  for (const [place, system] of systems.slice(0, SYSTEMS_PER_FRAME).entries()) {
+    c.sysIdx[base + place] = system.idx;
+    c.sysMs[base + place] = system.ms;
+  }
+}
 
 /**
  * Writes one frame into a slot of the columns.
@@ -518,16 +1050,118 @@ function writeSlot(ring: MutableRing, slot: number, frame: number, input: FakeFr
   c.uploads[slot] = input.uploads ?? Number.NaN;
   c.uploadMb[slot] = input.uploadMb ?? Number.NaN;
   c.compiles[slot] = input.compiles ?? Number.NaN;
-  c.sysMs[slot * 5] = Number.NaN;
+  c.marks[slot] = input.marks ?? Number.NaN;
+  writeSystems(c, slot, input.systems);
   c.kept[slot] = input.kept ?? Number.NaN;
   c.retakes[slot] = input.retakes ?? Number.NaN;
   c.reason[slot] = input.reason ?? 255;
 }
 
 /**
+ * The 1-based `kind2` of a filter kind name (0 for none), interned into `kindNames` like the
+ * engine's sinks.
+ *
+ * @param kindNames - The interned names.
+ * @param filter - The filter kind's name, or none.
+ * @returns The `kind2` byte.
+ */
+function kind2Of(kindNames: string[], filter: string | null | undefined): number {
+  if (filter === null || filter === undefined) return 0;
+  const known = kindNames.indexOf(filter);
+  return (known === -1 ? kindNames.push(filter) - 1 : known) + 1;
+}
+
+/**
+ * Writes the 0.15.x columns of one pass, when the ring has them.
+ *
+ * @param passes - The pass ring.
+ * @param slot - The slot.
+ * @param pass - The pass.
+ */
+function writePassColumns(passes: MutablePasses, slot: number, pass: FakePass): void {
+  const { owner, kind2, kindNames, drawsAt, format, resolution } = passes;
+  if (owner !== undefined) owner[slot] = pass.owner ?? 0;
+  if (kind2 !== undefined && kindNames !== undefined) kind2[slot] = kind2Of(kindNames, pass.filter);
+  if (drawsAt !== undefined) drawsAt[slot] = pass.drawsAt ?? 0;
+  if (format !== undefined) format[slot] = pass.format ?? null;
+  if (resolution !== undefined) resolution[slot] = pass.resolution ?? Number.NaN;
+}
+
+/**
+ * A number of a typed-array cell, `null` for NaN or a cell that does not exist.
+ *
+ * @param column - The column, or none.
+ * @param slot - The slot.
+ * @returns The value.
+ */
+function measuredAt(column: ArrayLike<number> | undefined, slot: number): number | null {
+  const value = column?.[slot];
+  return value === undefined || Number.isNaN(value) ? null : value;
+}
+
+/**
+ * The passes of the frames `frames` still in the pass ring, oldest first, as `detail` answers them.
+ *
+ * @param passes - The pass ring.
+ * @param frames - The frame numbers asked for.
+ * @returns The pass records.
+ */
+function detailPasses(passes: MutablePasses, frames: ReadonlySet<number>): FakeDetailPass[] {
+  const found: FakeDetailPass[] = [];
+  for (let age = passes.size - 1; age >= 0; age -= 1) {
+    const slot = (passes.newest - age + passes.capacity) % passes.capacity;
+    const frame = passes.frame[slot] ?? 0;
+    if (!frames.has(frame)) continue;
+    const stencil = passes.stencil[slot] ?? NO_STENCIL;
+    const kind2 = passes.kind2?.[slot] ?? 0;
+    found.push({
+      frame,
+      index: passes.index[slot] ?? 0,
+      kind: PASS_KIND_NAMES[passes.kind[slot] ?? 0] ?? "texture",
+      label: passes.label[slot] ?? null,
+      stencil: stencil === NO_STENCIL ? null : stencil === 1,
+      w: passes.width[slot] ?? 0,
+      h: passes.height[slot] ?? 0,
+      gpuMs: measuredAt(passes.gpuMs, slot),
+      owner: passes.owner === undefined ? null : (passes.owner[slot] ?? 0) || null,
+      filter: kind2 === 0 ? null : (passes.kindNames?.[kind2 - 1] ?? null),
+      drawsAt: measuredAt(passes.drawsAt, slot),
+      format: passes.format?.[slot] ?? null,
+      resolution: measuredAt(passes.resolution, slot)
+    });
+  }
+  return found;
+}
+
+/**
+ * The five slowest systems of each held slot (rows × 5, `idx` −1 for an empty slot), or null on a
+ * ring without names.
+ *
+ * @param ring - The ring.
+ * @param slots - The slots of the frames, oldest first.
+ * @returns The systems block.
+ */
+function detailSystems(ring: MutableRing, slots: readonly number[]): FakeDetail["systems"] {
+  const names = ring.systemNames;
+  if (names === undefined) return null;
+  const idx: number[] = [];
+  const ms: number[] = [];
+  for (const slot of slots) {
+    for (let place = 0; place < SYSTEMS_PER_FRAME; place += 1) {
+      const at = slot * SYSTEMS_PER_FRAME + place;
+      const index = ring.columns.sysIdx[at] ?? NO_SYSTEM;
+      idx.push(index === NO_SYSTEM ? -1 : index);
+      ms.push(index === NO_SYSTEM ? 0 : (ring.columns.sysMs[at] ?? 0));
+    }
+  }
+  return { names: [...names], idx, ms };
+}
+
+/**
  * Creates the fake monitor of 11-monitor.
  *
- * @param options - Capacity, header, whether the ring has a `budgetMs` column.
+ * @param options - Capacity, header, whether the ring has a `budgetMs` column, the 0.15.x pass
+ *   columns, how `systemNames` grows, and the next change's `sections` / `detail`.
  * @returns The fake.
  */
 export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor {
@@ -535,9 +1169,17 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
   const header = options.header === undefined ? headerLine() : options.header;
   const budgetColumn = options.budgetColumn !== false;
   const legacyReset = options.legacyReset === true;
+  const namesGrow = options.systemNames ?? "copy";
+  const sectionsMode = options.sections ?? "control";
+  const detailMode = options.detail ?? "control";
   const result = { copied: 0, lost: 0 };
   const listeners = new Set<(line: PerfLogLine) => void>();
   let lastFrame = 0;
+  let passFrame = -1;
+  let passIndex = -1;
+  let agentOpen = false;
+  let grownNames: string[] = [];
+  let sections: MonitorSections = Object.freeze({ ...(header?.sections ?? SECTION_DEFAULTS) });
 
   const ring: MutableRing = {
     capacity,
@@ -545,21 +1187,9 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     newest: -1,
     written: 0,
     columns: createColumns(capacity),
-    passes: {
-      capacity: capacity * 4,
-      size: 0,
-      newest: -1,
-      written: 0,
-      frame: new Uint32Array(capacity * 4),
-      index: new Uint8Array(capacity * 4),
-      kind: new Uint8Array(capacity * 4),
-      stencil: new Uint8Array(capacity * 4),
-      width: new Uint16Array(capacity * 4),
-      height: new Uint16Array(capacity * 4),
-      gpuMs: new Float32Array(capacity * 4),
-      label: []
-    },
+    passes: createPasses(capacity * PASSES_PER_FRAME, options.passColumns !== false),
     paths: ["…"],
+    ...(namesGrow === "none" ? {} : { systemNames: grownNames }),
     read: (into, since) => {
       fake.reads += 1;
       if (fake.failRead !== undefined) throw fake.failRead;
@@ -584,6 +1214,69 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     }
   };
 
+  /**
+   * `monitor.sections(next?)`: a read answers the sections; a write merges the given keys, emits a
+   * `sections` event of what switched and answers the new sections, or throws the tagged refusal
+   * without control.
+   *
+   * @param next - The sections to switch; undefined to read.
+   * @returns The sections now.
+   */
+  const readOrWriteSections = (next?: Partial<MonitorSections>): MonitorSections => {
+    fake.controlCalls.push({ method: "sections", input: next, inAgent: agentOpen });
+    if (next === undefined) return sections;
+    if (sectionsMode === "read-only" || sectionsMode === "dev-only") {
+      throw refusal(sectionsMode, "sections");
+    }
+    const on: MonitorSectionName[] = [];
+    const off: MonitorSectionName[] = [];
+    for (const name of MONITOR_SECTIONS) {
+      const value = next[name];
+      if (value === undefined || value === sections[name]) continue;
+      (value ? on : off).push(name);
+    }
+    sections = Object.freeze({ ...sections, ...next });
+    if (on.length + off.length > 0) fake.emit(sectionsLine({ on, off }));
+    return sections;
+  };
+
+  /**
+   * `monitor.detail({ from, to })`: the frames of the range still held, their passes and systems;
+   * the tagged refusal without control.
+   *
+   * @param range - The frames asked for (either order).
+   * @param range.from - One end of the range.
+   * @param range.to - The other end.
+   * @returns The answer.
+   */
+  const detailOf = (range: { readonly from: number; readonly to: number }): FakeDetail => {
+    fake.controlCalls.push({ method: "detail", input: range, inAgent: agentOpen });
+    if (detailMode === "read-only" || detailMode === "dev-only")
+      throw refusal(detailMode, "detail");
+    const from = Math.min(range.from, range.to);
+    const to = Math.max(range.from, range.to);
+    const frames: FrameRecord[] = [];
+    const slots: number[] = [];
+    for (let age = ring.size - 1; age >= 0; age -= 1) {
+      const record = frameAt(ring, age);
+      if (record === undefined || record.frame < from || record.frame > to) continue;
+      frames.push(record);
+      slots.push((ring.newest - age + capacity) % capacity);
+    }
+    const first = frames[0];
+    const last = frames.at(-1);
+    return {
+      from,
+      to,
+      held:
+        first === undefined || last === undefined ? null : { from: first.frame, to: last.frame },
+      frames,
+      passes: detailPasses(ring.passes, new Set(frames.map(record => record.frame))),
+      systems: frames.length === 0 ? null : detailSystems(ring, slots),
+      marks: null
+    };
+  };
+
   const fake: FakeMonitor = {
     ring,
     begins: 0,
@@ -591,6 +1284,7 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     reads: 0,
     marks: [],
     events: [],
+    controlCalls: [],
     get listeners() {
       return listeners.size;
     },
@@ -613,9 +1307,11 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     },
     beginAgent: () => {
       fake.begins += 1;
+      agentOpen = true;
     },
     endAgent: () => {
       fake.ends += 1;
+      agentOpen = false;
     },
     setResolution: resolution => resolution ?? 2,
     commit: input => {
@@ -639,14 +1335,64 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
       }
       return false;
     },
+    commitPass: (pass = {}) => {
+      const { passes } = ring;
+      if (passes.capacity === 0)
+        throw new Error("fake-monitor: a ring of capacity 0 commits no pass");
+      const frame = pass.frame ?? lastFrame;
+      passIndex = pass.index ?? (frame === passFrame ? passIndex + 1 : 0);
+      passFrame = frame;
+      const sequence = passes.written;
+      const slot = sequence % passes.capacity;
+      passes.frame[slot] = frame;
+      passes.index[slot] = passIndex;
+      passes.kind[slot] = PASS_KIND_BYTE[pass.kind ?? "canvas"];
+      passes.stencil[slot] = pass.stencil === undefined ? NO_STENCIL : Number(pass.stencil);
+      passes.width[slot] = pass.w ?? 1080;
+      passes.height[slot] = pass.h ?? 2340;
+      passes.gpuMs[slot] = pass.gpuMs ?? Number.NaN;
+      passes.label[slot] = pass.label ?? null;
+      writePassColumns(passes, slot, pass);
+      passes.newest = slot;
+      passes.size = Math.min(passes.size + 1, passes.capacity);
+      passes.written = sequence + 1;
+      return sequence;
+    },
+    landPassGpu: (sequence, gpuMs) => {
+      const { passes } = ring;
+      if (
+        sequence < 0 ||
+        sequence >= passes.written ||
+        passes.written - sequence > passes.capacity
+      ) {
+        return false;
+      }
+      passes.gpuMs[sequence % passes.capacity] = gpuMs;
+      return true;
+    },
+    addSystem: name => {
+      if (namesGrow === "none") {
+        throw new Error('fake-monitor: a ring with systemNames "none" has no names');
+      }
+      const index = grownNames.length;
+      if (namesGrow === "copy") {
+        grownNames = [...grownNames, name];
+        ring.systemNames = grownNames;
+      } else {
+        grownNames.push(name);
+      }
+      return index;
+    },
     restart: () => {
       ring.size = 0;
       ring.newest = -1;
     },
     emit: line => {
-      const frozen = deepFreeze(line);
+      const frozen = asStreamLine(deepFreeze(line));
       for (const listener of listeners) listener(frozen);
-    }
+    },
+    ...(sectionsMode === "absent" ? {} : { sections: readOrWriteSections }),
+    ...(detailMode === "absent" ? {} : { detail: detailOf })
   };
   return fake;
 }

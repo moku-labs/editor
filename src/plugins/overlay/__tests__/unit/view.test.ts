@@ -3,6 +3,7 @@
 /* eslint-disable unicorn/no-null -- null is the engine's and perf's "not measured" */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PerfSpikeRecord } from "../../../perf/protocol";
+import { CONTROL_ENGINE } from "../../model/game";
 import { openOverlay, setTab } from "../../modes";
 import { PAINT_MS } from "../../types";
 import {
@@ -405,7 +406,9 @@ describe("the Game, Record and Link tabs", () => {
     expect(part(octx, '[data-command="story.skipDialogue"]').getAttribute("aria-disabled")).toBe(
       "true"
     );
-    expect(part(octx, '[data-part="game-note"]').textContent).toContain("READ-ONLY");
+    expect(part(octx, '[data-part="game-note"]').textContent).toBe(
+      `READ-ONLYThis build only reads. Commands run on --debug builds of @moku-labs/game ${CONTROL_ENGINE} or newer (not --debug=read).`
+    );
     click('[data-command="garden.glow"]');
     await vi.waitFor(() => {
       expect(part(octx, "[data-toast]").textContent).toBe("Glow on.");
@@ -467,6 +470,27 @@ describe("the Game, Record and Link tabs", () => {
         "Recording stopped, log kept on the phone."
       );
     });
+  });
+
+  it("the phone's recording shows as started by the game in the tools page (Start passes by: phone)", () => {
+    card();
+    setTab(octx, "record");
+    click('[data-action="start"]');
+    expect(octx.recorder.starts).toEqual([{ by: "phone" }]);
+  });
+
+  it("a recording an agent started elsewhere shows nothing until a local Start (the next tick shows REC, the numbers and who started it)", () => {
+    card();
+    setTab(octx, "record");
+    expect(part(octx, '[data-part="rec-top"] [data-legend]').textContent).toBe("OFF");
+    octx.recorder.statusValue = { ...RECORDING, startedBy: { by: "agent", name: "Claude" } };
+    vi.advanceTimersByTime(PAINT_MS);
+    expect(part(octx, '[data-part="rec-top"] [data-legend]').textContent).toBe("REC");
+    const lines = shadowOf(octx).querySelectorAll('[data-part="rec-stats"] > span');
+    expect([...lines].map(line => line.textContent)).toEqual([
+      "1\u00A0840 lines, 412 KB",
+      "started by an agent (Claude)"
+    ]);
   });
 
   it("toasts a recorder failure without its prefix", async () => {

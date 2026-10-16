@@ -85,6 +85,7 @@ export function createHub(): FakeHub {
       message: vi.fn(),
       close: vi.fn(),
       drain: vi.fn(),
+      pong: vi.fn(),
       maxPayloadLength: 1,
       idleTimeout: 1,
       perMessageDeflate: false
@@ -96,7 +97,10 @@ export function createHub(): FakeHub {
     path: () => "/__editor",
     listenDevices: vi.fn(),
     stopDevices: vi.fn(async () => undefined),
-    devices: vi.fn(() => [])
+    devices: vi.fn(() => []),
+    listenLan: vi.fn(),
+    stopLan: vi.fn(async () => undefined),
+    addEditorMethods: vi.fn()
   };
   return hub;
 }

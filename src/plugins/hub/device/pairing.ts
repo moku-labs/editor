@@ -156,7 +156,9 @@ function confirmPairing(ctx: HubCtx, conn: AgentConn, request: PairRequest): voi
     build: request.build,
     pairedAt: Date.now(),
     conn: conn.conn,
-    logs: new Map()
+    logs: new Map(),
+    // eslint-disable-next-line unicorn/no-null -- null is "no pong yet" on LinkedDevice.latencyMs
+    latencyMs: null
   };
   state.devices.set(id, record);
   if (conn.device !== undefined) conn.device.id = id;

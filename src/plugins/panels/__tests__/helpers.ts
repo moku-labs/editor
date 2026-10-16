@@ -150,6 +150,12 @@ export function createLinkMock(): LinkMock {
       project: () => undefined,
       engine: () => undefined,
       onEngine: () => stopNothing,
+      published: () => undefined,
+      onPublished: () => stopNothing,
+      onSessions: () => stopNothing,
+      ownSession: () => undefined,
+      runIn: vi.fn(() => Promise.resolve(resultOf())),
+      callEditor: vi.fn(() => Promise.resolve(null)),
       files: {
         find: vi.fn(() => Promise.resolve([])),
         list: vi.fn(() => Promise.resolve([])),

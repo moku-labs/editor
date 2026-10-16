@@ -19,6 +19,7 @@ import {
 import { closeDevice } from "../device/connections";
 import { onPerfLines } from "../device/lines";
 import { onPairingMessage } from "../device/pairing";
+import { capsOf } from "../protocol";
 import { settle } from "../routing/calls";
 import {
   announce,
@@ -57,9 +58,26 @@ function manifestOf(params: Json | undefined): Manifest | undefined {
 }
 
 /**
- * The first message: a valid `hello` notification on channel `game` opens the session and tells
- * the agent its id on channel `editor` (R6), then announces it; anything else, a `hello` on another
- * channel included, closes 1008 `hello first`.
+ * The `caps` member of hello params, as it arrived (an older bridge sends none).
+ *
+ * @param params - The hello params.
+ * @returns The member, or undefined.
+ * @example
+ * ```ts
+ * capsIn({ manifest, caps: ["run-from"] }); // ["run-from"]
+ * ```
+ */
+function capsIn(params: Json | undefined): Json | undefined {
+  return typeof params === "object" && params !== null && !Array.isArray(params)
+    ? params.caps
+    : undefined;
+}
+
+/**
+ * The first message: a valid `hello` notification on channel `game` opens the session (with the
+ * known capabilities of its `caps`, spec 11 § 5.1) and tells the agent its id on channel `editor`
+ * (R6), then announces it; anything else, a `hello` on another channel included, closes 1008
+ * `hello first`.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
@@ -82,7 +100,7 @@ function onHello(ctx: HubCtx, conn: AgentConn, message: Message): void {
     return;
   }
 
-  const session = openSession(ctx, conn, manifest);
+  const session = openSession(ctx, conn, manifest, capsOf(capsIn(message.params)));
   const payload = { id: session.id, game: manifest.game, open: true };
   const answer = sessionParams(payload, ctx.state.engineId);
   sendJson(conn, notification("editor", "session", answer));

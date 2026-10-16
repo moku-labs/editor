@@ -1,8 +1,9 @@
 /**
  * Complex tier — the editor's websocket switchboard: token + Origin/Host checks before upgrade,
  * one websocket handler (agent, tools, device), sessions, routing, pending calls, fan-out,
- * published server state (the computer's engine among it), serve(), and device mode (the device
- * listeners, pairing, the device's perf log batches).
+ * published server state (the computer's engine among it), serve(), editor methods of other
+ * server plugins, the `from` / `client` stamp of a tools run, and device mode (the device
+ * listeners, the LAN listener on and off, pairing, the link ping, the device's perf log batches).
  * Emits the global server event `hub:session` and its own event `hub:device`; hooks
  * `files:project` (published as `editor.project`).
  *

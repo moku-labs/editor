@@ -7,8 +7,24 @@ import { isAllowed } from "../../registry/protocol";
 import type { OverlayCommand, OverlayRegistry, OverlayTab } from "../types";
 import type { GameRow, GameView, ToastView } from "./types";
 
-/** The refusal text of a plain `--debug` build. */
-export const READ_ONLY_TEXT = "needs a --debug=full build";
+/**
+ * The engine release whose `--debug` build includes control (`__MOKU_GAME_CONTROL__`), so its
+ * cheats run on the phone. Written when the engine version is pinned (spec 10 E8); a placeholder
+ * until then.
+ */
+export const CONTROL_ENGINE = "0.15.x";
+
+/**
+ * The refusal text of a read-only build: a `--debug` build of an engine before `CONTROL_ENGINE`,
+ * or a deliberate `--debug=read` build. A refused row's second line and its title.
+ */
+export const READ_ONLY_TEXT = "needs a debug build of a newer engine, or without --debug=read";
+
+/** The words of a press the page refused read-only (-32009 `read_only`), after the command's title. */
+export const READ_ONLY_TOAST = "needs a debug build of a newer engine";
+
+/** The note under the READ-ONLY legend of the Game tab, naming the engine that runs commands. */
+export const READ_ONLY_NOTE = `This build only reads. Commands run on --debug builds of @moku-labs/game ${CONTROL_ENGINE} or newer (not --debug=read).`;
 
 /** The refusal text of a page without the debug or dev flags. */
 const DEV_ONLY_TEXT = "needs a dev or debug build";

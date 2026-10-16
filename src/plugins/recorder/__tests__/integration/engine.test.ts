@@ -100,7 +100,7 @@ describe("the recorder on the real engine", () => {
     const editor = createApp({
       pluginConfigs: {
         registry: { game: game as unknown as GameLike },
-        recorder: { storage: "memory" }
+        recorder: { storage: "memory", autoStart: "device" }
       }
     });
     editor.log.clearSinks();

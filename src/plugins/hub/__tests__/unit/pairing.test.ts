@@ -89,7 +89,9 @@ describe("pairing: who is asked", () => {
           engine: "0.14.12+9c41e0",
           build: "debug-1",
           pairedAt: NOW,
-          online: true
+          online: true,
+          // eslint-disable-next-line unicorn/no-null -- null is "no pong yet" on LinkedDevice.latencyMs
+          latencyMs: null
         }
       }
     ]);

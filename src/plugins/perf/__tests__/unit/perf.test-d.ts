@@ -4,6 +4,8 @@ import type { Json } from "../../../registry/protocol";
 import type { GraphContext2D } from "../../graph";
 import type {
   MonitorLike,
+  PASS_KINDS,
+  PassKind,
   PerfDetailWire,
   PerfEventsWire,
   PerfFrameEvent,
@@ -104,3 +106,8 @@ export function freedOf(event: PerfTimelineEvent): number {
   expectTypeOf(event.freedMb).toBeNumber();
   return event.kind === "gc" ? event.freedMb : 0;
 }
+
+// Every pass kind of the engine has a byte in the history's `passKind` (PASS_KINDS): an engine that
+// adds a kind fails here first (bug: readFramesWire refusing every frames wire that carries the new
+// kind, the tools page's history going blank).
+expectTypeOf<Exclude<PassKind, (typeof PASS_KINDS)[number]>>().toBeNever();

@@ -140,10 +140,14 @@ type HandleCall = (method: RelayedEditorMethod, handler: (params: never) => unkn
 
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
-  [K in keyof Omit<LinkApi, "files" | "handle">]: Mock<LinkApi[K]>;
+  [K in keyof Omit<LinkApi, "files" | "handle" | "published" | "onPublished">]: Mock<LinkApi[K]>;
 } & {
   files: LinkApi["files"];
   handle: Mock<HandleCall>;
+  /** Generic over the publish method, so a plain field: `Mock<>` would drop its type parameter. */
+  published: LinkApi["published"];
+  /** Generic over the publish method, so a plain field (see `published`). */
+  onPublished: LinkApi["onPublished"];
   /** Live tap listeners. */
   readonly tapListeners: Set<TapListener>;
   /** Calls every tap listener, like link on a game tap. */
@@ -236,6 +240,12 @@ export function createLinkMock(): LinkMock {
         engineListeners.delete(listener);
       };
     }),
+    published: () => undefined,
+    onPublished: () => vi.fn(),
+    onSessions: vi.fn<LinkApi["onSessions"]>(() => vi.fn()),
+    ownSession: vi.fn<LinkApi["ownSession"]>(() => undefined),
+    runIn: vi.fn<LinkApi["runIn"]>(() => Promise.resolve(resultOf())),
+    callEditor: vi.fn<LinkApi["callEditor"]>(() => Promise.resolve(null)),
     notify: vi.fn<LinkApi["notify"]>(),
     handle: vi.fn<HandleCall>(() => vi.fn()),
     tapListeners,

@@ -1,6 +1,11 @@
 /* eslint-disable unicorn/no-null -- null is "no build" in the engine's log lines */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  debugLine,
+  rateLine,
+  sampleLine,
+  sectionsLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import type { PerfLogLine, PerfMarkLine } from "../../../perf/protocol";
 import { flushTick, utf8Length } from "../../flush";
 import { startRecorder, stopRecorder } from "../../lifecycle";
@@ -189,6 +194,29 @@ describe("rotation at maxLogMb", () => {
     expect(t.api.unsentRun(100)).toMatchObject({ log: second, from: 0 });
   });
 
+  it("starts the next log with the rate, sections and debug context lines again and keeps who started it (bug: the second part of an agent's run read at the header's rate, shown as started by the game)", async () => {
+    const t = recorder({ config: { maxLogMb: 3000 / 1_048_576 } });
+    const rate = rateLine();
+    for (const line of [rate, sectionsLine(), debugLine(true)]) t.monitor.emit(line);
+    const first = t.api.start({ by: "agent", name: "Claude" }).name;
+    for (let frame = 1; frame <= 4; frame += 1) t.monitor.emit(sampleLine(frame));
+    await tickUntilDrained(t);
+    expect(t.api.status().startedBy).toEqual({ by: "agent", name: "Claude" });
+    await t.api.stop();
+    const second = t.api.files()[1]?.name ?? "";
+    expect(second).not.toBe(first);
+    const lines = await storedLines(t.state.memory, second);
+    expect(kinds(lines).slice(0, 5)).toEqual([
+      "header",
+      "event:rate",
+      "event:sections",
+      "event:debug",
+      "event:recorder"
+    ]);
+    expect(lines[1]).toEqual(rate);
+    expect(lines[4]).toMatchObject({ detail: { action: "start", by: "agent", name: "Claude" } });
+  });
+
   it("leaves a log under the cap alone", () => {
     const t = recorder();
     t.api.start();
@@ -330,6 +358,7 @@ describe("a stop with a large queue", () => {
         bytes: blob.size
       });
       expect(kinds(lines)[0]).toBe("header");
+      expect(lines[1]).toMatchObject({ detail: { action: "start", by: "auto", name: null } });
       expect(lines.at(-1)).toMatchObject({ kind: "event", detail: { action: "stop" } });
       all.push(...lines);
     }

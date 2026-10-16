@@ -189,6 +189,7 @@ export function deviceOf(overrides: Partial<LinkedDevice> = {}): LinkedDevice {
     build: "debug-pair",
     pairedAt: 1_791_986_083_963,
     online: true,
+    latencyMs: null,
     ...overrides
   };
 }

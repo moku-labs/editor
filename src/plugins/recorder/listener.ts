@@ -3,7 +3,7 @@
  * commit or flush (it may run before `stream` returns, with the header). It allocates nothing and
  * never serializes: every line is a fresh, deeply frozen engine object, kept as a reference.
  */
-import type { PerfLogLine } from "../perf/protocol";
+import type { PerfEventLine, PerfLogLine, TimelineEventLine } from "../perf/protocol";
 import type { RecorderState } from "./types";
 
 /**
@@ -57,17 +57,66 @@ export function clearQueue(state: RecorderState): void {
 }
 
 /**
- * The stream listener: keeps the newest header, startup and `display` event for the next log
- * start, and queues every line while a log runs (also while it is exported). Without a log (also
- * while a finished log is exported), every other line is ignored.
+ * Keeps an event line that is context for the next log start, by reference: the newest `display`,
+ * `rate`, `sections` and `debug` event. Any other event is not context.
+ *
+ * @param state - The recorder's state.
+ * @param line - An event line of the stream.
+ */
+function keepContext(state: RecorderState, line: PerfEventLine): void {
+  // The 0.15.x patch and the next change send `sections` and `debug`, names the installed engine's
+  // PerfEventName does not list yet: read the line as the newer engine's event line.
+  const event: TimelineEventLine = line;
+  switch (event.name) {
+    case "display": {
+      state.display = line;
+      break;
+    }
+    case "rate": {
+      state.rate = line;
+      break;
+    }
+    case "sections": {
+      state.sections = line;
+      break;
+    }
+    case "debug": {
+      state.debug = line;
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+/**
+ * The stream listener: keeps the newest header, startup and `display`, `rate`, `sections` and
+ * `debug` events for the next log start, and queues every line while a log runs (also while it is
+ * exported), whatever its kind or name: an engine's new lines pass through unchanged. Without a log
+ * (also while a finished log is exported), every other line is ignored.
  *
  * @param state - The recorder's state.
  * @param line - A line of the monitor's stream.
  */
 export function listen(state: RecorderState, line: PerfLogLine): void {
-  if (line.kind === "header") state.header = line;
-  else if (line.kind === "startup") state.startup = line;
-  else if (line.kind === "event" && line.name === "display") state.display = line;
+  switch (line.kind) {
+    case "header": {
+      state.header = line;
+      break;
+    }
+    case "startup": {
+      state.startup = line;
+      break;
+    }
+    case "event": {
+      keepContext(state, line);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
 
   if (state.session !== undefined) enqueue(state, line);
 }

@@ -1,6 +1,12 @@
 /* eslint-disable unicorn/no-null -- null is "no label" and "no build" in the log lines */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { eventLine, headerLine, sampleLine } from "../../../../../tests/fixtures/fake-monitor";
+import {
+  eventLine,
+  headerLine,
+  passesLine,
+  sampleLine,
+  shaderLine
+} from "../../../../../tests/fixtures/fake-monitor";
 import type { PerfMarkLine } from "../../../perf/protocol";
 import { flushTick } from "../../flush";
 import { readLog } from "../../state";
@@ -65,6 +71,23 @@ describe("the flush tick", () => {
     expect(seen).toEqual([0, 3]);
     expect(t.state.session?.bytes).toBe(bytes);
     expect(t.state.queueSize).toBe(0);
+  });
+
+  it("takes a second with its passes line and a boot burst of 64 shader lines without a drop, at the default queue (bug: the boot compile burst evicting the samples)", () => {
+    const t = recorder();
+    t.api.start();
+    for (let second = 1; second <= 3; second += 1) {
+      t.monitor.emit(sampleLine(second * 60));
+      t.monitor.emit(passesLine());
+      const burst = second === 1 ? 64 : 1;
+      for (let index = 0; index < burst; index += 1) {
+        t.monitor.emit(shaderLine({ label: `pipe-${index}`, boot: second === 1 }));
+      }
+      vi.advanceTimersByTime(1000);
+      flushTick(t.ctx);
+    }
+    expect(t.api.status().dropped).toBe(0);
+    expect(t.state.session?.lines).toBe(2 + 3 * 2 + 64 + 2);
   });
 
   it("closes the agent span also when the store throws inside it (bug: an open span charges the game every frame)", () => {
@@ -144,7 +167,9 @@ describe("the flush tick", () => {
     await t.state.memory.append(old, "o".repeat(5000));
     t.state.files = [old];
     const h = JSON.stringify(headerLine()).length;
-    const s = JSON.stringify(eventLine("recorder", null, { action: "start", label: null })).length;
+    const s = JSON.stringify(
+      eventLine("recorder", null, { action: "start", label: null, by: "code", name: null })
+    ).length;
     const m = JSON.stringify(markOf("a".repeat(1000))).length;
     // The pending text plus the three marks left in the outbox: exactly at the bound.
     const bound = h + s + 3 * m + 5 + (3 * m + 3);

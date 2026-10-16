@@ -1,7 +1,17 @@
 /* eslint-disable unicorn/no-null, sonarjs/no-hardcoded-ip -- null is "no LAN listener" (DeviceListen.lan); LAN addresses are the cases under test */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DeviceDirectory, DeviceTelemetry } from "../../../connect/protocol";
 import type { DeviceDeps } from "../../device/listen";
-import { DEVICE_STOP_MS, listenDevices, stopDevices, teardownDevices } from "../../device/listen";
+import {
+  DEVICE_STOP_MS,
+  listenDevices,
+  listenLan,
+  stopDevices,
+  stopLan,
+  teardownDevices
+} from "../../device/listen";
+import { devicesOf } from "../../device/records";
+import { publish } from "../../routing/publish";
 import { registerRoutes } from "../../serve";
 import { createHubState } from "../../state";
 import type { DeviceListenOptions, HubDeviceEvent } from "../../types";
@@ -11,9 +21,11 @@ import {
   createHarness,
   DEFAULT_CONFIG,
   fakeServe,
+  flush,
   helloOf,
   pairAdb,
   pairOf,
+  paramsOf,
   recordingConfirm
 } from "../helpers";
 
@@ -386,5 +398,199 @@ describe("teardownDevices", () => {
     await teardownDevices(harness.ctx.state);
 
     expect(game.closes).toEqual([]);
+  });
+});
+
+describe("listenLan (H1)", () => {
+  it("throws the two-line Error before device mode and starts nothing", async () => {
+    const harness = createHarness({ lanAddress: "192.168.1.5" });
+    const fake = fakeServe();
+
+    const before = listenLan(harness.ctx, harness.handler, depsOf(fake));
+
+    await expect(before).rejects.toThrow(
+      /^\[moku-editor] hub\.listenLan\(\) needs device mode\.\n {2}Call hub\.listenDevices\(\) first\.$/
+    );
+    await expect(before).rejects.not.toBeInstanceOf(TypeError);
+    expect(fake.serve).not.toHaveBeenCalled();
+  });
+
+  it("adds the LAN listener on the real port with the socket only, logs hub:devices-lan and emits listening with the LAN address", async () => {
+    const harness = createHarness({ devicePort: 0, lanAddress: "192.168.1.5" });
+    const fake = fakeServe(51_234);
+    await listen(harness, fake);
+    harness.ctx.emit.mockClear();
+
+    const answer = await listenLan(harness.ctx, harness.handler, depsOf(fake));
+
+    expect(answer).toEqual({ port: 51_234, adb: "127.0.0.1:51234", lan: "192.168.1.5:51234" });
+    const lan = fake.calls[1];
+    expect([lan?.hostname, lan?.port]).toEqual(["192.168.1.5", 51_234]);
+    expect(Object.keys(lan?.routes ?? {})).toEqual(["/__editor/ws"]);
+    expect(lan?.fetch().status).toBe(404);
+    expect(lan?.websocket).toBe(harness.handler);
+    expect(harness.ctx.state.deviceListen).toEqual(answer);
+    expect(harness.ctx.log.info).toHaveBeenCalledWith("hub:devices-lan", {
+      lan: "192.168.1.5:51234"
+    });
+    expect(deviceEvents(harness)).toEqual([{ kind: "listening", listen: answer }]);
+
+    // Device mode off stops the LAN listener listenLan started.
+    await teardownDevices(harness.ctx.state);
+    expect(fake.servers[1]?.stop).toHaveBeenCalledWith(true);
+  });
+
+  it("starts nothing on a second call, nor when listenDevices already listens on the LAN", async () => {
+    const harness = createHarness({ lanAddress: "192.168.1.5" });
+    const fake = fakeServe();
+    await listen(harness, fake);
+    const first = await listenLan(harness.ctx, harness.handler, depsOf(fake));
+    harness.ctx.emit.mockClear();
+
+    const second = await listenLan(harness.ctx, harness.handler, depsOf(fake));
+
+    expect(second).toBe(first);
+    expect(fake.serve).toHaveBeenCalledTimes(2);
+    expect(deviceEvents(harness)).toEqual([]);
+
+    const lanOn = createHarness({ deviceLan: true, lanAddress: "192.168.1.5" });
+    const lanFake = fakeServe();
+    const listening = await listen(lanOn, lanFake);
+    await expect(listenLan(lanOn.ctx, lanOn.handler, depsOf(lanFake))).resolves.toBe(listening);
+    expect(lanFake.serve).toHaveBeenCalledTimes(2);
+  });
+
+  it("picks the LAN address like listenDevices, and throws the no-LAN error when there is none", async () => {
+    const picked = createHarness();
+    const fake = fakeServe();
+    await listen(picked, fake);
+    const interfaces = { en0: [{ address: "192.168.1.5", family: "IPv4", internal: false }] };
+    const answer = await listenLan(picked.ctx, picked.handler, depsOf(fake, interfaces));
+    expect(answer.lan).toBe("192.168.1.5:47600");
+
+    const none = createHarness();
+    const noneFake = fakeServe();
+    await listen(none, noneFake);
+    await expect(listenLan(none.ctx, none.handler, depsOf(noneFake))).rejects.toThrow(
+      /^\[moku-editor] hub: --lan found no LAN address on this computer\.\n {2}Connect to a Wi-Fi or set pluginConfigs\.hub\.lanAddress\.$/
+    );
+    expect(noneFake.serve).toHaveBeenCalledTimes(1);
+    expect(none.ctx.state.deviceListen?.lan).toBeNull();
+  });
+
+  it("leaves device mode as it was when the LAN listener cannot start", async () => {
+    const harness = createHarness({ lanAddress: "192.168.1.5" });
+    const fake = fakeServe();
+    const before = await listen(harness, fake);
+    fake.serve.mockImplementationOnce(() => {
+      throw Object.assign(new Error("in use"), { code: "EADDRINUSE" });
+    });
+
+    await expect(listenLan(harness.ctx, harness.handler, depsOf(fake))).rejects.toMatchObject({
+      code: "EADDRINUSE"
+    });
+    expect(harness.ctx.state.deviceListen).toBe(before);
+    expect(harness.ctx.state.deviceServers?.lan).toBeUndefined();
+  });
+});
+
+describe("stopLan (H1)", () => {
+  it("closes only the LAN devices, emits closed (stopped) for each and listening with lan null (bug: the Wi-Fi path off dropping the USB phone)", async () => {
+    const harness = await createDeviceHarness({ deviceLan: true, lanAddress: "192.168.1.5" });
+    harness.confirm.mockResolvedValue(true);
+    const usb = pairAdb(harness);
+    const phone = harness.device({ link: "lan", address: "192.168.1.23" });
+    harness.send(phone, pairOf());
+    await flush();
+    const lanId = paramsOf(phone.notes("editor", "paired")[0])?.device;
+    const asking = harness.device({ link: "lan", address: "192.168.1.24" });
+    harness.ctx.emit.mockClear();
+
+    await stopLan(harness.ctx);
+
+    expect(phone.closes).toEqual([{ code: 1001, reason: "lan off" }]);
+    expect(asking.closes).toEqual([{ code: 1001, reason: "lan off" }]);
+    expect(usb.socket.closes).toEqual([]);
+    const events = deviceEvents(harness);
+    expect(events.map(event => event.kind)).toEqual(["closed", "listening"]);
+    expect(events[0]).toMatchObject({
+      kind: "closed",
+      reason: "stopped",
+      device: { id: lanId, online: false }
+    });
+    expect(events[1]).toEqual({
+      kind: "listening",
+      listen: { port: 47_600, adb: "127.0.0.1:47600", lan: null }
+    });
+    expect(harness.fake.servers[1]?.stop).toHaveBeenCalledWith(true);
+    expect(harness.fake.servers[0]?.stop).not.toHaveBeenCalled();
+    expect(harness.ctx.state.deviceServers?.lan).toBeUndefined();
+    expect(devicesOf(harness.ctx.state).map(device => [device.link, device.online])).toEqual([
+      ["adb", true],
+      ["lan", false]
+    ]);
+
+    // The closed socket's own close handler announces nothing more.
+    harness.close(phone);
+    expect(deviceEvents(harness)).toHaveLength(2);
+  });
+
+  it("does nothing without a LAN listener", async () => {
+    const harness = await createDeviceHarness();
+
+    await stopLan(harness.ctx);
+    await stopLan(createHarness().ctx);
+
+    expect(harness.ctx.emit).not.toHaveBeenCalled();
+    expect(harness.fake.servers[0]?.stop).not.toHaveBeenCalled();
+  });
+});
+
+describe("published device state (H3)", () => {
+  /** A directory with device mode on and no phone. */
+  const DIRECTORY: DeviceDirectory = {
+    v: 1,
+    mode: {
+      on: true,
+      owner: "connect",
+      listen: { port: 47_600, adb: "127.0.0.1:47600", lan: null }
+    },
+    confirmIn: "page",
+    adb: { available: true },
+    wire: [],
+    asking: [],
+    linked: [],
+    at: 1_791_986_083_963
+  };
+
+  /** A telemetry record of a phone on the network: every reading off. */
+  const off = { available: false, source: "none", reason: "not-wired" } as const;
+  const TELEMETRY: DeviceTelemetry = {
+    v: 1,
+    device: "d-7f3a",
+    serial: null,
+    at: 1_791_986_083_963,
+    wired: false,
+    gpu: off,
+    cpu: { cores: null, app: off, renderer: off, surfaceflinger: off },
+    memory: { app: off, renderer: off },
+    heap: off
+  };
+
+  it("sends devices and deviceTelemetry to the tools pages, and stopDevices drops the held telemetry only", async () => {
+    const harness = await createDeviceHarness();
+    const tools = harness.connect("tools");
+    tools.clear();
+
+    publish(harness.ctx, "devices", DIRECTORY);
+    publish(harness.ctx, "deviceTelemetry", TELEMETRY);
+    expect(tools.notes("editor", "devices")).toHaveLength(1);
+    expect(tools.notes("editor", "deviceTelemetry")).toHaveLength(1);
+
+    await stopDevices(harness.ctx);
+    const later = harness.connect("tools");
+
+    expect(later.notes("editor", "devices")).toHaveLength(1);
+    expect(later.notes("editor", "deviceTelemetry")).toEqual([]);
   });
 });

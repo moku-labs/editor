@@ -202,7 +202,7 @@ async function startPhone(address: string, retryMs = 100) {
     pluginConfigs: {
       registry: { game: grafted, name: "tiny-screen 0.0.0" },
       channel: { heartbeatMs: 100 },
-      recorder: { storage: "memory", flushEveryMs: 100 },
+      recorder: { storage: "memory", flushEveryMs: 100, autoStart: "device" },
       bridge: { retryMs, callTimeoutMs: 2000 }
     }
   });

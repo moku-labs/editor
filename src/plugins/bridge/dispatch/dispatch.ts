@@ -1,8 +1,9 @@
 /**
  * @file bridge plugin — dispatch of the hub's messages: the `editor`/`session` notification (with
  * the computer's engine), `editor`/`paired` and `editor`/`perf.ack` of device mode, and every game
- * request answered exactly once, within its deadline (R1, R7). A hub `run` runs for the bridge
- * (`via: "bridge"`), so the registry names the tools page and MCP as its source.
+ * request answered exactly once, within its deadline (R1, R7). A hub `run` runs with the `via` of
+ * the hub's `from` stamp (`"tools"`, `"mcp"`, or `"bridge"` for a hub that does not say) and, for
+ * an agent, the MCP client's name (spec 07 B1), so the registry and the recorder name who ran it.
  */
 import type {
   Json,
@@ -26,7 +27,7 @@ import { onPaired } from "../connection/device";
 import { onAck } from "../lines";
 import { currentStatus, setStatus } from "../status";
 import type { BridgeDeps } from "../types";
-import { checkParams, deadlineFor, memberOf } from "./params";
+import { checkParams, clientOf, deadlineFor, memberOf, viaOf } from "./params";
 import { messageOf, sendNow } from "./send";
 import { refreshAll, subscribe, unsubscribe } from "./subscriptions";
 
@@ -140,8 +141,9 @@ async function route(deps: BridgeDeps, request: RpcRequest): Promise<void> {
       return;
     }
     case "run": {
-      const { id, input } = checkParams("run", params);
-      await answerWithin(deps, request, id, deps.channel.run(id, input, "bridge"));
+      const { id, input, from, client } = checkParams("run", params);
+      const work = deps.channel.run(id, input, viaOf(from), clientOf(from, client));
+      await answerWithin(deps, request, id, work);
       refreshAll(deps);
       return;
     }

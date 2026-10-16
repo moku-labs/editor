@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunResult } from "../../../registry/protocol";
-import { wireError } from "../../../registry/protocol";
+import type { BuildProfile, CommandDescriptor, RunResult } from "../../../registry/protocol";
+import { refusalOf, wireError } from "../../../registry/protocol";
 import { pressCommand } from "../../actions";
 import { gameRows, gameView, overlayCommands, reasonText, tabsOf } from "../../model/game";
 import { openOverlay, setTab } from "../../modes";
@@ -21,6 +21,26 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, "__MOKU_GAME_OVERLAY__");
   vi.restoreAllMocks();
 });
+
+/** The read-only words of a refused row (spec 08 Delta 2026-10-16 O1). */
+const READ_ONLY_WORDS = "needs a debug build of a newer engine, or without --debug=read";
+
+/**
+ * The design's Game tab commands as the registry describes them on a page of a profile: `allowed`
+ * and `reason` from `refusalOf(profile, effect)` (spec 02 C1), as `describeCommand` sets them.
+ *
+ * @param profile - The page's build profile.
+ * @returns The descriptors.
+ */
+function describedOn(profile: BuildProfile): CommandDescriptor[] {
+  return GARDEN_COMMANDS.map(({ id, title, input, effect, overlay }) => {
+    const reason = refusalOf(profile, effect);
+    const marker = overlay === undefined ? {} : { overlay };
+    return reason === undefined
+      ? { id, title, input, effect, ...marker, allowed: true }
+      : { id, title, input, effect, ...marker, allowed: false, reason };
+  });
+}
 
 /**
  * A context over the design's Game tab commands; Glow off, Fog on.
@@ -46,12 +66,12 @@ describe("the Game tab model", () => {
         "story.skipDialogue",
         "refused",
         "RUN",
-        "story.skipDialogue, needs a --debug=full build",
+        `story.skipDialogue, ${READ_ONLY_WORDS}`,
         true,
         undefined
       ]
     ]);
-    expect(rows[2]?.title).toBe("needs a --debug=full build");
+    expect(rows[2]?.title).toBe(READ_ONLY_WORDS);
   });
 
   it("marks a command in flight busy", () => {
@@ -73,9 +93,21 @@ describe("the Game tab model", () => {
     expect(gameView("x", devOnly, new Set(), undefined).readOnly).toBe(false);
   });
 
-  it("reasonText: dev-only reads needs a --debug=full build (it reads needs a dev or debug build)", () => {
+  it("a read-only row tells the tester to use the deprecated =full flag (it names a newer engine or a build without --debug=read); dev-only keeps its words", () => {
     expect(reasonText("dev-only")).toBe("needs a dev or debug build");
-    expect(reasonText("read-only")).toBe("needs a --debug=full build");
+    expect(reasonText("read-only")).toBe(READ_ONLY_WORDS);
+  });
+
+  it("cheats are greyed on the owner's debug build (registry profile full: every marked row is enabled, no READ-ONLY note)", () => {
+    const octx = createOctx({}, describedOn("full"));
+    octx.registry.buildInfo = { ...octx.registry.buildInfo, profile: "full" };
+    const commands = overlayCommands(octx.registry);
+    expect(gameRows(commands, new Set()).map(row => [row.id, row.state, row.disabled])).toEqual([
+      ["garden.glow", "off", false],
+      ["garden.fog", "off", false],
+      ["story.skipDialogue", "run", false]
+    ]);
+    expect(gameView("A Memory Missing", commands, new Set(), undefined).readOnly).toBe(false);
   });
 
   it("the Game tab shows with no overlay commands (it does not)", () => {
@@ -138,13 +170,13 @@ describe("a press", () => {
     };
     await pressCommand(octx, "garden.glow");
     expect(octx.state.toast).toMatchObject({
-      text: "Glow needs a --debug=full build.",
+      text: "Glow needs a debug build of a newer engine.",
       tone: "error"
     });
     expect(octx.log.warn).not.toHaveBeenCalled();
   });
 
-  it("a dev-only refusal shows the --debug=full text (it names its own reason)", async () => {
+  it("a dev-only refusal shows the read-only words (it names its own reason)", async () => {
     const octx = garden();
     octx.channel.answer = async () => {
       throw wireError(-32_009, "garden.glow: the page has no dev or debug flag", {

@@ -93,7 +93,7 @@ describe("createRenderViewState", () => {
     const first = createRenderViewState({ config: CONFIG });
     const second = createRenderViewState({ config: CONFIG });
 
-    expect(second).not.toBe(first);
+    expect(second === first).toBe(false);
     expect(second.sources).not.toBe(first.sources);
     expect(second.loaded).not.toBe(first.loaded);
     expect(second.releases).not.toBe(first.releases);

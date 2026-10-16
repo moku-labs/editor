@@ -6,7 +6,7 @@ import type { HubConfig, HubState } from "./types";
 /**
  * Creates the initial hub state: empty maps, counters from 1, no token, not served, routes open,
  * nothing published, no selection page, no port yet, device mode off with no device, no pairing
- * and no engine published yet.
+ * and no ping, no engine published yet, and no editor method of another plugin.
  *
  * @param _ctx - Minimal context.
  * @param _ctx.config - Resolved plugin config.
@@ -35,6 +35,8 @@ export function createHubState(_ctx: { readonly config: Readonly<HubConfig> }): 
     confirm: undefined,
     devices: new Map(),
     pairing: { queue: [], asking: undefined, cooldown: new Map() },
-    engineId: undefined
+    engineId: undefined,
+    editorMethods: new Map(),
+    pingTimer: undefined
   };
 }

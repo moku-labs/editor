@@ -14,7 +14,7 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
-import type { SessionDevice } from "../protocol";
+import type { AgentCap, SessionDevice } from "../protocol";
 import { JSON_NULL, sendJson, toolsConns } from "../sockets/send";
 import type { AgentConn, HubCtx, HubSession, HubState, Session } from "../types";
 import { failSession } from "./calls";
@@ -321,14 +321,20 @@ export function sessionDeviceOf(state: HubState, conn: AgentConn): SessionDevice
 
 /**
  * Opens a session for an agent that sent a valid hello; a paired phone's session records its
- * device.
+ * device, every session the known capabilities its hello named.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The agent connection.
  * @param manifest - Its manifest.
+ * @param caps - The known capabilities of its hello (none for an older agent).
  * @returns The new session.
  */
-export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): Session {
+export function openSession(
+  ctx: HubCtx,
+  conn: AgentConn,
+  manifest: Manifest,
+  caps: readonly AgentCap[] = []
+): Session {
   const now = Date.now();
   const session: Session = {
     id: sessionIdFrom(ctx.state.sessions),
@@ -339,7 +345,8 @@ export function openSession(ctx: HubCtx, conn: AgentConn, manifest: Manifest): S
     heartbeat: JSON_NULL,
     lastBeatAt: now,
     silent: false,
-    nextSub: 1
+    nextSub: 1,
+    caps
   };
   const device = sessionDeviceOf(ctx.state, conn);
   if (device !== undefined) session.device = device;

@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the JSON value the wire carries */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { devOnlyRefusal, readOnlyRefusal } from "../../../registry/entries/failures";
 import type { Message, Response, RunResult, WireError } from "../../../registry/protocol";
 import {
   encode,
@@ -10,9 +11,10 @@ import {
   toWireValue,
   wireError
 } from "../../../registry/protocol";
+import type { SourceEntry } from "../../../registry/types";
 import { handleRequest, handleText } from "../../dispatch/dispatch";
 import type { TestDeps } from "../helpers";
-import { deferred, flush, MANIFEST, openDeps, RAN, requestText } from "../helpers";
+import { deferred, ENVELOPE, flush, MANIFEST, openDeps, RAN, requestText } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // handleText (binary, bad, response, notification, request) and the
@@ -51,6 +53,16 @@ function errorOf(messages: Message[]): WireError {
   if (response === undefined || !("error" in response)) throw new Error("no error response");
   return response.error;
 }
+
+/** A watch stop that does nothing. */
+const stopNothing = (): void => {};
+
+/** The perf feed the rate switch's result shows on: a frame source, as perf adds it. */
+const PERF_SECOND: SourceEntry = {
+  descriptor: { id: "editor.perf.second", title: "Second", input: {}, changes: "frame" },
+  read: () => null,
+  watch: () => stopNothing
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -266,6 +278,156 @@ describe("handleRequest — the game channel table", () => {
     );
     expect(errors).toHaveLength(6);
     expect(errors.every(message => message.startsWith("[moku-editor] "))).toBe(true);
+  });
+});
+
+describe("handleRequest — who ran it (spec 07 B1)", () => {
+  // Bug: an agent's recording labelled "you" (every hub run counted as one origin), or a newer
+  // hub's origin refusing the run with -32602 instead of running it as "bridge".
+  it.each([
+    { from: "mcp", via: "mcp" },
+    { from: "page", via: "tools" },
+    { from: undefined, via: "bridge" },
+    { from: "robot", via: "bridge" },
+    { from: 7, via: "bridge" }
+  ])("a hub run from $from runs via $via", async ({ from, via }) => {
+    const { deps, socket } = openDeps();
+    const params = from === undefined ? { id: "game.step" } : { id: "game.step", from };
+
+    await ask(deps, requestText(1, "run", params));
+
+    expect(socket.messages()).toEqual([success(1, RAN)]);
+    expect(deps.channel.ran).toEqual([{ id: "game.step", via, client: undefined }]);
+  });
+
+  // Bug: the agent's name lost, a page run labelled with an agent's name, or a long name passed
+  // whole (or cut inside a character) to the recording.
+  it.each([
+    { name: "an agent's name", from: "mcp", via: "mcp", client: "Claude", passed: "Claude" },
+    {
+      name: "a name on a page run",
+      from: "page",
+      via: "tools",
+      client: "Claude",
+      passed: undefined
+    },
+    {
+      name: "a name without from",
+      from: undefined,
+      via: "bridge",
+      client: "Claude",
+      passed: undefined
+    },
+    { name: "a name that is no string", from: "mcp", via: "mcp", client: 42, passed: undefined },
+    { name: "an empty name", from: "mcp", via: "mcp", client: "", passed: undefined },
+    {
+      name: "a 300-character name",
+      from: "mcp",
+      via: "mcp",
+      client: "C".repeat(300),
+      passed: "C".repeat(64)
+    },
+    {
+      name: "300 robots",
+      from: "mcp",
+      via: "mcp",
+      client: "\u{1F916}".repeat(300),
+      passed: "\u{1F916}".repeat(64)
+    }
+  ])("hands the command $name as the client it should", async ({ from, via, client, passed }) => {
+    const { deps } = openDeps();
+    const params =
+      from === undefined ? { id: "editor.record", client } : { id: "editor.record", from, client };
+
+    await ask(deps, requestText(1, "run", params));
+
+    expect(deps.channel.ran).toEqual([{ id: "editor.record", via, client: passed }]);
+  });
+});
+
+describe("handleRequest — the tools page's command paths (spec 07 B2)", () => {
+  // Bug: a re-shaped answer hiding what the device did (the panel's cap behind `heldBy`, the
+  // sections, the overdraw switch, who started the recording).
+  it.each([
+    {
+      id: "game.frameRate",
+      input: { fps: 120 },
+      value: {
+        fps: 60,
+        mode: "fixed",
+        reason: "pinned",
+        asked: 120,
+        heldBy: "panel",
+        displayHz: 60
+      }
+    },
+    { id: "game.debug", input: { overdraw: true }, value: { overdraw: true } },
+    {
+      id: "editor.perf.sections",
+      input: { passes: true },
+      value: { engine: false, feeds: { passes: true, systems: true, nodes: false }, overdraw: null }
+    },
+    {
+      id: "editor.record",
+      input: { on: true, label: "boss" },
+      value: {
+        on: true,
+        file: "perf-20261016-1201-sm-a266b.jsonl",
+        startedBy: { by: "editor", name: null },
+        marked: false
+      }
+    }
+  ])("a page's run of $id answers the command's value unchanged", async ({ id, input, value }) => {
+    const { deps, socket } = openDeps();
+    deps.channel.runs.set(id, () => Promise.resolve({ value, state: ENVELOPE }));
+
+    await ask(deps, requestText(1, "run", { id, input, from: "page" }));
+
+    expect(socket.messages()).toEqual([success(1, { value, state: ENVELOPE })]);
+  });
+
+  // Bug: a refusal shown as a generic failure, so the tools page cannot say "Needs a debug build".
+  it.each([
+    { reason: "dev_only", refusal: devOnlyRefusal("game.frameRate") },
+    { reason: "read_only", refusal: readOnlyRefusal("editor.perf.sections") }
+  ])("a $reason refusal answers -32009 with the registry's message and data", async ({
+    refusal
+  }) => {
+    const { deps, socket } = openDeps();
+    const id = String(refusal.data?.id);
+    deps.channel.runs.set(id, () => Promise.reject(refusal));
+
+    await ask(deps, requestText(1, "run", { id, input: {}, from: "mcp", client: "Claude" }));
+
+    expect(errorOf(socket.messages())).toEqual({
+      code: -32_009,
+      message: refusal.message,
+      data: refusal.data
+    });
+  });
+
+  // Bug: the rate switch's result visible only at the next heartbeat, a second later, which
+  // reads as "it did nothing".
+  it("re-reads a watched editor.perf.second once, right after a page's game.frameRate answer", async () => {
+    const { deps, socket } = openDeps();
+    const fallback = deps.registry.source;
+    deps.registry.source = id => (id === PERF_SECOND.descriptor.id ? PERF_SECOND : fallback(id));
+    deps.channel.values.set("editor.perf.second", { fps: 60 });
+    await ask(deps, requestText(1, "watch", { sub: 1, id: "editor.perf.second" }));
+    deps.channel.values.set("editor.perf.second", { fps: 120 });
+    deps.channel.reads.length = 0;
+    socket.clear();
+
+    await ask(
+      deps,
+      requestText(2, "run", { id: "game.frameRate", input: { fps: 120 }, from: "page" })
+    );
+
+    expect(socket.messages()).toEqual([
+      success(2, RAN),
+      notification("game", "value", { sub: 1, value: { fps: 120 } })
+    ]);
+    expect(deps.channel.reads).toEqual([{ id: "editor.perf.second", input: undefined }]);
   });
 });
 

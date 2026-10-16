@@ -4,12 +4,26 @@ import type { PerfLogLine } from "../../../perf/protocol";
 import type { Json } from "../../../registry/protocol";
 import { hubPlugin } from "../..";
 import type { LinkJson } from "../../protocol";
-import type { DeviceLines, HubCtx, HubDeviceEvent } from "../../types";
+import type { DeviceLines, HubApi, HubCtx, HubDeviceEvent } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Type-level checks of the per-plugin event hub:device and of the device-link
-// types (checked by tsc; vitest does not run *.test-d.ts files).
+// Type-level checks of the per-plugin event hub:device, of the device-link
+// types and of the editor methods another plugin registers (checked by tsc;
+// vitest does not run *.test-d.ts files).
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Registers a handler that answers synchronously, and one that answers a value no wire carries:
+ * compile errors (H2: a handler is async and answers Json).
+ *
+ * @param hub - The hub api.
+ */
+function registerWrong(hub: HubApi): void {
+  // @ts-expect-error — an editor method answers a promise
+  hub.addEditorMethods({ "connect.scan": () => ({ wire: [] }) });
+  // @ts-expect-error — the answer goes on the wire: Json only
+  hub.addEditorMethods({ "connect.scan": async () => new Map<string, number>() });
+}
 
 /**
  * Emits a lines event without its device and lines: a compile error.
@@ -51,6 +65,10 @@ describe("hub:device types", () => {
 
   it("types the items of a device log batch as PerfLogLine (bug: loose records the collector must cast)", () => {
     expectTypeOf<DeviceLines["items"][number]>().toEqualTypeOf<PerfLogLine>();
+  });
+
+  it("refuses an editor method that is not async or answers a value that is no Json", () => {
+    expectTypeOf(registerWrong).toBeFunction();
   });
 
   it("keeps LinkJson and registry/protocol's Json assignable both ways", () => {

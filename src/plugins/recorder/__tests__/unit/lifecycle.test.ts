@@ -35,6 +35,8 @@ describe("onInit and onStart", () => {
     await startRecorder(t.ctx);
     expect(t.monitor.listeners).toBe(1);
     expect(t.state.session?.name).toBe("perf-20261014-1532-sm-a266b.jsonl");
+    expect(t.api.status().startedBy).toEqual({ by: "auto", name: null });
+    expect(t.monitor.events.at(-1)?.detail).toMatchObject({ action: "start", by: "auto" });
     vi.advanceTimersByTime(1000);
     expect([t.monitor.begins, t.state.session?.lines]).toEqual([1, 2]);
     await stopRecorder(t.ctx);
@@ -57,6 +59,7 @@ describe("onInit and onStart", () => {
     vi.advanceTimersByTime(1000);
     expect(t.state.session?.name).toBe("perf-20261014-1532-sm-a266b.jsonl");
     expect(t.state.session?.pending[0]).toMatch(/^\{"v":1,"kind":"header"/);
+    expect(t.api.status().startedBy).toEqual({ by: "auto", name: null });
     await stopRecorder(t.ctx);
   });
 
@@ -116,19 +119,19 @@ describe("onInit and onStart", () => {
 
   it.each<[string, Record<string, boolean>, boolean | "device", boolean]>([
     [
-      "a dev page with the default",
+      'a dev page with autoStart "device"',
       { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true },
       "device",
       false
     ],
-    ["a debug build with the default", { __MOKU_GAME_AGENT__: true }, "device", true],
+    ['a debug build with autoStart "device"', { __MOKU_GAME_AGENT__: true }, "device", true],
     [
-      "a --debug=full build with the default",
+      'a --debug build with control and autoStart "device"',
       { __MOKU_GAME_AGENT__: true, __MOKU_GAME_CONTROL__: true },
       "device",
       true
     ],
-    ["a page without flags with the default", {}, "device", false],
+    ['a page without flags with autoStart "device"', {}, "device", false],
     [
       "a dev page with autoStart true",
       { __MOKU_GAME_DEV__: true, __MOKU_GAME_AGENT__: true },

@@ -17,7 +17,7 @@ import { createRecorderState } from "./state";
 import type { RecorderConfig, RecorderStatusEvent } from "./types";
 
 const defaultConfig: RecorderConfig = {
-  autoStart: "device",
+  autoStart: false,
   keepMb: 64,
   flushEveryMs: 1000,
   persistEveryMs: 5000,
@@ -27,14 +27,15 @@ const defaultConfig: RecorderConfig = {
 };
 
 /**
- * The recorder plugin, a default of the agent core. Its event `recorder:status` reaches the plugins
- * that depend on it (the overlay, the bridge).
+ * The recorder plugin, a default of the agent core. Nothing is recorded until someone starts it:
+ * the phone's Record tab, the tools page's Record button, or an agent (`editor.record`). Its event
+ * `recorder:status` reaches the plugins that depend on it (the overlay, the bridge).
  *
  * @example
  * ```ts
- * // On a --debug build of the game (agent flag on, dev flag off), a log starts by itself.
  * const editor = createApp({ pluginConfigs: { registry: { game: app } } });
- * await editor.start(); // a log starts: perf-20261014-1532-sm-a266b.jsonl
+ * await editor.start(); // nothing records yet
+ * editor.recorder.start({ label: "boss run" }); // { name: "perf-20261014-1532-sm-a266b.jsonl", current: true, … }
  * editor.recorder.mark("boss enters"); // true
  * ```
  */

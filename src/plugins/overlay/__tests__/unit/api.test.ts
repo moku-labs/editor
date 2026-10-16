@@ -34,7 +34,7 @@ describe("createOverlayApi", () => {
     ]);
     expect(api.commands()[2]).toMatchObject({
       kind: "button",
-      reason: "needs a --debug=full build"
+      reason: "needs a debug build of a newer engine, or without --debug=read"
     });
     octx.registry.values.set("garden.glow", true);
     expect(api.commands()[0]?.value).toBe(true);
