@@ -1,11 +1,13 @@
 /**
  * @file workspace plugin — type definitions: config, workspace ids, preview, device, frame,
  * palette, keys, the api every view gets as `tools.workspace`, the payload of `workspace:ran`,
- * state and the domain context. DeviceSpec and the device preset types come from the protocol (R1).
+ * state and the domain context. DeviceSpec and the device preset types come from the protocol (R1);
+ * the source change workspace hooks is activeSource's.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
+import type { SourceChange } from "../activeSource/types";
 import type {
   DevicePresetId,
   DeviceSpec,
@@ -206,6 +208,36 @@ export type ReloadResult = {
     | "restore_failed"
     | "timeout"
     | "hot_swap";
+};
+
+/**
+ * The scenario picker's data: the prepared saves of the game folder and the one the game frame
+ * starts from. Dev only: a debug build carries no scenarios.
+ *
+ * @example
+ * ```ts
+ * const view: ScenarioView = { scenarios: ["empty", "full"], chosen: "full" };
+ * ```
+ */
+export type ScenarioView = {
+  readonly scenarios: readonly string[];
+  readonly chosen: string | undefined;
+};
+
+/**
+ * The dev-only scenario picker in the state (never persisted).
+ */
+export type ScenarioState = {
+  /** Scenario names (file stems of tests/scenarios/), sorted; [] until listed or when there are none. */
+  list: readonly string[];
+  /** The scenario the game frame starts from; undefined: the saved player. */
+  chosen: string | undefined;
+  /** A listing in flight: concurrent refreshes share it. */
+  listing: Promise<ScenarioView> | undefined;
+  /** Whether the first listing ran (it runs once the link's socket is open). */
+  listed: boolean;
+  /** onScenario listeners. */
+  listeners: Set<(view: ScenarioView) => void>;
 };
 
 /**
@@ -861,6 +893,95 @@ export type WorkspaceApi = {
    * ```
    */
   onPrefs(fn: (prefs: Prefs) => void): () => void;
+
+  /**
+   * Starts this page's local preview: mounts the one game frame when it is not mounted yet (the
+   * same mount the first `mount()` does, docked by the current workspace's preview prefs — it does
+   * not change whether the preview is shown), and resolves once the frame's game session is listed
+   * (`link.ownSession()` answers). Two calls in flight share one promise; onStop rejects nothing
+   * (the page is going away) and drops the wait. A page without a game frame is the tools page of
+   * `moku-editor perf`, whose device mode is owned by perf (`editor.devices` `mode.owner` "other").
+   *
+   * @returns When the local preview's session is open; at once when it already is.
+   * @throws {Error} On a page without a game frame (the tools page of `moku-editor perf`), and
+   *   nothing is mounted: `[moku-editor] workspace.startLocalPreview() needs a game frame.\n  This
+   *   page shows a device only; open the tools page of moku-editor <game> to run the game here.`
+   * @throws {Error} When no session appears within 15 s: `[moku-editor] The local preview did not
+   *   start.\n  Check the game's console in the Console workspace; the frame is mounted at <url>.`
+   * @example
+   * ```ts
+   * // renderView's "Start local preview" button on a page whose frame has no session yet.
+   * await app.workspace.startLocalPreview();
+   * app.link.ownSession(); // "s-1"
+   * ```
+   */
+  startLocalPreview(): Promise<void>;
+
+  /**
+   * The scenarios of the game folder — every `.ts` file directly in `tests/scenarios/` but tests,
+   * declarations and `index.ts`, by file stem, sorted (the engine's rule) — and the chosen one.
+   * Empty until the first listing (it runs once the link's socket is open), and for a project
+   * without the folder.
+   *
+   * @returns A copy.
+   * @example
+   * ```ts
+   * // gameView shows the picker only when the game has scenarios.
+   * ctx.require(workspacePlugin).scenarios(); // { scenarios: ["empty", "full"], chosen: undefined }
+   * ```
+   */
+  scenarios(): ScenarioView;
+
+  /**
+   * Starts the game frame from a scenario (`?player=<name>` on the frame URL), or from the saved
+   * player again with `undefined`: reloads the frame without restore (a scenario plays on a fresh
+   * memory save; a bookmark restored on top would undo it) and toasts "Game started from scenario
+   * <name>" or "Game started from the saved player" instead of the reload's own toast. The same
+   * name again restarts it. Never persisted: a reload of the tools page starts from the saved
+   * player. Before the first mount it only stores the choice and resolves `not_mounted`; the first
+   * mount loads it. Emits no `workspace:ran` (it runs no command).
+   *
+   * @param name - A name from `scenarios()`, or undefined for the saved player.
+   * @returns The reload result: `{ restored: false }`, or `reason: "timeout"` when no game came.
+   * @throws {TypeError} Rejects `[moku-editor] Unknown scenario "<name>".\n  Pick one of
+   *   workspace.scenarios().` for a name not listed (argument validation).
+   * @example
+   * ```ts
+   * // The person picks "full" in the game toolbar.
+   * await app.workspace.setScenario("full"); // { restored: false }; toast "Game started from scenario full"
+   * app.workspace.scenarios().chosen; // "full": the frame src carries player=full
+   * ```
+   */
+  setScenario(name: string | undefined): Promise<ReloadResult>;
+
+  /**
+   * Lists `tests/scenarios/` again through the files channel (`link.files.list`). Concurrent calls
+   * share one listing. A missing folder or a failed list gives no scenarios (no toast, a debug
+   * log). A chosen scenario whose file is gone stays chosen until the next choice.
+   *
+   * @returns The new view; onScenario listeners run when the list changed.
+   * @example
+   * ```ts
+   * // gameView refreshes the list when the picker gets focus.
+   * await ctx.require(workspacePlugin).refreshScenarios(); // { scenarios: ["empty", "full", "rich"], chosen: undefined }
+   * ```
+   */
+  refreshScenarios(): Promise<ScenarioView>;
+
+  /**
+   * Listens to the scenario list and the choice. A throwing listener is logged and does not stop
+   * the others.
+   *
+   * @param fn - Called with the new view after a change.
+   * @returns Removes it.
+   * @example
+   * ```ts
+   * // gameView's picker re-renders on a change made elsewhere.
+   * const off = ctx.require(workspacePlugin).onScenario(view => setOptions(view.scenarios));
+   * off();
+   * ```
+   */
+  onScenario(fn: (view: ScenarioView) => void): () => void;
 };
 
 /**
@@ -915,6 +1036,15 @@ export type PendingReload = {
   readonly promise: Promise<ReloadResult>;
   again: boolean;
   since: number | undefined;
+};
+
+/**
+ * A `startLocalPreview()` in flight: the shared promise and how onStop drops its wait (the
+ * sessions listener and the 15 s timer) without settling it.
+ */
+export type PendingStart = {
+  readonly promise: Promise<void>;
+  readonly drop: () => void;
 };
 
 /**
@@ -991,7 +1121,7 @@ export type WorkspaceState = {
   nextToastId: number;
   palette: { open: boolean; query: string; index: number; items: Map<string, PaletteItem> };
   keys: { bindings: KeyBindingEntry[]; escape: EscEntry[] };
-  popover: "step" | "registry" | "session" | "more" | undefined;
+  popover: "step" | "registry" | "session" | "source" | "more" | undefined;
   /** How to change hot reload, after a refused or failed switch; shown in the switch title. */
   hotReloadNote: string | undefined;
   /** The last `manifest.restored` toasted (frame and bookmark), so each restore toasts once. */
@@ -1008,6 +1138,10 @@ export type WorkspaceState = {
   ui: UiStore;
   /** The 1 s ticker while the link is silent or lost (handlers). */
   ticker: ReturnType<typeof setInterval> | undefined;
+  /** The dev-only scenario picker (never persisted). */
+  scenario: ScenarioState;
+  /** The `startLocalPreview()` in flight (W12); undefined when none waits. */
+  start: PendingStart | undefined;
   /** Set by onStop; late callbacks (reload, toasts, manifest) return early. */
   stopped: boolean;
 };
@@ -1026,8 +1160,10 @@ export type WorkspaceCtx = {
 };
 
 /**
- * The workspace's hooks.
+ * The workspace's hooks: the global `link:status` and activeSource's per-plugin
+ * `activeSource:changed` (visible through `depends`).
  */
 export type WorkspaceHooks = {
   readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
+  readonly "activeSource:changed": (change: SourceChange) => void;
 };

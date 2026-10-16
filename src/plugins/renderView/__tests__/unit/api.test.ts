@@ -127,7 +127,6 @@ describe("snapshot", () => {
     const first = api.snapshot();
 
     expectTypeOf(api.snapshot).returns.toEqualTypeOf<RenderSnapshot>();
-    expect(first.tiles.fps).toEqual({ now: 60, samples: [60], low: 60 });
     expect(first.tiles.drawCalls).toEqual({ kind: "absent" });
     expect(first.bundles.map(row => row.name)).toEqual(["board", "ui"]);
     expect(first.frame).toBe(1841);

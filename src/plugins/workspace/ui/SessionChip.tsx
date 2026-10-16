@@ -1,14 +1,16 @@
 /**
  * @file workspace plugin — the session chip of the top bar (900 px and wider): the short id of the
  * chosen session with its connect time; with more than one session it opens the session menu
- * (game, page, "embedded", connect time) whose rows call `link.choose`. Below 900 px the chip is
- * gone: the link pill names the session and opens the same menu (`SessionMenu`, anchored to
- * `[data-popover-anchor="session"]`).
+ * (game, page, "embedded", connect time). A row makes its session the source through activeSource
+ * (W9: a device with `useDevice`, this page's own frame with `useLocal`); only another game page
+ * goes to `link.choose`. Below 900 px the chip is gone: the link pill names the session and opens
+ * the same menu (`SessionMenu`, anchored to `[data-popover-anchor="session"]`).
  */
 import type { VNode } from "preact";
 import { linkPlugin } from "../../link";
 import type { SessionInfo } from "../../registry/protocol";
 import { closePopover, openPopover } from "../actions";
+import { chooseSource } from "../source";
 import type { WorkspaceCtx } from "../types";
 import { usePopover } from "./popover";
 import { useElement, useWorkspace } from "./store";
@@ -69,19 +71,14 @@ export function toggleSessionMenu(ctx: WorkspaceCtx, many: boolean): void {
 }
 
 /**
- * Picks a session from the menu.
+ * Picks a session from the menu: it becomes the page's source (`chooseSource`).
  *
  * @param ctx - Domain context of workspace.
  * @param session - The session.
  */
 function choose(ctx: WorkspaceCtx, session: SessionInfo): void {
   closePopover(ctx.state, "session");
-  ctx
-    .require(linkPlugin)
-    .choose(session.id)
-    .catch((error: unknown) => {
-      ctx.log.warn("workspace:choose-failed", { session: session.id, error: String(error) });
-    });
+  chooseSource(ctx, session);
 }
 
 /**

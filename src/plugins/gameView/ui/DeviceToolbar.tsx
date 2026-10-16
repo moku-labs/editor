@@ -1,10 +1,13 @@
 /**
  * @file gameView plugin — the device toolbar (A2): Select (the picker, an icon button lit while
- * it is on, U4), device select grouped by kind (iPhone,
+ * it is on, U4; dimmed with the switch to the local preview while a phone is the source, G1),
+ * device select grouped by kind (iPhone,
  * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
  * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
  * (`game.mute`, dimmed with a tooltip without it, round 2b R11), the Copy Ref switch (the
- * workspace preference "Copy on select", D-72), Reload ("…" while busy, U11), camera,
+ * workspace preference "Copy on select", D-72), Reload ("…" while busy, U11), the scenario
+ * select (dev only, spec 09 W5: the prepared saves of `tests/scenarios/`, shown only when the
+ * game has some), camera,
  * Series (red with the time while recording) and, while the Element panel is closed, its reopen
  * button. Camera and Series are dimmed with a tooltip when the game lacks their command; each
  * carries an icon and a label, and below a 1000 px workspace shows the icon only, named by its
@@ -23,6 +26,7 @@ import { takeScreenshot } from "../capture/shot";
 import { GAME_COMMANDS, NO_CAPTURE_TEXT } from "../commands";
 import { setPicker } from "../element/select";
 import { missingCommand } from "../palette";
+import { DEVICE_SOURCE_TEXT, onDevice } from "../scene/device";
 import { SIDE_PANEL, SIDE_TITLE } from "../side";
 import { canMute, NO_MUTE_TEXT, setSound } from "../sound";
 import { foldDevice } from "../stage/fold";
@@ -256,6 +260,51 @@ function CopyRefSwitch(props: { readonly ctx: GameViewCtx }): VNode {
 }
 
 /**
+ * The tooltip of the scenario select.
+ */
+const SCENARIO_TITLE = "Start the game from a prepared save in tests/scenarios (dev only)";
+
+/**
+ * The scenario select (spec 09 W5, the shape of the Copy Ref switch): "Saved player" and the
+ * scenarios of the game folder from workspace's api. A choice starts the game frame from it
+ * (`workspace.setScenario`), focus lists the folder again, and it listens to
+ * `workspace.onScenario`, so a choice made elsewhere shows here too. Absent while the game has
+ * no scenarios (a debug build carries none). No gameView state.
+ *
+ * @param props - The gameView domain context.
+ * @param props.ctx - Domain context of gameView.
+ * @returns The select, undefined without scenarios.
+ */
+function ScenarioSelect(props: { readonly ctx: GameViewCtx }): VNode | undefined {
+  const workspace = props.ctx.require(workspacePlugin);
+  const [view, setView] = useState(() => workspace.scenarios());
+  // A layout effect: a change right after the first render is not lost.
+  useLayoutEffect(() => workspace.onScenario(setView), [workspace]);
+  if (view.scenarios.length === 0) return undefined;
+  return (
+    <select
+      data-part="scenario"
+      aria-label="Start from a scenario"
+      title={SCENARIO_TITLE}
+      value={view.chosen ?? ""}
+      onFocus={() => {
+        workspace.refreshScenarios().catch(() => {});
+      }}
+      onChange={event => {
+        workspace.setScenario(event.currentTarget.value || undefined).catch(() => {});
+      }}
+    >
+      <option value="">Saved player</option>
+      {view.scenarios.map(name => (
+        <option key={name} value={name}>
+          {name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
  * The zoom segment, the safe-area switch (off for the desktop), the Sound and Copy Ref switches
  * and Reload.
  *
@@ -439,6 +488,8 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   // A layout effect: a manifest change right after the first render is not lost.
   useLayoutEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
   useTicker(state.series.recording !== undefined, RECORD_TICK_MS);
+  // A phone as the source sends no scene to pick from (G1).
+  const away = onDevice(ctx) && DEVICE_SOURCE_TEXT;
 
   return (
     <div data-game="toolbar" role="toolbar" aria-label="Game device">
@@ -446,14 +497,15 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
         type="button"
         data-part="pick"
         aria-pressed={picking}
-        title="Select element ⇧⌘C"
-        onClick={() => setPicker(ctx)}
+        {...dimmed(away, "Select element ⇧⌘C")}
+        onClick={away === false ? () => setPicker(ctx) : undefined}
       >
         <ToolIcon name="select" />
         <span data-sr-only>Select element</span>
       </button>
       <DeviceControls ctx={ctx} />
       <ViewControls ctx={ctx} />
+      <ScenarioSelect ctx={ctx} />
       <CameraButton ctx={ctx} />
       <SeriesButton ctx={ctx} />
       <ReopenSide />

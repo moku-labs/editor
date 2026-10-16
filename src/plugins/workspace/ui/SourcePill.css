@@ -1,0 +1,140 @@
+/* workspace · SourcePill. W9 (spec 11 § 5.3): the source pill of the top bar on the measures of the bar's chips: 24 px high, 0 9 px padding, round, a 1 px --line-2 border, 12 px --text-2, a 6 px gap; an 8 px status dot, live in --status-live with a ring every 1.6 s, away in --status-warn and still. A device tints the pill with 14 % of the accent (spec 09 § M7). The name shrinks with an ellipsis. The source menu is a popover in the top layer (radius 10, a --line-2 border, --shadow-popover): rows of name and detail (the address in mono) with Use, then Connect device…. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="source-pill"]) to ([popover]) {
+  :scope {
+    display: inline-flex;
+    min-width: 0;
+  }
+
+  :scope > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 260px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  :scope > button:hover,
+  :scope > button[aria-expanded="true"] {
+    background: var(--surface-panel-2);
+  }
+
+  :scope[data-kind="device"] > button {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--line-2));
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent-ink);
+  }
+
+  [data-part="name"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-part="via"] {
+    flex: none;
+  }
+
+  [data-dot] {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-live);
+    animation: live-ring 1.6s ease-out infinite;
+  }
+
+  :scope[data-state="away"] [data-dot] {
+    background: var(--status-warn);
+    animation: none;
+  }
+}
+
+@scope ([data-ui="source-menu"]) {
+  :scope {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 280px;
+    padding: 4px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+    box-shadow: var(--shadow-popover);
+  }
+
+  [role="menuitemradio"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-6);
+    font-size: var(--font-size-12-5);
+    text-align: start;
+  }
+
+  [role="menuitemradio"]:hover:not([aria-disabled="true"]),
+  [role="menuitemradio"][aria-checked="true"] {
+    background: var(--accent-soft);
+  }
+
+  [role="menuitemradio"][aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  [data-part="name"] {
+    grid-column: 1;
+    color: var(--text-ink);
+    font-weight: 500;
+  }
+
+  [data-part="detail"] {
+    grid-column: 1;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="detail"][data-mono] {
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+
+  [data-part="use"] {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    align-self: center;
+    color: var(--accent-ink);
+    font-size: var(--font-size-11-5);
+    font-weight: 600;
+  }
+
+  hr {
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--line-1);
+  }
+
+  [role="menuitem"] {
+    display: flex;
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-6);
+    color: var(--accent-ink);
+    font-size: var(--font-size-12-5);
+    font-weight: 500;
+    text-align: start;
+  }
+
+  [role="menuitem"]:hover {
+    background: var(--surface-panel-2);
+  }
+}

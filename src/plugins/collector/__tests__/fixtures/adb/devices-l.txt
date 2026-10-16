@@ -1,0 +1,3 @@
+List of devices attached
+R5CX30ABCDE            device usb:1-1 product:a26xnseea model:SM_A266B device:a26x transport_id:3
+

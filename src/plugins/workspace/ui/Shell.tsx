@@ -1,6 +1,8 @@
 /**
- * @file workspace plugin — the shell grid: top bar 44 px, rail 52 px, content with the workspace
- * hosts (foreign DOM attached by ref), stale bar, status cards, the preview, toasts, palette.
+ * @file workspace plugin — the shell grid: top bar 44 px, the disconnect notice under it (full
+ * width, every workspace; empty and 0 px high without a notice), rail 52 px, content with the
+ * workspace hosts (foreign DOM attached by ref), stale bar, status cards, the preview, toasts,
+ * palette.
  */
 import type { VNode } from "preact";
 import { useLayoutEffect } from "preact/hooks";
@@ -9,6 +11,7 @@ import { Palette } from "../palette/Palette";
 import type { WorkspaceCtx } from "../types";
 import { Preview } from "./Preview";
 import { Rail } from "./Rail";
+import { SourceNotice } from "./SourceNotice";
 import { StaleBar } from "./StaleBar";
 import { cardKind, StatusCard } from "./StatusCard";
 import { useElement, useWorkspace } from "./store";
@@ -40,6 +43,7 @@ export function Shell(props: ShellProps): VNode {
   return (
     <div data-ui="shell" data-workspace={state.active}>
       <TopBar ctx={ctx} />
+      <SourceNotice ctx={ctx} />
       <Rail ctx={ctx} />
       <main data-shell-main>
         <StaleBar ctx={ctx} />

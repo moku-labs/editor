@@ -1,25 +1,33 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
   createApp as createAgentApp,
   createPlugin as createAgentPlugin,
+  type Perf,
+  perfPlugin,
+  type Recorder,
+  recorderPlugin,
   registryPlugin
 } from "../../src/agent";
+import type { AgentEvents, ApiOf, ServerEvents } from "../../src/config";
 import {
   anchorKey,
   bareMessage,
   checkInput,
   definePanel,
   firstDefinition,
+  isAllowed,
   isHotSwapEntry,
   isReloading,
   isSelectionInfo,
   parseSelectionInfo,
   parseSelectParams,
+  refusalOf,
   type SelectionInfo,
   toWireValue,
   wireError
 } from "../../src/index";
-import { createApp as createServerApp } from "../../src/server";
+import * as barrel from "../../src/plugins";
+import { type Collector, collectorPlugin, createApp as createServerApp } from "../../src/server";
 import {
   type AgentStack,
   type BareAgentStack,
@@ -50,6 +58,13 @@ import {
 // plugin of every core, and hub.serve() merges the game's routes with the
 // editor's.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How long B3 waits for five heartbeats over real sockets. Five beats at heartbeatMs 100 take about
+ * 400 ms; the budget is generous because a loaded parallel run (the pre-commit's whole suite) can
+ * delay timers and socket reads, and B3 asserts the spacing of the beats, not the wait.
+ */
+const HEARTBEAT_WAIT_MS = 5000;
 
 /** The R3 tools page policy, verbatim. pages appends three private directives after it. */
 const R3_POLICY =
@@ -121,10 +136,24 @@ describe("core boot", () => {
     const tools: ToolsStack = keep(await bootTools(server));
     await until(() => tools.app.link.status().kind === "empty", "an empty link (no agent)");
 
-    expect(missingKeys(agent.app, ["registry", "channel", "overlay", "log", "env"])).toEqual([]);
+    expect(
+      missingKeys(agent.app, ["registry", "channel", "perf", "recorder", "overlay", "log", "env"])
+    ).toEqual([]);
     expect("bridge" in agent.app).toBe(false);
     expect("capture" in agent.app).toBe(false);
-    expect(missingKeys(server.app, ["files", "hub", "pages", "log", "env"])).toEqual([]);
+    expect(missingKeys(server.app, ["files", "hub", "collector", "pages", "log", "env"])).toEqual(
+      []
+    );
+    // The barrel and the entries name the same instances of the new plugins.
+    expect([barrel.perfPlugin, barrel.recorderPlugin, barrel.collectorPlugin]).toEqual([
+      perfPlugin,
+      recorderPlugin,
+      collectorPlugin
+    ]);
+    // The tiny game has no renderer monitor: perf is off, and the agent boots without a warning.
+    expect(Reflect.get(game.app, "renderer")?.monitor).toBeUndefined();
+    expect(agent.app.perf.status().state).toBe("off");
+    expect(agent.app.log.trace().filter(entry => entry.level === "warn")).toEqual([]);
     expect(
       missingKeys(tools.app, [
         "link",
@@ -157,7 +186,9 @@ describe("core boot", () => {
       parseSelectionInfo,
       parseSelectParams,
       isReloading,
-      isHotSwapEntry
+      isHotSwapEntry,
+      refusalOf,
+      isAllowed
     ]) {
       expect(helper).toBeTypeOf("function");
     }
@@ -190,6 +221,26 @@ describe("core boot", () => {
     expect(unhandled.list).toEqual([]);
   });
 
+  it("B1: the global event maps hold only the events whose listener cannot depend on the emitter", () => {
+    expectTypeOf<keyof AgentEvents>().toEqualTypeOf<
+      "bridge:status" | "overlay:changed" | "overlay:connect"
+    >();
+    expectTypeOf<keyof ServerEvents>().toEqualTypeOf<
+      "hub:session" | "files:written" | "files:project"
+    >();
+    // The entries' namespaces carry the new plugins' api types.
+    expectTypeOf<ApiOf<typeof perfPlugin>>().toEqualTypeOf<Perf.PerfApi>();
+    expectTypeOf<ApiOf<typeof recorderPlugin>>().toEqualTypeOf<Recorder.RecorderApi>();
+    expectTypeOf<ApiOf<typeof collectorPlugin>>().toEqualTypeOf<Collector.CollectorApi>();
+    const wrongPayload = createAgentPlugin("wrongPayload", {
+      onInit: ctx => {
+        // @ts-expect-error -- overlay:connect carries { address }, not { addr }.
+        ctx.emit("overlay:connect", { addr: "192.168.1.5:47600" });
+      }
+    });
+    expect(wrongPayload.name).toBe("wrongPayload");
+  });
+
   it("B2: opt-in plugins and dev modules extend the catalogue", async () => {
     vi.stubGlobal("__MOKU_GAME_DEV__", true);
     const server = keep(await startServer(await createProject("tiny")));
@@ -215,6 +266,8 @@ describe("core boot", () => {
         "editor.series",
         "editor.seriesStop",
         "editor.overlay",
+        "editor.record",
+        "editor.mark",
         "tiny.warn",
         "tiny.fail",
         "probe.ping",
@@ -229,7 +282,13 @@ describe("core boot", () => {
         "game.graph",
         "game.position",
         "game.model",
-        "game.log"
+        "game.log",
+        "editor.perf.second",
+        "editor.perf.window",
+        "editor.perf.spikes",
+        "editor.perf.spike",
+        "editor.spikes",
+        "editor.recorder"
       ])
     );
     expect(manifest.game).toBe(TINY_NAME);
@@ -320,7 +379,9 @@ describe("core boot", () => {
           "method" in entry.message &&
           entry.message.method === "heartbeat"
       );
-    await until(() => beats().length >= 5, "5 agent heartbeats within 800 ms", 800);
+    // A wait on real sockets: the budget only bounds a hung run, so a loaded parallel run does not
+    // fail it (the spacing below is what B3 asserts).
+    await until(() => beats().length >= 5, "5 agent heartbeats", HEARTBEAT_WAIT_MS);
     const times = beats().map(entry => entry.at);
     const first = times[0] ?? 0;
     const fifth = times[4] ?? 0;

@@ -1,4 +1,4 @@
-/* workspace · fonts. Vendored Geist and Geist Mono variable woff2 (Vercel, `geist` 1.7.2, SIL OFL 1.1, see fonts/OFL.txt). No CDN. Unlayered on purpose: font loading does not depend on the cascade (moku-web). Bun.build copies the files into dist/tools/assets/ with hashed names (R3). */
+/* workspace · fonts. Vendored Geist and Geist Mono variable woff2 (Vercel, `geist` 1.7.2, SIL OFL 1.1, see fonts/OFL.txt) in workspace/styles/fonts/: the only faces of the tools page. The device strip is set in them too (spec 09 Delta 2026-10-15, decision "Tools-page strip in the editor's look and theme"); the phone overlay keeps its own private faces in src/plugins/overlay/fonts/, which the tools page never loads. The `./fonts/` path is only a name: scripts/build-tools.ts finds each file in workspace/styles/fonts and copies it into dist/tools/assets/ with a hashed name (R3, spec 10 E9). No CDN. Unlayered on purpose: font loading does not depend on the cascade (moku-web). */
 @font-face {
   font-family: "Geist";
   font-style: normal;

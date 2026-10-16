@@ -1,10 +1,12 @@
 /**
  * @file registry plugin — the manifest: descriptors only, cached until the next add; game, page
- * and embedded computed at call time. Each build probes the door sources first, so a source the
- * game does not have is listed with `available: false`.
+ * and embedded computed at call time. Each build probes the door sources and the editor sources
+ * with a probe first, so a source that is not available is listed with `available: false`. The
+ * manifest carries the page's build.
  */
 import { withAvailability } from "./entries/probe";
-import type { Manifest } from "./protocol";
+import { readBuildInfo } from "./entries/profile";
+import type { BuildInfo, Manifest } from "./protocol";
 import type { RegistryConfig, RegistryState } from "./types";
 
 /**
@@ -13,12 +15,25 @@ import type { RegistryConfig, RegistryState } from "./types";
 const MAX_PAGE_LENGTH = 2048;
 
 /**
+ * The page's build: read once from the flags, then kept in the state (the flags of a page never
+ * change).
+ *
+ * @param state - Registry state (holds the build).
+ * @returns The frozen BuildInfo.
+ */
+export function buildOf(state: RegistryState): BuildInfo {
+  state.build ??= readBuildInfo();
+
+  return state.build;
+}
+
+/**
  * Builds the frozen manifest from the entries (their descriptors are fresh frozen copies, never
  * door objects). A source in `state.unavailable` is listed with `available: false` and its reason.
  *
  * @param state - Registry state.
  * @param name - Display name of the game.
- * @returns The frozen manifest; `panels` is omitted (reserved).
+ * @returns The frozen manifest with the page's build; `panels` is omitted (reserved).
  */
 export function buildManifest(state: RegistryState, name: string): Manifest {
   const { page, embedded } = pageInfo();
@@ -31,12 +46,14 @@ export function buildManifest(state: RegistryState, name: string): Manifest {
     page,
     embedded,
     sources: Object.freeze(sources),
-    commands: Object.freeze([...state.commands.values()].map(entry => entry.descriptor))
+    commands: Object.freeze([...state.commands.values()].map(entry => entry.descriptor)),
+    build: buildOf(state)
   });
 }
 
 /**
- * Runs the probe of every door source (before a manifest build).
+ * Runs the probe of every door source and of every editor source with a probe (before a manifest
+ * build).
  *
  * @param state - Registry state.
  */
@@ -119,8 +136,9 @@ export function currentManifest(state: RegistryState, config: Readonly<RegistryC
 }
 
 /**
- * onStart: drops the manifest cache and builds it again, so every door source is probed now that
- * the game runs (the editor starts after the game).
+ * onStart: drops the manifest cache and builds it again, so every door source and editor probe
+ * runs now that the game runs and every agent plugin has run `onInit` (the editor starts after the
+ * game).
  *
  * @param ctx - Domain context of the registry.
  * @param ctx.state - Registry state.

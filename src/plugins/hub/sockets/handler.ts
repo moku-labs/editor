@@ -1,15 +1,19 @@
 /**
- * @file hub plugin — the one websocket handler of the server (Bun allows one): open registers a
- * connection of the upgrade's kind, message refuses binary frames and decodes text, close ends
- * agent sessions and tools subscriptions, drain flushes the tools backlog.
+ * @file hub plugin — the one websocket handler of the server (Bun allows one; the device listeners
+ * share it): open registers a connection of the upgrade's kind (a stale device token is closed 4401
+ * at once), message refuses binary frames and decodes text, close ends agent sessions, device
+ * connections and tools subscriptions, drain flushes the tools backlog, pong measures a paired
+ * device's ping round trip.
  */
 import { filesPlugin } from "../../files";
 import type { FilesApi } from "../../files/types";
 import type { Message } from "../../registry/protocol";
 import { decode } from "../../registry/protocol";
+import { closeUnpaired, openDevice } from "../device/connections";
+import { onPong } from "../device/ping";
 import { replayPublished } from "../routing/publish";
 import { sessionsNotification } from "../routing/sessions";
-import type { HubCtx, HubSocket, HubWebSocketHandler, ToolsConn } from "../types";
+import type { AgentConn, HubCtx, HubSocket, HubWebSocketHandler, ToolsConn } from "../types";
 import { onAgentClose, onAgentMessage } from "./agent";
 import { flushBacklog, sendJson, strike, toolsConn } from "./send";
 import { onToolsClose, onToolsMessage } from "./tools";
@@ -54,8 +58,9 @@ function tryDecode(text: string): Message | undefined {
 
 /**
  * Registers a new connection; a tools page (an editor page with `role=page` too) gets
- * `sessions {list}` at once, then every published value. A socket that opens after stop is closed
- * with 1001.
+ * `sessions {list}` at once, then every published value; a device connection gets its device side
+ * (a token upgrade is paired at once). A socket that opens after stop is closed with 1001; the
+ * socket of a stale device token is closed 4401 `unpaired` and never registered.
  *
  * @param ctx - Domain context of the hub.
  * @param ws - The socket.
@@ -67,10 +72,16 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
     return;
   }
 
-  const { kind, conn } = ws.data;
+  const { kind, conn, device } = ws.data;
+  if (device?.unpaired === true) {
+    closeUnpaired(ctx, ws, device);
+    return;
+  }
   ctx.log.debug("hub:open", { kind, conn });
   if (kind === "agent") {
-    state.conns.set(conn, { kind, conn, socket: ws, session: undefined, bye: false, invalid: 0 });
+    const agent: AgentConn = { kind, conn, socket: ws, session: undefined, bye: false, invalid: 0 };
+    state.conns.set(conn, agent);
+    if (device !== undefined) openDevice(ctx, agent, device);
     return;
   }
 
@@ -79,6 +90,7 @@ function openConn(ctx: HubCtx, ws: HubSocket): void {
     conn,
     socket: ws,
     page: ws.data.page === true,
+    client: undefined,
     subs: new Map(),
     pending: 0,
     congested: false,
@@ -152,6 +164,9 @@ export function createSocketHandler(ctx: HubCtx): HubWebSocketHandler {
     drain: ws => {
       const conn = toolsConn(ctx.state, ws.data.conn);
       if (conn !== undefined) flushBacklog(conn);
+    },
+    pong: (ws, data) => {
+      onPong(ctx.state, ws, data, Date.now());
     },
     maxPayloadLength: MAX_PAYLOAD_BYTES,
     idleTimeout: IDLE_TIMEOUT_S,

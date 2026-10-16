@@ -147,6 +147,22 @@ describe("core lifecycle", () => {
     const { server, page } = await serverAndPage();
     const game = keep(await createTinyGame());
 
+    // Track every interval started from here on: the agent's perf reader, recorder serializer and
+    // overlay tick must all be cleared by its stop (the hub's session timers by the session's end).
+    const intervals = new Set<unknown>();
+    const realSetInterval = globalThis.setInterval;
+    const realClearInterval = globalThis.clearInterval;
+    const tracked = (...args: Parameters<typeof setInterval>) => {
+      const id = realSetInterval(...args);
+      intervals.add(id);
+      return id;
+    };
+    globalThis.setInterval = tracked as typeof setInterval;
+    globalThis.clearInterval = ((id?: Parameters<typeof clearInterval>[0]) => {
+      intervals.delete(id);
+      realClearInterval(id);
+    }) as typeof clearInterval;
+
     const agent: AgentStack = keep(await startAgent(server, game));
     // start() resolved while the socket was still opening.
     expect(kindsOf(agent.statuses)).toEqual(["connecting"]);
@@ -163,14 +179,17 @@ describe("core lifecycle", () => {
     expect(agent.app.bridge.session()).toBe(session);
     expect(server.sessions).toEqual([{ id: session, open: true, game: TINY_NAME }]);
 
-    // The overlay hook stores every bridge:status while closed; opening paints the stored one.
+    // The overlay hook stores every bridge:status while hidden; opening shows the stored one: a dev
+    // page's link legend reads DEV, lit green while the link is live.
     const host = page.gamePage.querySelector<HTMLElement>(OVERLAY_HOST);
     expect(host?.hidden).toBe(true);
-    agent.app.overlay.open();
+    expect(globalThis.__MOKU_GAME_OVERLAY__?.isOpen()).toBe(false);
+    agent.app.overlay.open({ mode: "card" });
     expect(host?.hidden).toBe(false);
-    const dot = host?.shadowRoot?.querySelector<HTMLElement>("[data-dot]");
-    expect(dot?.dataset.kind).toBe("live");
-    expect(dot?.getAttribute("aria-label")).toMatch(/^Editor live · frame \d+$/);
+    const legend = host?.shadowRoot?.querySelector<HTMLElement>('[data-part="header"] [data-link]');
+    expect(legend?.dataset.link).toBe("dev");
+    expect(legend?.textContent).toBe("DEV");
+    expect(legend?.getAttribute("style")).toContain("var(--live)");
 
     const agentIn = () =>
       server.tap.entries.filter(entry => entry.dir === "in" && entry.kind === "agent");
@@ -186,6 +205,10 @@ describe("core lifecycle", () => {
     expect(agentIn().at(-1)?.message).toMatchObject({ method: "bye", channel: "game" });
     expect(server.sessions.at(-1)).toMatchObject({ id: session, open: false });
     expect(page.gamePage.querySelector(OVERLAY_HOST)).toBeNull();
+    expect(globalThis.__MOKU_GAME_OVERLAY__).toBeUndefined();
+    globalThis.setInterval = realSetInterval;
+    globalThis.clearInterval = realClearInterval;
+    expect(intervals.size).toBe(0);
 
     const closedAt = server.tap.sockets.find(socket => socket.type === "close")?.at ?? 0;
     const statusCount = agent.statuses.length;

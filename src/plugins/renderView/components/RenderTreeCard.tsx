@@ -1,14 +1,17 @@
 /**
  * @file renderView plugin — the render tree card (C9): head counts, Expand all and Collapse (one
  * group the header wraps onto its own line in a narrow column), the hover
- * hint (with "Show game" while the preview is hidden) and the keyboard-driven tree.
+ * hint (with "Show game" while the preview is hidden) and the keyboard-driven tree. On a device
+ * session the tree is not read (spec 09 R4): the card says so instead.
  */
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
+import { linkPlugin } from "../../link";
 import type { WorkspaceApi } from "../../workspace/types";
 import { collapseAll, expandAll, moveInTree } from "../actions";
 import { treeCounts } from "../derive";
 import type { RenderViewCtx, TreeRow as TreeRowData } from "../types";
+import { sessionDevice } from "../watch";
 import { TreeRow } from "./TreeRow";
 
 /**
@@ -32,6 +35,7 @@ export function RenderTreeCard(props: RenderTreeCardProps): JSX.Element {
   const [detail, setDetail] = useState(true);
   const counts = treeCounts(scene);
   const hidden = !workspace.preview("render").visible;
+  const onDevice = sessionDevice(ctx.require(linkPlugin)) !== undefined;
 
   /**
    * ↑↓←→ Home End move through the rows; Enter toggles the detail. Keys on a button are its own.
@@ -82,9 +86,15 @@ export function RenderTreeCard(props: RenderTreeCardProps): JSX.Element {
           </>
         ) : undefined}
       </p>
-      {scene === undefined ? (
+      {onDevice ? (
+        <p data-empty data-device-note>
+          The render tree is not read from a device: reading it costs the phone frames.
+        </p>
+      ) : undefined}
+      {!onDevice && scene === undefined ? (
         <p data-empty>Waiting for the scene · it is read while Render is shown.</p>
-      ) : (
+      ) : undefined}
+      {onDevice || scene === undefined ? undefined : (
         <div role="tree" aria-label="Render tree" tabIndex={0} onKeyDown={onKeyDown}>
           {rows.map(row => (
             <TreeRow

@@ -47,6 +47,8 @@ export type ScriptedHub = {
   readonly answers: Map<string, (input: Json | undefined) => RunAnswer>;
   /** Frame of the run envelope. */
   frame: number;
+  /** Answers of the files-channel `list` by folder; another folder answers null. */
+  readonly listings: Map<string, Json>;
   /** Opens a session: `session {open: true}` then `sessions {list}`. */
   open(info: SessionInfo, manifest: Manifest): void;
   /** Closes a session: `session {open: false, reason}` then `sessions {list}`. */
@@ -98,6 +100,10 @@ export function createScriptedHub(): ScriptedHub {
       return manifest === undefined
         ? encode(failure(request.id, { code: -32_003, message: "[moku-editor] no session" }))
         : encode(success(request.id, toWireValue(manifest)));
+    }
+    if (request.channel === "files" && request.method === "list") {
+      const listing = hub.listings.get(typeof params.dir === "string" ? params.dir : "");
+      return encode(success(request.id, listing ?? null));
     }
     if (request.method !== "run") return encode(success(request.id, null));
 
@@ -156,6 +162,7 @@ export function createScriptedHub(): ScriptedHub {
     manifests: new Map(),
     answers: new Map(),
     frame: 1,
+    listings: new Map(),
     open(info, manifest) {
       hub.sessions = [...hub.sessions, info];
       hub.manifests.set(info.id, manifest);

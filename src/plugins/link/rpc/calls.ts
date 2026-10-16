@@ -59,6 +59,23 @@ export function noSessionError(): Error & WireError {
 }
 
 /**
+ * The error of a call to a named session that is not open (not retryable).
+ *
+ * @param session - The session id.
+ * @returns A -32003 `no_session` wire error.
+ * @example
+ * ```ts
+ * sessionClosedError("s-1").message; // "[moku-editor] Session \"s-1\" is not open."
+ * ```
+ */
+export function sessionClosedError(session: string): Error & WireError {
+  return wireError(errorCode.noSession, `Session "${session}" is not open.`, {
+    reason: "no_session",
+    retryable: false
+  });
+}
+
+/**
  * The code and reason of an error, for a log line (never the message, which may name paths).
  *
  * @param error - Anything a call rejected with.
@@ -214,6 +231,28 @@ export function gameRequest(ctx: LinkCtx, method: string, params: Json): Promise
 
   if (!open || chosen === undefined) return Promise.reject(noSessionError());
   return request(ctx, "game", method, params, chosen);
+}
+
+/**
+ * Sends a game-channel request to a named session, whichever is chosen; rejects `no_session` at
+ * once when that session is not in the list (also while disconnected: a close clears the list).
+ *
+ * @param ctx - Domain context of link.
+ * @param session - The session id.
+ * @param method - Game method (`run`).
+ * @param params - Params.
+ * @returns The result.
+ */
+export function sessionRequest(
+  ctx: LinkCtx,
+  session: string,
+  method: string,
+  params: Json
+): Promise<Json> {
+  if (!ctx.state.sessions.some(({ id }) => id === session)) {
+    return Promise.reject(sessionClosedError(session));
+  }
+  return request(ctx, "game", method, params, session);
 }
 
 /**

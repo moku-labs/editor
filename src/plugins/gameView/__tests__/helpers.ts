@@ -15,6 +15,7 @@ import type {
   ProjectState,
   RelayedEditorMethod,
   RunResult,
+  SessionInfo,
   WireError
 } from "../../registry/protocol";
 import { DEVICES, presetOf, screenOf } from "../../registry/protocol";
@@ -28,6 +29,7 @@ import type {
   Orientation,
   PaletteItem,
   Prefs,
+  ScenarioView,
   WorkspaceApi,
   WorkspaceId
 } from "../../workspace/types";
@@ -236,6 +238,12 @@ export type LinkMock = {
   readonly values: Map<string, Json | ((input: Json | undefined) => Json)>;
   current: LinkStatus;
   manifestValue: Manifest | undefined;
+  /** What `sessions()` answers: empty by default. */
+  sessionsValue: SessionInfo[];
+  /** What `session()` answers: "s-1" by default. */
+  sessionValue: string | undefined;
+  /** The `onManifest` listeners still subscribed; link calls them on every attach and loss. */
+  readonly manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** What `project()` answers: on with no keys by default. */
   projectValue: ProjectState | undefined;
   /** Delivers a value to every active watch of a source id. */
@@ -269,6 +277,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
   const run = vi.fn<LinkApi["run"]>(() => Promise.reject(new Error("link.run is not for views")));
   const notify = vi.fn<LinkApi["notify"]>();
   const handle = vi.fn<HandleCall>(() => vi.fn());
+  const manifestListeners = new Set<(manifest: Manifest | undefined) => void>();
   const link: LinkMock = {
     files: store,
     watch,
@@ -280,6 +289,9 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
     values,
     current: { kind: "live", frame: 1841 },
     manifestValue: manifestOf(),
+    sessionsValue: [],
+    sessionValue: "s-1",
+    manifestListeners,
     projectValue: projectOn(),
     api: {
       read,
@@ -288,11 +300,14 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       status: () => link.current,
       manifest: () => link.manifestValue,
       onManifest: fn => {
+        manifestListeners.add(fn);
         fn(link.manifestValue);
-        return noop;
+        return () => {
+          manifestListeners.delete(fn);
+        };
       },
-      sessions: () => [],
-      session: () => "s-1",
+      sessions: () => link.sessionsValue,
+      session: () => link.sessionValue,
       choose: vi.fn(() => Promise.resolve(manifestOf())),
       retry: vi.fn(),
       expectReload: vi.fn(),
@@ -308,6 +323,15 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       notify,
       handle,
       project: () => link.projectValue,
+      engine: () => undefined,
+      onEngine: () => noop,
+      published: () => undefined,
+      onPublished: () => noop,
+      onSessions: () => noop,
+      onHeartbeat: () => noop,
+      ownSession: () => undefined,
+      runIn: vi.fn(() => Promise.reject(new Error("link.runIn is not for views"))),
+      callEditor: vi.fn(() => Promise.reject(new Error("link.callEditor is not for views"))),
       files: store
     },
     send(id, value) {
@@ -349,6 +373,13 @@ export type WorkspaceMock = {
   onShow: (ws: WorkspaceId) => void;
   /** Sets the device and calls every onPrefs listener. */
   changeDevice(preset: DevicePresetId, orientation: Orientation, folded?: boolean): void;
+  /** The view `scenarios()` answers: no scenarios by default. */
+  scenarioView: ScenarioView;
+  readonly scenarioListeners: Set<(view: ScenarioView) => void>;
+  readonly setScenario: Mock<WorkspaceApi["setScenario"]>;
+  readonly refreshScenarios: Mock<WorkspaceApi["refreshScenarios"]>;
+  /** Sets the scenario view and calls every onScenario listener, like workspace on a change. */
+  changeScenarios(view: ScenarioView): void;
 };
 
 /**
@@ -365,6 +396,13 @@ export function createWorkspaceMock(): WorkspaceMock {
   const dock = vi.fn<GameFrame["dock"]>(() => release);
   const reload = vi.fn<GameFrame["reload"]>(() => Promise.resolve({ restored: true }));
   const toast = vi.fn<WorkspaceApi["toast"]>();
+  const scenarioListeners = new Set<(view: ScenarioView) => void>();
+  const setScenario = vi.fn<WorkspaceApi["setScenario"]>(() =>
+    Promise.resolve({ restored: false })
+  );
+  const refreshScenarios = vi.fn<WorkspaceApi["refreshScenarios"]>(() =>
+    Promise.resolve(workspace.scenarioView)
+  );
   const show = vi.fn<WorkspaceApi["show"]>((ws: WorkspaceId) => {
     workspace.activeValue = ws;
     workspace.onShow(ws);
@@ -420,6 +458,14 @@ export function createWorkspaceMock(): WorkspaceMock {
     box: { left: 100, top: 50, width: 393, height: 852, scale: 1, docked: "stage" },
     overlayElement: undefined,
     onShow: () => {},
+    scenarioView: { scenarios: [], chosen: undefined },
+    scenarioListeners,
+    setScenario,
+    refreshScenarios,
+    changeScenarios(view) {
+      workspace.scenarioView = view;
+      for (const fn of scenarioListeners) fn(view);
+    },
     changeDevice(preset, orientation, folded = true) {
       workspace.device = { preset, orientation, folded };
       for (const fn of prefsListeners) fn(prefs());
@@ -512,6 +558,16 @@ export function createWorkspaceMock(): WorkspaceMock {
         prefsListeners.add(fn);
         return () => {
           prefsListeners.delete(fn);
+        };
+      },
+      startLocalPreview: vi.fn(() => Promise.resolve()),
+      scenarios: () => workspace.scenarioView,
+      setScenario,
+      refreshScenarios,
+      onScenario: fn => {
+        scenarioListeners.add(fn);
+        return () => {
+          scenarioListeners.delete(fn);
         };
       }
     }

@@ -1,6 +1,7 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { ToolsEvents } from "../../../config";
+import type { DeviceDirectory, DeviceTelemetry } from "../../connect/protocol";
 import type {
   Channel,
   Json,
@@ -294,6 +295,105 @@ export async function connected(
  */
 export function beat(socket: FakeWebSocket, session: string, frame: number, paused = false): void {
   socket.notify("game", "heartbeat", { frame, paused, at: Date.now() }, session);
+}
+
+/**
+ * The device directory connect publishes as `editor.devices`: device mode on by wire, the
+ * Galaxy A26 (SM-A266B) linked as d-7f3a on session s-9.
+ *
+ * @param overrides - Field overrides.
+ * @returns The directory.
+ */
+export function directoryOf(overrides: Partial<DeviceDirectory> = {}): DeviceDirectory {
+  return {
+    v: 1,
+    mode: {
+      on: true,
+      owner: "connect",
+      // eslint-disable-next-line unicorn/no-null -- null is a JSON value on the wire
+      listen: { port: 47_600, adb: "127.0.0.1:47600", lan: null }
+    },
+    confirmIn: "page",
+    adb: { available: true },
+    wire: [
+      {
+        serial: "R5CY1234ABC",
+        state: "device",
+        transport: "usb",
+        model: "SM-A266B",
+        name: "Galaxy A26",
+        os: "15",
+        phase: "linked",
+        device: "d-7f3a"
+      }
+    ],
+    asking: [],
+    linked: [
+      {
+        id: "d-7f3a",
+        model: "SM-A266B",
+        link: "adb",
+        address: "127.0.0.1",
+        online: true,
+        engine: "0.15.0+1ab7f2",
+        // eslint-disable-next-line unicorn/no-null -- null is a JSON value on the wire
+        build: null,
+        latencyMs: 4,
+        session: "s-9"
+      }
+    ],
+    at: 1_791_986_083_963,
+    ...overrides
+  };
+}
+
+/**
+ * One wired telemetry tick of d-7f3a as connect publishes it (`editor.deviceTelemetry`): the GPU
+ * at 221 MHz, the app at 541 MB PSS, one CDP heap sample; the CPU still warming up.
+ *
+ * @param at - Epoch ms of the tick.
+ * @returns The record.
+ */
+export function telemetryOf(at = 1_791_986_084_000): DeviceTelemetry {
+  const warming = { available: false, source: "/proc/<pid>/stat", reason: "warming-up" } as const;
+  return {
+    v: 1,
+    device: "d-7f3a",
+    serial: "R5CY1234ABC",
+    at,
+    wired: true,
+    gpu: {
+      available: true,
+      source: "/sys/kernel/gpu",
+      value: { mhz: 221, busyPct: 63, minMhz: 221, maxMhz: 949 }
+    },
+    cpu: { cores: 8, app: warming, renderer: warming, surfaceflinger: warming },
+    memory: {
+      app: {
+        available: true,
+        source: "dumpsys meminfo",
+        value: {
+          pid: 4242,
+          totalPssMb: 541,
+          javaMb: 12,
+          nativeMb: 40,
+          graphicsMb: 210,
+          glMb: 120,
+          codeMb: 30,
+          stackMb: 1,
+          otherMb: 20,
+          systemMb: 108,
+          at
+        }
+      },
+      renderer: { available: false, source: "dumpsys meminfo", reason: "not-found" }
+    },
+    heap: {
+      available: true,
+      source: "cdp Runtime.getHeapUsage",
+      value: { samples: [{ t: at, usedMb: 27, totalMb: 64 }], gcs: [] }
+    }
+  };
 }
 
 /**

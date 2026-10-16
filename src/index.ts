@@ -8,9 +8,13 @@
  *
  * | Subpath | What |
  * |---|---|
- * | `@moku-labs/editor/agent` | the game page core: registry, channel, overlay; opt-in bridge and capture |
- * | `@moku-labs/editor/server` | the Bun core: files, hub, pages; `hub.serve()` for `Bun.serve` |
+ * | `@moku-labs/editor/agent` | the game page core: registry, channel, perf, recorder, overlay; opt-in bridge and capture |
+ * | `@moku-labs/editor/agent/page` | the engine's page agent (dev page and debug builds): the agent core with bridge and capture |
+ * | `@moku-labs/editor/server` | the Bun core: files, hub, collector, pages; `hub.serve()` for `Bun.serve` |
  * | `@moku-labs/editor/tools` | the tools page core: link, workspace, panels and the six workspaces |
+ *
+ * The runtime-free modules of the perf work (`perf/protocol`, `perf/graph`, `collector/report`)
+ * are not root exports: their types are `Perf.*` and `Collector.*` of the core entries.
  *
  * @file The package root: the wire protocol and definePanel.
  * @example
@@ -21,9 +25,13 @@
 
 // ─── Protocol: types ──────────────────────────────────────────
 export type {
+  BuildInfo,
+  BuildProfile,
   Changes,
   Channel,
   CommandDescriptor,
+  CommandRefusal,
+  CommandVia,
   DeviceInfo,
   DeviceParams,
   DevicePresetInfo,
@@ -57,6 +65,7 @@ export type {
   NodeParams,
   NodeRef,
   Notification,
+  OverlayMarker,
   PathParams,
   PictureFormat,
   ProjectAnchor,
@@ -113,6 +122,7 @@ export {
   failure,
   firstDefinition,
   fromWireError,
+  isAllowed,
   isFailure,
   isHotSwapEntry,
   isJson,
@@ -130,6 +140,7 @@ export {
   parseSelectParams,
   projectDelta,
   ProtocolError,
+  refusalOf,
   request,
   success,
   toWireError,

@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 /**
- * Shows the number of fps samples, through the hook under test.
+ * Shows the number of release log entries, through the hook under test.
  *
  * @param props - The renderView state.
  * @param props.state - The renderView state.
@@ -25,8 +25,8 @@ afterEach(() => {
  */
 function Probe(props: { readonly state: RenderViewState }): VNode {
   const { state } = props;
-  const samples = useRenderView(state, () => state.fps.length);
-  return <span>{samples}</span>;
+  const entries = useRenderView(state, () => state.releases.length);
+  return <span>{entries}</span>;
 }
 
 /**
@@ -47,7 +47,7 @@ describe("useRenderView", () => {
     // No act(): effects run on Preact's own schedule, as in the tools page.
     render(<Probe state={state} />, root);
     expect(root.textContent).toBe("0");
-    state.fps.push(60);
+    state.releases.push({ frame: 9, bundle: "home", tier: "scene", mb: 2.5 });
     notify(state);
     await afterPaint();
     expect(root.textContent).toBe("1");

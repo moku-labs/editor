@@ -317,3 +317,23 @@ describe("asset route (P/assets/*)", () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe("toolsPage off (moku-editor perf --no-ui)", () => {
+  it("answers 404 on P, P/ and P/assets/* after the guard, and P/hello still answers", async () => {
+    const routes = createRoutes(createHarness(pageDir, { toolsPage: false }).deps);
+    for (const [key, path] of [
+      [P, P],
+      [`${P}/`, `${P}/`],
+      [`${P}/assets/*`, `${P}/assets/app-abc.js`]
+    ] as const) {
+      const response = await call(routes, key, request(path));
+      expect(response.status, path).toBe(404);
+      expect(await response.text()).toBe("tools page off (moku-editor perf --no-ui)");
+    }
+    const foreign = request(`${P}/`, { headers: { origin: "http://evil.com" } });
+    const refused = await call(routes, `${P}/`, foreign);
+    expect(refused.status).toBe(403);
+    const hello = await call(routes, `${P}/hello`, request(`${P}/hello`));
+    expect(hello.status).toBe(200);
+  });
+});

@@ -6,7 +6,8 @@ import type { FilesState } from "./types";
 
 /**
  * Creates the initial files state: no root yet, no compiled globs, no locks, the project index
- * not opened. onInit fills the root and the globs; onStart opens the index.
+ * not opened, no engine fingerprint. onInit fills the root and the globs; onStart computes the
+ * fingerprint and opens the index.
  *
  * @returns A fresh state.
  */
@@ -20,6 +21,8 @@ export function createFilesState(): FilesState {
     opening: undefined,
     projectState: offState("not opened"),
     stopWatch: undefined,
-    stopped: false
+    stopped: false,
+    engine: undefined,
+    engineAt: 0
   };
 }

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { buildBridgeApi } from "../../api";
+import { sendBeat } from "../../connection/loop";
+import { handleText } from "../../dispatch/dispatch";
 import { currentStatus, setStatus } from "../../status";
-import { createDeps, openDeps } from "../helpers";
+import { SEEN_EMIT_MS } from "../../types";
+import { createDeps, deviceDeps, editorNote, FakeSocket, LAN, openDeps } from "../helpers";
 
 describe("currentStatus", () => {
   it("is connecting before start and while connecting", () => {
@@ -95,5 +99,91 @@ describe("setStatus", () => {
 
     expect(deps.emit).not.toHaveBeenCalled();
     expect(deps.state.status).toMatchObject({ reason: "b", retryInMs: 2000 });
+  });
+});
+
+describe("setStatus in device mode", () => {
+  it("adds the link to the payload; a page-mode payload has none", () => {
+    const page = createDeps();
+    const device = deviceDeps();
+
+    setStatus(page, { kind: "connecting" }, true);
+    setStatus(device, { kind: "connecting" }, true);
+
+    expect(page.emit.mock.calls[0]?.[0]).not.toHaveProperty("link");
+    expect(device.emit).toHaveBeenCalledWith({
+      status: { kind: "connecting" },
+      link: { mode: "none", address: LAN }
+    });
+  });
+
+  it("emits when the pairing code appears, though the kind stays connecting", () => {
+    const deps = deviceDeps();
+    deps.state.phase = "connecting";
+    setStatus(deps, { kind: "connecting" }, true);
+    deps.emit.mockClear();
+
+    deps.state.phase = "pairing";
+    deps.state.pairing = { code: "4821" };
+    setStatus(deps, { kind: "connecting" });
+
+    expect(deps.emit).toHaveBeenCalledWith({
+      status: { kind: "connecting" },
+      link: { mode: "connecting", address: LAN, pairing: { code: "4821" } }
+    });
+  });
+
+  it("publishes the computer's engine from the session notification", () => {
+    const deps = deviceDeps();
+    deps.state.phase = "open";
+    setStatus(deps, { kind: "live", frame: 12 }, true);
+    deps.emit.mockClear();
+
+    handleText(deps, editorNote("session", { id: "s-1", open: true, engine: "0.14.12+9c41e0" }));
+
+    expect(deps.emit).toHaveBeenCalledWith({
+      status: { kind: "live", frame: 12 },
+      session: "s-1",
+      link: { mode: "lan", address: LAN, editorEngine: "0.14.12+9c41e0" }
+    });
+    expect(buildBridgeApi(deps).link()).toEqual({
+      mode: "lan",
+      address: LAN,
+      editorEngine: "0.14.12+9c41e0"
+    });
+  });
+
+  it("emits for seenAt at most once per SEEN_EMIT_MS while linked", () => {
+    vi.useFakeTimers();
+    const deps = deviceDeps();
+    const socket = new FakeSocket();
+    socket.readyState = 1;
+    deps.state.socket = socket;
+    deps.state.phase = "open";
+    setStatus(deps, { kind: "live", frame: 12 }, true);
+    deps.emit.mockClear();
+
+    for (let tick = 0; tick < 30; tick += 1) {
+      vi.advanceTimersByTime(100);
+      sendBeat(deps, deps.channel.beat);
+    }
+
+    expect(deps.emit.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(deps.emit.mock.calls.length).toBeLessThanOrEqual(Math.ceil(3000 / SEEN_EMIT_MS));
+    expect(deps.emit.mock.calls.at(-1)?.[0].link?.seenAt).toBeGreaterThan(0);
+    vi.useRealTimers();
+  });
+
+  it("does not refresh seenAt for a heartbeat the socket has not sent yet", () => {
+    const deps = deviceDeps();
+    const socket = new FakeSocket();
+    socket.readyState = 1;
+    socket.bufferedAmount = 10;
+    deps.state.socket = socket;
+    deps.state.phase = "open";
+
+    sendBeat(deps, deps.channel.beat);
+
+    expect(deps.state.seenAt).toBeUndefined();
   });
 });

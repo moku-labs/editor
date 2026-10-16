@@ -44,8 +44,9 @@ export function startLink(ctx: LinkCtx): void {
 /**
  * onStop: stopped = true (every socket callback returns early from now on), clears the retry and
  * silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls
- * false, closes the socket with 1000 and forgets the watches, the manifest, tap and hot reload
- * listeners, the notified values and the request handlers.
+ * false, closes the socket with 1000 and forgets the watches, the manifest, tap, hot reload,
+ * engine, published, session and heartbeat listeners, the notified values and the request
+ * handlers.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -71,6 +72,10 @@ export function stopLink(ctx: { readonly state: LinkState }): void {
   state.manifestListeners.clear();
   state.tapListeners.clear();
   state.hotReloadListeners.clear();
+  state.engineListeners.clear();
+  for (const listeners of Object.values(state.publishedListeners)) listeners.clear();
+  state.sessionsListeners.clear();
+  state.heartbeatListeners.clear();
   state.notified.clear();
   state.handlers.clear();
 }

@@ -1,39 +1,42 @@
 /**
- * Standard tier — the in-game overlay: render numbers and the game's cheat commands in a small
- * card over the game page. Off by default; switched by editor.overlay or config open. Hooks the
- * global bridge:status for its link dot. Emits no events.
+ * Complex tier — the editor's window over the game: hidden, pill or card; drag, snap and the safe
+ * area; tabs Frames (graph, counters, spike record), Game (the game's overlay commands), Record and
+ * Link. Paints on its own 4 Hz tick inside the engine's agent bracket. Sets
+ * globalThis.__MOKU_GAME_OVERLAY__ for app.debug.overlay. Emits overlay:changed and
+ * overlay:connect; hooks bridge:status and recorder:status.
  *
  * @see README.md
  */
 import { createAgentPlugin } from "../../config";
 import { channelPlugin } from "../channel";
+import { perfPlugin } from "../perf";
+import { recorderPlugin } from "../recorder";
 import { registryPlugin } from "../registry";
 import { createOverlayApi } from "./api";
-import { initOverlay } from "./command";
 import { createHandlers } from "./handlers";
-import { startOverlay, unmountOverlay } from "./mount";
+import { initOverlay, startOverlay, stopOverlay } from "./lifecycle";
 import { createOverlayState } from "./state";
 import type { Config } from "./types";
 
-const defaultConfig: Config = { open: false, corner: "top-right", mount: undefined };
+const defaultConfig: Config = { mode: "hidden", dock: "right", remember: true, mount: undefined };
 
 /**
  * The overlay plugin, a default of the agent core.
  *
  * @example
  * ```ts
- * const editor = createApp({ pluginConfigs: { registry: { game }, overlay: { open: true } } });
- * await editor.start(); // QA build: the card shows fps and the cheats
+ * const editor = createApp({ pluginConfigs: { registry: { game }, overlay: { mode: "pill" } } });
+ * await editor.start(); // the pill shows fps and the spikes of the last 6 s
  * ```
  */
 export const overlayPlugin = /* @__PURE__ */ createAgentPlugin("overlay", {
-  depends: [registryPlugin, channelPlugin],
+  depends: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin],
   config: defaultConfig,
   createState: createOverlayState,
   api: createOverlayApi,
   hooks: createHandlers,
   onInit: initOverlay,
-  // @no-resource-check — onStart mounts the DOM host and listener; onStop removes them and the interval
+  // @no-resource-check — onStart mounts the host, listeners, observers, the global and the tick; onStop removes them
   onStart: startOverlay,
-  onStop: unmountOverlay
+  onStop: stopOverlay
 });

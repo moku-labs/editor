@@ -400,27 +400,6 @@ function sceneOf(state: RenderViewState): MetricTiles["scene"] {
 }
 
 /**
- * The FPS tile: the current fps and the lowest of the kept samples.
- *
- * @param render - The last game.render value.
- * @param samples - The kept fps samples, oldest first.
- * @returns The tile data, undefined before game.render.
- * @example
- * ```ts
- * fpsTileOf({ fps: 60, frameMs: 3.4, textures: 12, textureMb: 41.25, views: 180, pooled: 24 }, [58, 60]);
- * // { now: 60, samples: [58, 60], low: 58 }
- * ```
- */
-function fpsTileOf(
-  render: RenderStats | undefined,
-  samples: readonly number[]
-): MetricTiles["fps"] {
-  if (render === undefined) return undefined;
-  const low = samples.length > 0 ? Math.min(...samples) : render.fps;
-  return { now: render.fps, samples: [...samples], low };
-}
-
-/**
  * The textures tile: GPU size and count of game.render, bundles and budget of game.assets, and
  * the textures not in use.
  *
@@ -451,38 +430,21 @@ function texturesTileOf(
 }
 
 /**
- * The JS heap tile: the heap the page reported, or absent.
- *
- * @param heap - The heap stored at the last game.render change.
- * @returns The tile data.
- * @example
- * ```ts
- * heapTileOf({ usedMb: 12.8, limitMb: 4095.8 }); // { kind: "value", usedMb: 12.8, limitMb: 4095.8 }
- * heapTileOf(undefined); // { kind: "absent" }
- * ```
- */
-function heapTileOf(heap: RenderViewState["heap"]): MetricTiles["heap"] {
-  if (heap === undefined) return { kind: "absent" };
-  return { kind: "value", usedMb: heap.usedMb, limitMb: heap.limitMb };
-}
-
-/**
- * The six metric tiles from game.render, game.assets, the scene and the texture rows.
+ * The scene numbers of the snapshot's tiles from game.render, game.assets, the scene and the
+ * texture rows: draw calls, textures and the scene (the FPS, frame-time and heap tiles went with
+ * Mission control, spec 09 § M1).
  *
  * @param state - renderView state.
  * @param rows - The loaded texture rows (for the unused count).
- * @returns The tiles; a tile without its data is undefined, heap is absent until the page reports it,
- *   `effectsInstalled: false` only on a game without the effects plugin.
+ * @returns The tiles; a tile without its data is undefined, `effectsInstalled: false` only on a game
+ *   without the effects plugin.
  */
 export function tilesOf(state: RenderViewState, rows: readonly TextureRow[]): MetricTiles {
   const { render, assets } = state;
   return {
-    fps: fpsTileOf(render, state.fps),
-    frameMs: render?.frameMs,
     drawCalls: drawCallsOf(render),
     textures: texturesTileOf(render, assets, rows),
     scene: sceneOf(state),
-    heap: heapTileOf(state.heap),
     ...(state.effectsInstalled ? {} : { effectsInstalled: false })
   };
 }

@@ -3,13 +3,16 @@
  * pinned preview, palette, toasts, stale bars, keyboard, preferences (theme, density, preview,
  * device and fold, taps, sound, Copy on select), the Hot reload switch, tap ripples, the single
  * game iframe and the D-07 reload (which leaves the reload to Bun after a save when hot reload is
- * on). Emits the global tools events `workspace:changed`, `workspace:ran` and
- * `workspace:density`; hooks `link:status`; answers the hub's `device` and `show` requests
+ * on), the source pill, the disconnect notice under the top bar, the paused veil over the local
+ * frame and `startLocalPreview()` (spec 11 § 5.3). Emits the global tools events
+ * `workspace:changed`, `workspace:ran` and `workspace:density`; hooks `link:status` and
+ * activeSource's `activeSource:changed`; answers the hub's `device` and `show` requests
  * (`requests.ts`).
  *
  * @see README.md
  */
 import { createToolsPlugin } from "../../config";
+import { activeSourcePlugin } from "../activeSource";
 import { linkPlugin } from "../link";
 import { createWorkspaceApi } from "./api";
 import { createHandlers } from "./handlers";
@@ -35,7 +38,7 @@ const defaultConfig: WorkspaceConfig = {
  * ```
  */
 export const workspacePlugin = createToolsPlugin("workspace", {
-  depends: [linkPlugin],
+  depends: [linkPlugin, activeSourcePlugin],
   config: defaultConfig,
   createState: createWorkspaceState,
   api: createWorkspaceApi,

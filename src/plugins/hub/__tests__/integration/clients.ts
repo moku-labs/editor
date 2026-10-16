@@ -102,11 +102,43 @@ function firstMatch(
  * @param options - Token, kind, role, origin and path.
  * @returns The open client.
  */
-export async function connectClient(port: number, options: ClientOptions): Promise<Client> {
+export function connectClient(port: number, options: ClientOptions): Promise<Client> {
   const path = options.path ?? "/__editor";
   const role = options.role === undefined ? "" : `&role=${options.role}`;
   const url = `ws://127.0.0.1:${port}${path}/ws?token=${options.token}&kind=${options.kind}${role}`;
-  const socket = openSocket(url, { origin: options.origin ?? `http://127.0.0.1:${port}` });
+  return openClient(url, options.origin ?? `http://127.0.0.1:${port}`);
+}
+
+/**
+ * Connects a phone (`kind=agent role=device`) to a device listener and waits for the socket to
+ * open; a stale token's socket opens, then closes 4401.
+ *
+ * @param address - The listener's `host:port` (IPv6 in brackets).
+ * @param credentials - The device id and token of a reconnect; none for a pairing socket.
+ * @param credentials.device - The device id.
+ * @param credentials.token - The device token.
+ * @param origin - The WebView's Origin.
+ * @returns The open client.
+ */
+export function connectDevice(
+  address: string,
+  credentials?: { readonly device: string; readonly token: string },
+  origin = "tauri://localhost"
+): Promise<Client> {
+  const query =
+    credentials === undefined ? "" : `&device=${credentials.device}&token=${credentials.token}`;
+  return openClient(`ws://${address}/__editor/ws?kind=agent&role=device${query}`, origin);
+}
+
+/**
+ * Opens a recording client on a socket URL with an Origin and waits for it to open.
+ *
+ * @param url - The socket URL.
+ * @param origin - The Origin header.
+ * @returns The open client.
+ */
+async function openClient(url: string, origin: string): Promise<Client> {
+  const socket = openSocket(url, { origin });
   const messages: Message[] = [];
   const waiters = new Set<() => void>();
 
@@ -228,6 +260,8 @@ export function paramsOf(message: Message | undefined): { [key: string]: Json } 
 
 /** Headers of an upgrade attempt over plain HTTP. */
 export type UpgradeAsk = {
+  /** The host of the URL the request goes to; 127.0.0.1 by default (IPv6 in brackets). */
+  readonly address?: string;
   readonly token?: string | undefined;
   readonly kind?: string | undefined;
   readonly role?: string;
@@ -245,7 +279,7 @@ export type UpgradeAsk = {
  * @returns The HTTP status.
  */
 export async function upgradeStatus(port: number, ask: UpgradeAsk): Promise<number> {
-  const url = new URL(`http://127.0.0.1:${port}${ask.path ?? "/__editor/ws"}`);
+  const url = new URL(`http://${ask.address ?? "127.0.0.1"}:${port}${ask.path ?? "/__editor/ws"}`);
   if (ask.token !== undefined) url.searchParams.set("token", ask.token);
   const kind = "kind" in ask ? ask.kind : "tools";
   if (kind !== undefined) url.searchParams.set("kind", kind);

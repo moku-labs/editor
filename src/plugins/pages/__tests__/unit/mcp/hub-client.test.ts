@@ -136,6 +136,21 @@ describe("requests", () => {
   });
 });
 
+describe("identify", () => {
+  it("tells the hub the MCP client's name with the editor-channel client notification", async () => {
+    const server = fake({ sessions: [session("s-1")] });
+    const client = await connectHub(server.discovery("/root"));
+
+    client.identify("Claude");
+
+    await until(() => server.notes.length === 1, "the client notification");
+    expect(server.notes).toEqual([
+      { channel: "editor", method: "client", params: { name: "Claude" }, session: undefined }
+    ]);
+    client.close();
+  });
+});
+
 describe("sessions and liveness (M4)", () => {
   it("merges the hub readout with forwarded heartbeats and drops closed sessions", async () => {
     const server = fake({

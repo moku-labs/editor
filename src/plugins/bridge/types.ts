@@ -1,14 +1,19 @@
 /**
- * @file bridge plugin — type definitions: config, constants, state, api, the structural net,
- * socket, tap window and reload seams, the domain deps and the plugin context. No bun or DOM namespace type in an
+ * @file bridge plugin — type definitions: config, constants, state, api, hooks, the structural
+ * net, socket, tap window and reload seams, the page flags, the remembered links, the domain deps
+ * and the plugin context. No bun or DOM namespace type in an
  * exported shape (skeleton-conventions §3).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { AgentEvents, Require } from "../../config";
 import type { ChannelApi } from "../channel/types";
+import type { DeviceLink } from "../hub/protocol";
+import type { RecorderApi, RecorderStatusEvent } from "../recorder/types";
 import type { Changes, Json, LinkStatus, SubId } from "../registry/protocol";
 import type { RegistryApi } from "../registry/types";
+
+export type { DeviceLink } from "../hub/protocol";
 
 /**
  * Default first reconnect delay (config `retryMs`).
@@ -61,26 +66,121 @@ export const SHEET_ID = "editor.sheet";
 export const RELOAD_ID = "editor.reload";
 
 /**
+ * The computer address when nothing else names one: adb reverse to the hub's device port (engine
+ * spec 10 default of `--editor`).
+ */
+export const DEFAULT_DEVICE_ADDRESS = "127.0.0.1:47600";
+
+/**
+ * Default of config `linesPerBatch`.
+ */
+export const DEFAULT_LINES_PER_BATCH = 200;
+
+/**
+ * Upper bound of config `linesPerBatch`.
+ */
+export const MAX_LINES_PER_BATCH = 1000;
+
+/**
+ * While linked in device mode, at most one `bridge:status` per this many ms for a `seenAt` change
+ * alone.
+ */
+export const SEEN_EMIT_MS = 1000;
+
+/**
+ * The `localStorage` key of the remembered links.
+ */
+export const PAIRING_STORE_KEY = "moku-editor:link";
+
+/**
+ * Most remembered addresses; the oldest is dropped.
+ */
+export const MAX_REMEMBERED = 4;
+
+/**
+ * The hub's 1008 close reason after the person refused the pairing: no retry.
+ */
+export const PAIRING_REFUSED = "pairing refused";
+
+/**
  * Bridge configuration.
  *
  * @example
  * ```ts
- * createApp({ plugins: [bridgePlugin], pluginConfigs: { bridge: { retryMs: 500 } } });
+ * createApp({ plugins: [bridgePlugin], pluginConfigs: { bridge: { device: "192.168.1.5:47600" } } });
  * ```
  */
 export type BridgeConfig = {
-  /** Hello route of the editor server: same-origin path or absolute URL. */
+  /**
+   * Hello route of the editor server (page mode): same-origin path or absolute URL. Non-empty. Its
+   * path, with the last segment replaced by `ws`, is also the socket path in device mode.
+   */
   hello: string;
   /** First reconnect delay in ms; doubles per failure up to MAX_RETRY_MS. Integer ≥ 100. */
   retryMs: number;
-  /** Deadline of one hub request in ms; a run of editor.series or editor.sheet waits longer (R1). */
+  /**
+   * Deadline of one hub request in ms; a run of editor.series or editor.sheet waits longer (R1).
+   * Also the deadline of one `perf.lines` acknowledgement. Integer ≥ 100.
+   */
   callTimeoutMs: number;
+  /**
+   * Device mode at this computer address (`host:port`). Undefined: mode and address follow the
+   * remembered address, `__MOKU_GAME_EDITOR__` and the page URL.
+   */
+  device: string | undefined;
+  /** Most log lines in one `perf.lines` message. Integer 1–1000. */
+  linesPerBatch: number;
 };
 
 /**
- * Connection phase.
+ * Connection phase. "pairing": a device socket is open and waits for the computer's confirm.
  */
-export type Phase = "idle" | "connecting" | "open" | "lost" | "stopped";
+export type Phase = "idle" | "connecting" | "pairing" | "open" | "lost" | "stopped";
+
+/**
+ * How the bridge reaches the hub: "page" (same-origin hello, a page the dev server served) or
+ * "device" (dial an address, pair).
+ */
+export type BridgeMode = "page" | "device";
+
+/**
+ * The credentials the hub gave this device for one address (`paired`). Never logged.
+ */
+export type RememberedLink = { readonly device: string; readonly token: string };
+
+/**
+ * What `localStorage["moku-editor:link"]` holds (JSON, `v: 1`). Never logged.
+ */
+export type RememberedLinks = {
+  readonly v: 1;
+  /** The address the person chose or paired last. */
+  last: string | undefined;
+  /** address → the hub's device id and token; at most MAX_REMEMBERED, insertion order = age. */
+  links: Record<string, RememberedLink>;
+};
+
+/**
+ * What the bridge reads from the page besides the registry: the build's editor address and the
+ * device.
+ */
+export type PageFlags = {
+  /** `__MOKU_GAME_EDITOR__` when a non-empty string. */
+  readonly editor: string | undefined;
+  /** The native shell's device model when present. */
+  readonly model: string | undefined;
+  /** `navigator.userAgent`. */
+  readonly userAgent: string | undefined;
+};
+
+/**
+ * A batch of log lines waiting for its `perf.ack`, with its deadline timer.
+ */
+export type Shipping = {
+  readonly log: string;
+  readonly from: number;
+  readonly count: number;
+  timer: ReturnType<typeof setTimeout>;
+};
 
 /**
  * One hub subscription served by the bridge.
@@ -229,11 +329,43 @@ export type BridgeState = {
   off: (() => void)[];
   /** The checkpoint restored at start, sent once in the next hello (R6). */
   restored: { readonly bookmark: string; readonly frame: number } | undefined;
+  /**
+   * The connect generation: +1 at every connect. A page-mode hello fetch that settles after a
+   * newer connect opens nothing and fails nothing.
+   */
+  dial: number;
+  /** Decided at start; switched to "device" by connect() and overlay:connect. */
+  mode: BridgeMode;
+  /** Device mode: the `host:port` dialled (normalized); undefined in page mode. */
+  address: string | undefined;
+  /** Device mode: the code shown while pairing; kept across retries until paired or refused. */
+  pairing: { readonly code: string } | undefined;
+  /** Device mode: the next attempt goes without credentials (set by a 4401 `unpaired` close). */
+  pairNext: boolean;
+  /** The computer's engine fingerprint from the last `session` or `paired` notification. */
+  editorEngine: string | undefined;
+  /** Epoch ms of the last sign of the computer (a message, or a heartbeat the OS took). */
+  seenAt: number | undefined;
+  /** Epoch ms of the last bridge:status emitted in device mode. */
+  seenEmittedAt: number;
+  /** The link the last bridge:status carried (device mode), to tell a link change. */
+  emittedLink: DeviceLink | undefined;
+  /**
+   * True once the computer answered this page's hello with a session (decides "no computer" vs
+   * "lost" logging).
+   */
+  everLinked: boolean;
+  /** The batch of log lines waiting for its ack; undefined when none is in flight. */
+  shipping: Shipping | undefined;
+  /** An ack deadline passed on this link: no shipping until the next link. */
+  shippingStalled: boolean;
+  /** The remembered links (in memory when localStorage is missing or throws). */
+  remembered: RememberedLinks;
 };
 
 /**
- * The bridge api (`app.bridge`): the state of the dev link from the game page to the editor
- * server. Both methods read state only.
+ * The bridge api (`app.bridge`): the state of the link from the game page to the editor server,
+ * and the switch to another computer in device mode.
  */
 export type BridgeApi = {
   /**
@@ -260,6 +392,46 @@ export type BridgeApi = {
    * ```
    */
   session(): string | undefined;
+  /**
+   * The device link as the overlay's Link tab shows it: no computer, connecting (with the pairing
+   * code while the computer has not confirmed), live over adb (a loopback address) or live over the
+   * LAN. The same object the last `bridge:status` carried as `link`, as a fresh copy.
+   *
+   * @returns The link, or undefined in page mode (a page the dev server served).
+   * @example
+   * ```ts
+   * // A debug build on a phone, waiting for the person to type the code on the computer.
+   * app.bridge.link(); // { mode: "connecting", address: "192.168.1.5:47600", pairing: { code: "4821" } }
+   * ```
+   */
+  link(): DeviceLink | undefined;
+  /**
+   * Dials another computer: switches to device mode at `address`, remembers it as the last address
+   * on the device, closes the current socket (1000 "switch") and connects now with the failure
+   * streak reset. Remembered credentials for that address are used; without them the bridge pairs.
+   * The same as the event `overlay:connect { address }`. Calling it with the address that is
+   * already live does nothing.
+   *
+   * @param address - `host:port`, e.g. "192.168.1.5:47600"; `[v6]:port` for IPv6.
+   * @throws {TypeError} `[moku-editor] bridge.connect needs host:port, got "<address>".` for an
+   *   address `parseAddress` refuses (argument validation); nothing changes then.
+   * @example
+   * ```ts
+   * // The phone moves from the USB cable to the office Wi-Fi.
+   * app.bridge.connect("192.168.1.5:47600");
+   * app.bridge.link(); // { mode: "connecting", address: "192.168.1.5:47600" } until the socket opens
+   * ```
+   */
+  connect(address: string): void;
+};
+
+/**
+ * The bridge's hooks: the overlay's connect intent (global) and the recorder's status (through
+ * `depends`).
+ */
+export type BridgeHooks = {
+  readonly "overlay:connect": (payload: AgentEvents["overlay:connect"]) => void;
+  readonly "recorder:status": (payload: RecorderStatusEvent) => void;
 };
 
 /**
@@ -297,9 +469,18 @@ export type BridgeDeps = {
   readonly log: Log.LogApi;
   /** ctx.emit("bridge:status", payload). */
   readonly emit: (payload: AgentEvents["bridge:status"]) => void;
-  readonly registry: Pick<RegistryApi, "manifest" | "source" | "command" | "clock" | "envelope">;
+  readonly registry: Pick<
+    RegistryApi,
+    "manifest" | "source" | "command" | "clock" | "envelope" | "build"
+  >;
   readonly channel: Pick<ChannelApi, "read" | "watch" | "run" | "heartbeat" | "onHeartbeat">;
+  /** The recorder's outbox: the oldest unsent run and its acknowledgement. */
+  readonly recorder: Pick<RecorderApi, "unsentRun" | "ack">;
   readonly net: BridgeNet;
+  /** The build's editor address and the device, read once from the page. */
+  readonly flags: PageFlags;
+  /** The page's localStorage for the remembered links; undefined when missing or refused. */
+  readonly linkStorage: CheckpointStorage | undefined;
   /** sessionStorage, the document id and Bun's beforeFullReload (R6). */
   readonly reload: ReloadSeam;
   readonly page: {

@@ -1,0 +1,14 @@
+==> /sys/class/kgsl/kgsl-3d0/gpuclk <==
+585000000
+
+==> /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage <==
+30 %
+
+==> /sys/class/kgsl/kgsl-3d0/gpubusy <==
+     120      400
+
+==> /sys/class/kgsl/kgsl-3d0/min_clock_mhz <==
+257
+
+==> /sys/class/kgsl/kgsl-3d0/max_clock_mhz <==
+680

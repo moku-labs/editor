@@ -1,0 +1,57 @@
+/* workspace · SourceNotice. W10 (spec 11 § 5.3, design S6): the disconnect notice in the shell grid's second row, under the top bar, full width, in every workspace; the region is empty (0 px) without a notice. The bar: 7 × 14 px padding, no radius, a 1 px bottom border of 40 % --status-warn, a 9 % --status-warn tint over --surface-panel, a 12 px gap, 12.5 px text; the unplug icon (16) in --status-warn; the first sentence in 600; Reconnect a small outline button (22 px, 0 7 px, 11.5 px, radius 6); Dismiss a 28 px ghost icon button; a 2 px --status-warn timer line at the bottom that shrinks to the notice's end, still and at .35 while pinned (Reconnect waits with no end). Reduced motion stops the line (utilities). No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-ui="source-notice"]) {
+  [data-part="bar"] {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 14px;
+    overflow: hidden;
+    border-bottom: 1px solid color-mix(in srgb, var(--status-warn) 40%, transparent);
+    background: color-mix(in srgb, var(--status-warn) 9%, var(--surface-panel));
+    color: var(--text-ink);
+    font-size: var(--font-size-12-5);
+  }
+
+  [data-part="bar"] > svg {
+    flex: none;
+    color: var(--status-warn);
+  }
+
+  [data-part="message"] {
+    flex: 1;
+    min-width: 0;
+  }
+
+  [data-part="message"] b {
+    font-weight: 600;
+  }
+
+  button[data-action="reconnect"] {
+    flex: none;
+    padding: 0 7px;
+  }
+
+  button[data-action="dismiss"] {
+    flex: none;
+    justify-content: center;
+    width: 28px;
+    padding: 0;
+  }
+
+  [data-part="timer"] {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--status-warn);
+    transform-origin: left;
+    animation: notice-shrink var(--notice-ms, 12s) linear forwards;
+  }
+
+  [data-part="bar"][data-pinned] [data-part="timer"] {
+    animation: none;
+    opacity: 0.35;
+  }
+}

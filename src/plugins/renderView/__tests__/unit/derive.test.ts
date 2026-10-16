@@ -21,8 +21,9 @@ import type { AssetsUsage, RenderViewState } from "../../types";
 import { ASSETS, boardScene, CONFIG, MANIFEST_TEXT, RENDER } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// derive.ts: the pure derivations of the Render workspace — tiles, texture rows
-// and their use, bundles, pools, the release log and the tree rows.
+// derive.ts: the pure derivations of the Render workspace — the scene tiles,
+// texture rows and their use, bundles, pools, the release log and the tree rows.
+// (The FPS, frame-time and heap tiles went with Mission control, spec 09 § M1.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function stateWithData(): RenderViewState {
@@ -32,7 +33,6 @@ function stateWithData(): RenderViewState {
   state.catalogue = parseTextureManifest(MANIFEST_TEXT, "manifest.json");
   state.firstFrame = 100;
   state.lastFrame = 1841;
-  state.fps = [58, 60, 59];
   return state;
 }
 
@@ -45,25 +45,14 @@ function usage(names: readonly string[]): AssetsUsage {
 }
 
 describe("tiles", () => {
-  it("are all undefined without data, heap absent until the page reports it", () => {
+  it("are all undefined without data", () => {
     const tiles = tilesOf(createRenderViewState({ config: CONFIG }), []);
 
     expect(tiles).toEqual({
-      fps: undefined,
-      frameMs: undefined,
       drawCalls: undefined,
       textures: undefined,
-      scene: undefined,
-      heap: { kind: "absent" }
+      scene: undefined
     });
-  });
-
-  it("read the page heap stored with the last game.render change", () => {
-    const state = stateWithData();
-    state.heap = { usedMb: 12.8, limitMb: 4095.8 };
-
-    expect(tilesOf(state, []).heap).toEqual({ kind: "value", usedMb: 12.8, limitMb: 4095.8 });
-    expect(deriveSnapshot(state).tiles.heap).not.toBe(state.heap);
   });
 
   it("read game.render, game.assets and the scene", () => {
@@ -71,8 +60,6 @@ describe("tiles", () => {
     state.scene = boardScene();
     const tiles = tilesOf(state, textureRowsOf(state));
 
-    expect(tiles.fps).toEqual({ now: 60, samples: [58, 60, 59], low: 58 });
-    expect(tiles.frameMs).toBe(3.4);
     expect(tiles.drawCalls).toEqual({ kind: "absent" });
     expect(tiles.textures).toEqual({
       gpuMb: 41.25,
@@ -131,13 +118,6 @@ describe("tiles", () => {
 
     state.effectsInstalled = false;
     expect(tilesOf(state, []).effectsInstalled).toBe(false);
-  });
-
-  it("keep fps low at now while no sample was kept", () => {
-    const state = stateWithData();
-    state.fps = [];
-
-    expect(tilesOf(state, []).fps).toEqual({ now: 60, samples: [], low: 60 });
   });
 });
 
@@ -361,7 +341,6 @@ describe("snapshot", () => {
     expect(snapshot.pools).toEqual({ views: 180, pooled: 24 });
     expect(snapshot.releases).toEqual(state.releases);
     expect(snapshot.releases).not.toBe(state.releases);
-    expect(snapshot.tiles.fps?.samples).not.toBe(state.fps);
   });
 
   it("has no pools before game.render", () => {

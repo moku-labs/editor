@@ -1,7 +1,8 @@
 /**
  * @file Protocol — commandsHash (D-37): one hash of the command doors of a manifest, the same rule
- * for the hub, which stamps it on every `SessionInfo`, and for the tests. Pure and isomorphic:
- * no Node or browser API.
+ * for the hub, which stamps it on every `SessionInfo`, and for the tests. A command the page's
+ * build refuses counts with its reason, so a read-only build hashes apart from the dev page. Pure
+ * and isomorphic: no Node or browser API.
  */
 import type { CommandDescriptor, InputSchema, Manifest } from "./types";
 
@@ -45,19 +46,22 @@ function sortedInput(input: InputSchema): InputSchema {
 }
 
 /**
- * The canonical line of one door: the JSON of `[id, effect, input]`. The title is left out: a
- * renamed title changes no schema.
+ * The canonical line of one door: the JSON of `[id, effect, input]`, plus the reason as a 4th
+ * element when the build refuses it (`allowed: false`). The title is left out: a renamed title
+ * changes no schema. An allowed command keeps the line it had before the build profile.
  *
  * @param command - A command door of the manifest.
  * @returns One line of JSON.
  * @example
  * ```ts
- * canonicalLine({ id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route" });
- * // '["game.tap","route",{"target":"string"}]'
+ * canonicalLine({ id: "game.tap", title: "Tap", input: { target: "string" }, effect: "route", allowed: false, reason: "read-only" });
+ * // '["game.tap","route",{"target":"string"},"read-only"]'
  * ```
  */
 function canonicalLine(command: CommandDescriptor): string {
-  return JSON.stringify([command.id, command.effect, sortedInput(command.input)]);
+  const line = [command.id, command.effect, sortedInput(command.input)];
+
+  return JSON.stringify(command.allowed === false ? [...line, command.reason] : line);
 }
 
 /**
@@ -82,8 +86,8 @@ function fnv1a(text: string): string {
 
 /**
  * The hash of the command doors of a manifest: the canonical lines (`[id, effect, input]`, input
- * keys sorted) of the commands sorted by id, joined with `\n`, through FNV-1a 32-bit. Titles,
- * sources and the page fields do not count. The hub stamps it on `SessionInfo.manifestHash`; the
+ * keys sorted, plus the reason of a refused command) of the commands sorted by id, joined with
+ * `\n`, through FNV-1a 32-bit. Titles, sources and the page fields do not count. The hub stamps it on `SessionInfo.manifestHash`; the
  * MCP bridge rebuilds its door tools only when it moves.
  *
  * @param manifest - The manifest a game sent in `hello`.

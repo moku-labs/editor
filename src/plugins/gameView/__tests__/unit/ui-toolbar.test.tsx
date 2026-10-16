@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "preact/test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceSpec } from "../../../registry/protocol";
 import { DEVICES } from "../../../registry/protocol";
 import { setPicker } from "../../element/select";
@@ -10,7 +10,7 @@ import { stopGameView } from "../../lifecycle";
 import { notify } from "../../state";
 import { DeviceToolbar } from "../../ui/DeviceToolbar";
 import { createCtx, flush, manifestOf, type TestCtx } from "../helpers";
-import { button, click, find, findAll, type Mounted, mount, settle } from "../ui";
+import { button, click, find, findAll, fire, type Mounted, mount, settle } from "../ui";
 
 let ctx: TestCtx;
 let view: Mounted;
@@ -46,6 +46,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   view.unmount();
   stopGameView(ctx);
   document.body.innerHTML = "";
@@ -383,10 +384,12 @@ describe("DeviceToolbar", () => {
     expect(find(view.root, "[data-part='series']").getAttribute("aria-expanded")).toBe("true");
 
     view.unmount();
+    const T = 50_000;
+    vi.spyOn(performance, "now").mockReturnValue(T);
     ctx.state.series.recording = {
       folder: "f/",
       label: "a",
-      startedAt: performance.now() - 900,
+      startedAt: T - 900,
       durationMs: 2000,
       intervalMs: 100,
       planned: 20,
@@ -398,5 +401,111 @@ describe("DeviceToolbar", () => {
     const recording = find(view.root, "[data-part='series']");
     expect(recording.dataset.recording).toBe("");
     expect(recording.textContent).toMatch(/^● 0\.9 s$/);
+  });
+});
+
+/**
+ * The scenario select.
+ *
+ * @returns The select.
+ */
+function select(): HTMLSelectElement {
+  return find<HTMLSelectElement>(view.root, "select[data-part='scenario']");
+}
+
+/**
+ * Picks an option of the select, like a person does.
+ *
+ * @param value - The option value ("" for the saved player).
+ */
+function choose(value: string): void {
+  const field = select();
+  fire(field, new Event("focus"));
+  field.value = value;
+  fire(field, new Event("change", { bubbles: true }));
+}
+
+describe("DeviceToolbar · the scenario control (spec 09 W5)", () => {
+  /** The scenarios of a game folder with two prepared saves. */
+  const TWO = { scenarios: ["empty", "full"], chosen: undefined };
+
+  /**
+   * Mounts the toolbar again after the scenario view was set.
+   *
+   * @param scenarios - The view `workspace.scenarios()` answers at the first render.
+   */
+  function remount(
+    scenarios: typeof TWO | { scenarios: string[]; chosen: string | undefined }
+  ): void {
+    view.unmount();
+    ctx.workspace.scenarioView = scenarios;
+    view = mount(<DeviceToolbar ctx={ctx} />);
+  }
+
+  it("the scenario control is absent without scenarios", () => {
+    expect(view.root.querySelector("[data-part='scenario']")).toBeNull();
+  });
+
+  it("stands between Reload and the camera and lists Saved player and the scenarios", () => {
+    remount(TWO);
+
+    const field = select();
+    expect(field.getAttribute("aria-label")).toBe("Start from a scenario");
+    expect([...field.options].map(option => [option.value, option.textContent])).toEqual([
+      ["", "Saved player"],
+      ["empty", "empty"],
+      ["full", "full"]
+    ]);
+    expect(view.root.querySelector("[data-part='reload'] + select[data-part='scenario']")).toBe(
+      field
+    );
+    expect(
+      view.root.querySelector("select[data-part='scenario'] + [data-part='capture']")
+    ).not.toBeNull();
+  });
+
+  it("choosing 'full' calls setScenario('full')", () => {
+    remount(TWO);
+
+    choose("full");
+
+    expect(ctx.workspace.setScenario).toHaveBeenCalledWith("full");
+  });
+
+  it("'Saved player' calls setScenario(undefined)", () => {
+    remount({ scenarios: ["empty", "full"], chosen: "full" });
+    expect(select().value).toBe("full");
+
+    choose("");
+
+    expect(ctx.workspace.setScenario).toHaveBeenCalledWith(undefined);
+  });
+
+  it("focus refreshes the list", () => {
+    remount(TWO);
+
+    fire(select(), new Event("focus"));
+
+    expect(ctx.workspace.refreshScenarios).toHaveBeenCalledTimes(1);
+  });
+
+  it("a choice made elsewhere shows in the control; the control goes when the scenarios go", () => {
+    remount(TWO);
+
+    act(() => ctx.workspace.changeScenarios({ scenarios: ["empty", "full"], chosen: "empty" }));
+    expect(select().value).toBe("empty");
+
+    act(() => ctx.workspace.changeScenarios({ scenarios: [], chosen: undefined }));
+    expect(view.root.querySelector("[data-part='scenario']")).toBeNull();
+  });
+
+  it("stops listening to onScenario when the toolbar unmounts", () => {
+    remount(TWO);
+    expect(ctx.workspace.scenarioListeners.size).toBe(1);
+
+    view.unmount();
+    view = mount(<div />);
+
+    expect(ctx.workspace.scenarioListeners.size).toBe(0);
   });
 });

@@ -207,3 +207,22 @@ describe("hub types", () => {
     expectTypeOf(app.hub.fetch).returns.toEqualTypeOf<Response | undefined>();
   });
 });
+
+describe("hub api: device mode", () => {
+  it("has no engine member: the fingerprint lives in files", () => {
+    const { api } = setup();
+
+    expect("engine" in api).toBe(false);
+    expectTypeOf<HubApi>().not.toHaveProperty("engine");
+  });
+
+  it("devices() is [] while device mode is off, and stopDevices() then does nothing", async () => {
+    const { ctx, api } = setup();
+    startHub(ctx);
+
+    expect(api.devices()).toEqual([]);
+    await expect(api.stopDevices()).resolves.toBeUndefined();
+    expect(ctx.emit).not.toHaveBeenCalled();
+    await stopHub(ctx);
+  });
+});

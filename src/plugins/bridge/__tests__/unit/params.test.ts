@@ -23,7 +23,7 @@ describe("PARAMS", () => {
       read: { id: "string", input: "json?" },
       watch: { sub: "number", id: "string", input: "json?" },
       unwatch: { sub: "number" },
-      run: { id: "string", input: "json?" }
+      run: { id: "string", input: "json?", from: "json?", client: "json?" }
     });
   });
 });

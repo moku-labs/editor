@@ -1,6 +1,11 @@
 /* renderView entry sheet. pages/page/index.css imports it in layer(components) (R3); the component sheets below inherit that layer. No @layer wrapper here (R7). */
-@import "./tiles.css";
+@import "./scene.css";
+@import "./connection.css";
+@import "./popover.css";
+@import "./instrument.css";
+@import "./cards.css";
+@import "./passes.css";
+@import "./inspector.css";
 @import "./tree.css";
 @import "./textures.css";
-@import "./cards.css";
 @import "./box.css";

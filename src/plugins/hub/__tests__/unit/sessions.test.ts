@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, Manifest } from "../../../registry/protocol";
 import { commandsHash, notification, toWireValue } from "../../../registry/protocol";
+import { createHubApi } from "../../api";
 import {
   chooseSession,
   isManifest,
@@ -13,7 +14,15 @@ import {
   toSessionInfo
 } from "../../routing/sessions";
 import type { Session } from "../../types";
-import { createHarness, MANIFEST, paramsOf } from "../helpers";
+import {
+  createDeviceHarness,
+  createHarness,
+  helloOf,
+  MANIFEST,
+  pairAdb,
+  pairOf,
+  paramsOf
+} from "../helpers";
 
 /**
  * A manifest with changes applied, as plain JSON.
@@ -46,7 +55,8 @@ function sessionOf(id: string, connectedAt: number, embedded = false): Session {
     heartbeat: null,
     lastBeatAt: connectedAt,
     silent: false,
-    nextSub: 1
+    nextSub: 1,
+    caps: []
   };
 }
 
@@ -554,5 +564,60 @@ describe("session notifications", () => {
 
     const hashOf = (id: string) => harness.ctx.state.sessions.get(id)?.manifestHash;
     expect(hashOf(second.session)).not.toBe(hashOf(first.session));
+  });
+});
+
+describe("device sessions (C6)", () => {
+  it("carry the device in SessionInfo and in sessions {list}, with the listener's real port under devicePort: 0", async () => {
+    const harness = await createDeviceHarness({ devicePort: 0 });
+    const tools = harness.connect("tools");
+    const { socket, id } = pairAdb(harness);
+    tools.clear();
+
+    harness.send(socket, helloOf());
+
+    const device = {
+      id,
+      model: "SM-A266B",
+      link: "adb",
+      address: "127.0.0.1",
+      port: 51_234,
+      engine: "0.14.12+9c41e0",
+      build: "debug-1"
+    };
+    expect(sessionList(harness.ctx.state).map(info => info.device)).toEqual([device]);
+    const listed = paramsOf(tools.notes("editor", "sessions").at(-1))?.list;
+    expect(
+      Array.isArray(listed)
+        ? listed.map(item =>
+            item !== null && typeof item === "object" && !Array.isArray(item)
+              ? item.device
+              : undefined
+          )
+        : []
+    ).toEqual([device]);
+  });
+
+  it("carry the app id the phone named in its pair, on the session, the device record and devices()", async () => {
+    // Bug: the app id lost between pair and its readers, so two phones of one model stay ambiguous.
+    const harness = await createDeviceHarness();
+    const socket = harness.device({ link: "adb", address: "127.0.0.1" });
+    harness.send(socket, pairOf("4821", { model: "SM-A266B", appId: "com.mokulabs.timber.debug" }));
+    harness.send(socket, helloOf());
+
+    expect(sessionList(harness.ctx.state)[0]?.device?.appId).toBe("com.mokulabs.timber.debug");
+    expect(createHubApi(harness.ctx).devices()[0]?.appId).toBe("com.mokulabs.timber.debug");
+  });
+
+  it("a game page served by serve() has no device, and a copy of the device does not change the next list", async () => {
+    const harness = await createDeviceHarness();
+    harness.hello();
+    const { socket } = pairAdb(harness);
+    harness.send(socket, helloOf());
+
+    const [game, phone] = sessionList(harness.ctx.state);
+    expect(game !== undefined && "device" in game).toBe(false);
+    expect(phone?.device?.link).toBe("adb");
+    expect(sessionList(harness.ctx.state)[1]?.device).not.toBe(phone?.device);
   });
 });

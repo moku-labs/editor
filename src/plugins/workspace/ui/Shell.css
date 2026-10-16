@@ -1,15 +1,27 @@
-/* workspace · Shell. The page grid: top bar 44 px over rail 52 px and the content; the hosts fill the content (panels owns what is inside them). The scope ends below each host, not at it: a scope limit excludes the elements it matches, so `to ([data-workspace-host])` would drop the host rules and leave every workspace at its content height. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · Shell. The page grid: top bar 44 px, the disconnect notice under it (row 2, full width, above the rail and the workspace in every workspace; the row is 0 px while the notice region is empty, W10), then rail 52 px and the content; the hosts fill the content (panels owns what is inside them). The scope ends below each host, not at it: a scope limit excludes the elements it matches, so `to ([data-workspace-host])` would drop the host rules and leave every workspace at its content height. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="shell"]) to ([data-workspace-host] > *) {
   :scope {
     display: grid;
     grid-template-columns: var(--rail-w) minmax(0, 1fr);
-    grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+    grid-template-rows: var(--topbar-h) auto minmax(0, 1fr);
     height: 100%;
     background: var(--surface-ground);
   }
 
   :scope > header {
     grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  :scope > [data-ui="source-notice"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  :scope > nav,
+  :scope > main {
+    grid-row: 3;
   }
 
   :scope > main {

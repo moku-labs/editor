@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import type { LinkStatus } from "../../../registry/protocol";
 import { buildBridgeApi } from "../../api";
 import type { BridgeApi } from "../../types";
-import { createDeps, openDeps } from "../helpers";
+import { createDeps, deviceDeps, LAN, openDeps } from "../helpers";
 
 describe("buildBridgeApi", () => {
   it("status() is connecting before start", () => {
@@ -37,6 +37,19 @@ describe("buildBridgeApi", () => {
     expectTypeOf(api).toEqualTypeOf<BridgeApi>();
     expectTypeOf(api.status).returns.toEqualTypeOf<LinkStatus>();
     expectTypeOf(api.session).returns.toEqualTypeOf<string | undefined>();
-    expect(Object.keys(api).toSorted()).toEqual(["session", "status"]);
+    expect(Object.keys(api).toSorted()).toEqual(["connect", "link", "session", "status"]);
+  });
+
+  it("link() is undefined in page mode and a fresh copy of the device link in device mode", () => {
+    expect(buildBridgeApi(createDeps()).link()).toBeUndefined();
+
+    const deps = deviceDeps();
+    deps.state.phase = "pairing";
+    deps.state.pairing = { code: "4821" };
+    const api = buildBridgeApi(deps);
+    const link = api.link();
+
+    expect(link).toEqual({ mode: "connecting", address: LAN, pairing: { code: "4821" } });
+    expect(api.link()).not.toBe(link);
   });
 });

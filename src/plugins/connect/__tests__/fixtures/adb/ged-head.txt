@@ -1,0 +1,5 @@
+==> /sys/kernel/ged/hal/current_freqency <==
+3 836000
+
+==> /sys/kernel/ged/hal/gpu_utilization <==
+35 0 65

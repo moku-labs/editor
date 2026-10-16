@@ -4,11 +4,11 @@ import { read, sources } from "@moku-labs/game/inspect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRegistryApi } from "../../api";
 import { buildCatalogue } from "../../catalogue";
-import type { CommandDescriptor } from "../../protocol";
+import type { CommandDescriptor, SourceDescriptor } from "../../protocol";
 import { checkInput } from "../../protocol";
-import type { CommandEntry, GameLike, RegistryApi } from "../../types";
+import type { CommandEntry, GameLike, RegistryApi, SourceEntry } from "../../types";
 import type { StartedGame, TestCtx } from "../helpers";
-import { createCtx, startBareGame, thrownBy } from "../helpers";
+import { createCtx, startBareGame, stubBuild, thrownBy } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The registry api over the bare game
@@ -73,8 +73,8 @@ describe("manifest()", () => {
     expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.page).toBe("");
     expect(manifest.embedded).toBe(false);
-    expect(manifest.sources).toHaveLength(20);
-    expect(manifest.commands).toHaveLength(18);
+    expect(manifest.sources).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(22);
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
   });
 
@@ -90,7 +90,8 @@ describe("manifest()", () => {
       id: "editor.overlay",
       title: "Overlay in game",
       input: { on: "boolean" },
-      effect: "cosmetic"
+      effect: "cosmetic",
+      allowed: true
     });
   });
 });
@@ -267,5 +268,98 @@ describe("clock()", () => {
     expect(registry.clock().paused).toBe(true);
     await registry.command("game.resume")?.run(null);
     expect(registry.clock().paused).toBe(false);
+  });
+});
+
+/** The unsubscribe of a watch that holds nothing. */
+const unsubscribe = (): void => undefined;
+
+/**
+ * An editor source entry with the given descriptor fields.
+ *
+ * @param id - Its id.
+ * @param fields - Other descriptor fields.
+ * @returns The entry.
+ */
+function editorSource(id: string, fields: Partial<SourceDescriptor> = {}): SourceEntry {
+  return {
+    descriptor: { id, title: id, input: {}, changes: "frame", ...fields },
+    read: () => ({ id }),
+    watch: () => unsubscribe
+  };
+}
+
+describe("add() of a source", () => {
+  it("lists editor sources after the doors and modules, in add order, and drops the manifest cache", () => {
+    const first = registry.manifest();
+
+    registry.add(editorSource("editor.perf.window"));
+    registry.add(editorSource("editor.perf.second"));
+    const second = registry.manifest();
+
+    expect(second).not.toBe(first);
+    expect(second.sources.map(source => source.id)).toEqual([
+      ...first.sources.map(source => source.id),
+      "editor.perf.window",
+      "editor.perf.second"
+    ]);
+    expect(registry.source("editor.perf.window")?.read(null)).toEqual({ id: "editor.perf.window" });
+    expect(registry.command("editor.perf.window")).toBeUndefined();
+  });
+
+  it("refuses a source with an unknown changes key or an id already used", () => {
+    // boundary of the test: a changes key no Changes allows
+    const changes = JSON.parse('"sometimes"');
+
+    expect(() => registry.add(editorSource("editor.bad", { changes }))).toThrow(
+      '[moku-editor] Source "editor.bad" has an unknown changes "sometimes".\n  Use frame, commit or edge.'
+    );
+    expect(() => registry.add(editorSource("game.position"))).toThrow(
+      'Duplicate registry id "game.position"'
+    );
+    expect(() => registry.add(editorSource("tiny.addCoins"))).toThrow(
+      'Duplicate registry id "tiny.addCoins"'
+    );
+  });
+});
+
+describe("game()", () => {
+  it("answers the configured game app", () => {
+    expect(registry.game()).toBe(game.app);
+  });
+
+  it("throws a two-line Error without a game", () => {
+    const error = thrownBy(() => createRegistryApi(createCtx()).game());
+
+    expect(error).toBeInstanceOf(Error);
+    const lines = error instanceof Error ? error.message.split("\n") : [];
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("[moku-editor] registry.game is missing.");
+    expect(lines[1]).toMatch(/^ {2}Pass pluginConfigs\.registry\.game/);
+  });
+});
+
+describe("build()", () => {
+  it("answers the page's build, and the manifest carries the same build", () => {
+    stubBuild({ agent: true, build: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" });
+    const read = createCtx({ game: game.app });
+    const api = createRegistryApi(read);
+    buildCatalogue(read);
+
+    expect(api.build()).toEqual({
+      profile: "read",
+      id: "debug-20261014T160000Z",
+      engine: "0.14.12+9c41e0"
+    });
+    expect(api.manifest().build).toEqual(api.build());
+  });
+
+  it("reads the flags once: the first answer stays", () => {
+    expect(registry.build()).toEqual({ profile: "dev" });
+
+    stubBuild({ agent: true });
+
+    expect(registry.build()).toEqual({ profile: "dev" });
+    expect(registry.manifest().build).toEqual({ profile: "dev" });
   });
 });

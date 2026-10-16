@@ -1,0 +1,227 @@
+/* renderView · inspector. The inspector column (spec 09 § M10, § M15 Measures): a 320 px card, sticky at the top of the workspace scroller with its own scroll (max-height 100dvh − 44 − 28 px); under 1180 px of the container it sits under the instrument, static, with no max height. Sections padding 12 14; the head (title mono 600 15, sub 12 --text-2, a tag or Clear at the right); h3 12/600, margin 12 0 6, with mono 500 12 counts; the hint on --accent-soft (padding 8 10, radius 8); the systems grid `minmax(0, 1fr) auto auto auto` (gap 3 10, mono 12 names with an ellipsis, tabular mono 500 numbers, 3 px --accent bars); rows min-height 26, radius 6, --surface-panel-2 on hover; the file link (mono 12 --accent-ink, underlined at 40 %, the directory shrinks, the base name never cuts); the dashed off note. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="inspector"]) {
+  :scope {
+    position: sticky;
+    inset-block-start: 0;
+    max-block-size: calc(100dvh - var(--topbar-h) - 28px);
+    min-inline-size: 0;
+    overflow: auto;
+  }
+
+  [data-part="section"] {
+    padding: 12px 14px;
+  }
+
+  [data-part="section"] > header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-block-end: 8px;
+  }
+
+  [data-part="section"] > header > button {
+    margin-inline-start: auto;
+  }
+
+  [data-part="head"] {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+  }
+
+  [data-part="title"] {
+    font: 600 var(--font-size-15) var(--font-mono);
+  }
+
+  [data-part="sub"] {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 12px 0 6px;
+    font-size: var(--font-size-12);
+    font-weight: 600;
+  }
+
+  [data-count] {
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-mono);
+  }
+
+  [data-hint] {
+    display: flex;
+    gap: 10px;
+    margin-block-start: 2px;
+    padding: 8px 10px;
+    border-radius: var(--radius-8);
+    background: var(--accent-soft);
+    color: var(--text-2);
+    font-size: var(--font-size-12-5);
+  }
+
+  [data-hint] > svg {
+    margin-block-start: 2px;
+    color: var(--accent-ink);
+  }
+
+  [data-hint] b {
+    color: var(--text-ink);
+    font-weight: 600;
+  }
+
+  /* ─── The systems grid ─── */
+  [data-systems] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 3px 10px;
+    font-size: var(--font-size-12);
+  }
+
+  [data-systems] > [data-part="row"] {
+    display: contents;
+  }
+
+  [data-systems] [data-part="column"] {
+    color: var(--text-2);
+  }
+
+  [data-systems] [data-part="name"] {
+    overflow: hidden;
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-systems] [data-num] {
+    font: 500 var(--font-size-12) var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+
+  [data-systems] [data-part="bar"] {
+    grid-column: 1 / -1;
+    block-size: 3px;
+    margin-block-end: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--surface-panel-2);
+  }
+
+  [data-systems] [data-part="bar"] > span {
+    display: block;
+    block-size: 100%;
+    background: var(--accent);
+  }
+
+  /* ─── Rows ─── */
+  [data-part="rows"] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  [data-row],
+  [data-file-link] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    inline-size: 100%;
+    min-block-size: 26px;
+    padding: 0 4px;
+    border-radius: var(--radius-6);
+    font-size: var(--font-size-12);
+    text-align: start;
+  }
+
+  button[data-row]:hover,
+  [data-file-link]:hover {
+    background: var(--surface-panel-2);
+  }
+
+  [data-row] > [data-mono] {
+    white-space: nowrap;
+  }
+
+  [data-row] > [data-part="grow"] {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-row] > [data-part="meta"],
+  [data-file-link] > [data-part="meta"] {
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+
+  li[data-part="meta"],
+  li[data-part="more"],
+  p[data-part="meta"] {
+    padding: 2px 4px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-file-link] > [data-part="path"] {
+    display: flex;
+    flex: 1;
+    min-inline-size: 0;
+    color: var(--accent-ink);
+    font: var(--font-size-12) var(--font-mono);
+    white-space: nowrap;
+  }
+
+  [data-file-link] [data-part="dir"],
+  [data-file-link] [data-part="base"] {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    text-underline-offset: 2px;
+  }
+
+  [data-file-link] [data-part="dir"] {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-file-link] [data-part="base"] {
+    flex: none;
+  }
+
+  [data-off-message] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-block-start: 2px;
+    padding: 8px 10px;
+    border: 1px dashed var(--line-2);
+    border-radius: var(--radius-8);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="note"],
+  [data-part="empty"] {
+    margin-block-start: 6px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  @container render (width < 1180px) {
+    :scope {
+      position: static;
+      max-block-size: none;
+    }
+  }
+}

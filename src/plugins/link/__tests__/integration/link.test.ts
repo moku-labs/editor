@@ -451,6 +451,29 @@ describe("link integration", () => {
     await app.stop();
   });
 
+  it("editor.engine after open and again after a reconnect calls the listener once", async () => {
+    const app = createApp();
+    const seenEngines: (string | undefined)[] = [];
+    app.link.onEngine(id => seenEngines.push(id));
+    await app.start();
+    await until(() => app.link.status().kind === "empty", "empty");
+    const engine = { id: "0.14.13+1ab7f2", version: "0.14.13", dist: "1ab7f2c0" };
+    hub.notify("editor", "engine", engine);
+    await until(() => app.link.engine() !== undefined, "the engine id");
+
+    for (const socket of hub.sockets) socket.close(1012, "editor restarting");
+    await until(() => app.link.status().kind === "lost", "lost");
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => hub.upgrades.length === 2, "the reconnect");
+    hub.notify("editor", "engine", engine);
+    hub.notify("editor", "project", toWireValue({ state: "off", reason: "disabled" }));
+    await until(() => app.link.project() !== undefined, "a later note on the new socket");
+
+    expect(seenEngines).toEqual(["0.14.13+1ab7f2"]);
+    expect(app.link.engine()).toBe("0.14.13+1ab7f2");
+    await app.stop();
+  });
+
   it("no boot tag → lost no_boot, start still resolves, boot() is undefined", async () => {
     window.document.body.innerHTML = "";
     const app = createApp();

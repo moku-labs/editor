@@ -31,7 +31,11 @@ import {
 const REPO = fileURLToPath(new URL("../../../../../", import.meta.url)).replace(/\/$/, "");
 
 /** The page a stubbed preparePage answers. */
-const PAGE = { html: "/g/.moku/index.html", bunfig: "/g/.moku/bunfig.toml" };
+const PAGE = {
+  html: "/g/.moku/index.html",
+  bunfig: "/g/.moku/bunfig.toml",
+  engine: { id: "0.0.0+src", version: "0.0.0", dist: "src", folder: "/fixture" }
+};
 
 let base: string;
 let game: string;

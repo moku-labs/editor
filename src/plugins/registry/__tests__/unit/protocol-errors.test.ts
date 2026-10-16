@@ -53,7 +53,9 @@ describe("errorCode", () => {
       unauthorized: -32_007,
       notInstalled: -32_008,
       noEditorPage: -32_003,
-      pageClosed: -32_001
+      pageClosed: -32_001,
+      readOnly: -32_009,
+      devOnly: -32_009
     });
   });
 

@@ -1,9 +1,11 @@
 /**
  * @file hub plugin — forwarded calls: hub ids, deadlines (R1: `editor.series` waits its duration
  * and `editor.sheet` its `frames × everyMs` on top, `editor.select` with a card 3 × callTimeoutMs,
- * capped at 60 s), settling an answer from the call's own target (an agent session or an editor
- * page, A3) to its reply target, timeouts (-32002), and failing the calls of a closing session
- * (-32001 `game_reloaded`) or page (-32001 `page_closed`), all retryable.
+ * capped at 60 s), the params of a tools `run` (`from` and `client` for an agent that reads them,
+ * spec 11 § 5.1), settling an
+ * answer from the call's own target (an agent session or an editor page, A3) to its reply target,
+ * timeouts (-32002), and failing the calls of a closing session (-32001 `game_reloaded`) or page
+ * (-32001 `page_closed`), all retryable.
  */
 import type { Json, Response as RpcResponse, WireError } from "../../registry/protocol";
 import {
@@ -15,8 +17,18 @@ import {
   toWireError,
   wireError
 } from "../../registry/protocol";
+import type { AgentCap, RunFrom } from "../protocol";
+import { RUN_FROM_CAP } from "../protocol";
 import { sendJson, toolsConn } from "../sockets/send";
-import type { CallTarget, HubCtx, HubState, PendingCall, Reply, Session } from "../types";
+import type {
+  CallTarget,
+  HubCtx,
+  HubState,
+  PendingCall,
+  Reply,
+  Session,
+  ToolsConn
+} from "../types";
 import { settleWatch } from "./shared";
 
 /**
@@ -184,6 +196,44 @@ export function deadlineFor(
   callTimeoutMs: number
 ): number {
   return callTimeoutMs + Math.min(longCallMs(method, params, callTimeoutMs), LONG_CALL_CAP_MS);
+}
+
+/**
+ * The params of a tools `run` as the agent gets them: the checked `id` and `input`; for an agent
+ * whose hello named `run-from`, then the hub's `from` ("page" for the editor page, "mcp" for a plain
+ * tools client) and, for "mcp", the client's name when it gave one. An agent without the capability
+ * (an older bridge, an installed debug build) gets `{ id, input }` as before. A `from` or `client`
+ * the tools client wrote is never taken: only the checked `id` and `input` are read from its params.
+ *
+ * @param call - The checked id and input of the run.
+ * @param call.id - The command id.
+ * @param call.input - The command input, if any.
+ * @param conn - The tools connection that sent it.
+ * @param conn.page - Whether it is the editor page.
+ * @param conn.client - The MCP client's name it gave, if any.
+ * @param caps - The capabilities of the target session's hello.
+ * @returns The params to forward.
+ * @example
+ * ```ts
+ * runParamsOf({ id: "editor.record", input: { on: true } }, { page: false, client: "Claude Code" }, ["run-from"]);
+ * // { id: "editor.record", input: { on: true }, from: "mcp", client: "Claude Code" }
+ * runParamsOf({ id: "editor.record", input: { on: true } }, { page: false, client: "Claude Code" }, []);
+ * // { id: "editor.record", input: { on: true } }
+ * ```
+ */
+export function runParamsOf(
+  call: { readonly id: string; readonly input?: Json | undefined },
+  conn: Pick<ToolsConn, "page" | "client">,
+  caps: readonly AgentCap[]
+): Json {
+  const params: { [key: string]: Json } = { id: call.id };
+  if (call.input !== undefined) params.input = call.input;
+  if (!caps.includes(RUN_FROM_CAP)) return params;
+
+  const from: RunFrom = conn.page ? "page" : "mcp";
+  params.from = from;
+  if (from === "mcp" && conn.client !== undefined) params.client = conn.client;
+  return params;
 }
 
 /**

@@ -78,8 +78,10 @@ describe("connect — happy path", () => {
 
     socketAt(deps).open();
 
+    // The hello names `run-from` (spec 07 B1). Bug: the hub never stamping this bridge's runs, so
+    // every recording reads "started by the editor".
     expect(socketAt(deps).messages()).toEqual([
-      notification("game", "hello", { manifest: toWireValue(MANIFEST) }),
+      notification("game", "hello", { manifest: toWireValue(MANIFEST), caps: ["run-from"] }),
       notification("game", "heartbeat", deps.channel.beat)
     ]);
     expect(deps.state.phase).toBe("open");

@@ -1,10 +1,35 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { openOverlay } from "../../api";
-import { mountOverlay, startOverlay, unmountOverlay } from "../../mount";
+import { startOverlay, startOverlayWith, stopOverlay } from "../../lifecycle";
+import { openOverlay } from "../../modes";
 import { overlayCss } from "../../styles";
-import { HOST_ATTRIBUTE } from "../../types";
-import { command, createOctx, pluginCtxOf } from "../helpers";
+import type { TestOctx } from "../helpers";
+import { createOctx, pluginCtxOf } from "../helpers";
+
+/**
+ * Mounts a test context the way onStart does (the old `mountOverlay`).
+ *
+ * @param octx - The test context.
+ * @param hasBridge - Whether the bridge is composed.
+ * @param doc - The document; globalThis.document by default.
+ */
+function mountOverlay(octx: TestOctx, hasBridge: boolean, doc?: Document): void {
+  startOverlayWith(
+    octx,
+    hasBridge,
+    doc ?? (typeof document === "undefined" ? undefined : document)
+  );
+}
+
+/**
+ * Unmounts the way onStop does.
+ *
+ * @param ctx - The teardown context.
+ * @param ctx.state - Own state.
+ */
+function unmountOverlay(ctx: { state: TestOctx["state"] }): void {
+  stopOverlay(ctx);
+}
 
 /**
  * The overlay host in the document.
@@ -20,10 +45,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  Reflect.deleteProperty(globalThis, "__MOKU_GAME_OVERLAY__");
   vi.useRealTimers();
   vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
+
+import { HOST_ATTRIBUTE } from "../../types";
 
 describe("mountOverlay", () => {
   it("appends a hidden host with an open shadow root to body", () => {
@@ -34,28 +62,28 @@ describe("mountOverlay", () => {
     const host = hostElement();
     expect(host?.parentElement).toBe(document.body);
     expect(host?.hidden).toBe(true);
-    expect(host?.dataset.corner).toBe("top-right");
+    expect(host?.dataset.dock).toBe("right");
+    expect(host?.dataset.mode).toBe("hidden");
     expect(host?.shadowRoot).toBe(octx.state.root);
     expect(octx.state.host).toBe(host);
-    expect(octx.state.root?.querySelector<HTMLElement>("[data-overlay]")).not.toBeNull();
+    expect(octx.state.root?.querySelector<HTMLElement>("[data-overlay]")).toBeNull();
+    expect(octx.state.root?.querySelectorAll("[data-safe-probe]")).toHaveLength(2);
     expect(octx.state.hasBridge).toBe(false);
-    expect(octx.channel.opened).toBe(0);
   });
 
-  it("appends to the mount selector and sets the corner", () => {
+  it("appends to the mount selector and docks to config.dock", () => {
     const target = document.createElement("main");
     target.id = "game";
     document.body.append(target);
-    const octx = createOctx({ mount: "#game", corner: "bottom-left" });
+    const octx = createOctx({ mount: "#game", dock: "left", remember: false });
 
     mountOverlay(octx, true);
+    openOverlay(octx);
 
     expect(hostElement()?.parentElement).toBe(target);
-    expect(hostElement()?.dataset.corner).toBe("bottom-left");
+    expect(hostElement()?.dataset.dock).toBe("left");
     expect(octx.state.hasBridge).toBe(true);
-    expect(octx.state.root?.querySelector<HTMLElement>("[data-dot]")?.dataset.kind).toBe(
-      "connecting"
-    );
+    expect(octx.state.root?.querySelector<HTMLElement>("[data-link]")?.dataset.link).toBe("dev");
   });
 
   it("warns and uses body when the selector matches nothing", () => {
@@ -102,27 +130,35 @@ describe("mountOverlay", () => {
   });
 
   it("keeps pointer and key events inside the card away from window", () => {
-    const octx = createOctx({}, [command("a.cheat")]);
+    const octx = createOctx();
     mountOverlay(octx, false);
     openOverlay(octx);
     const seen: string[] = [];
     const listener = (event: Event) => seen.push(event.type);
-    for (const type of ["keydown", "pointerdown", "click", "wheel"]) {
-      globalThis.addEventListener(type, listener);
-    }
+    const types = [
+      "keydown",
+      "pointerdown",
+      "pointercancel",
+      "click",
+      "wheel",
+      "contextmenu",
+      "input"
+    ];
+    for (const type of types) globalThis.addEventListener(type, listener);
 
     const button = octx.state.root?.querySelector("button");
     button?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true })
     );
     button?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+    button?.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, composed: true }));
     button?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, composed: true }));
+    button?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true }));
+    button?.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
 
     expect(seen).toEqual(["keydown"]);
-    for (const type of ["keydown", "pointerdown", "click", "wheel"]) {
-      globalThis.removeEventListener(type, listener);
-    }
+    for (const type of types) globalThis.removeEventListener(type, listener);
   });
 
   it("warns and mounts nothing without a document", () => {
@@ -134,7 +170,7 @@ describe("mountOverlay", () => {
     expect(octx.log.warn).toHaveBeenCalledWith("overlay:no-dom");
     expect(octx.state.host).toBeUndefined();
     openOverlay(octx);
-    expect(octx.state.open).toBe(true);
+    expect(octx.state.mode).toBe("card");
   });
 
   it("uses the document it is given", () => {
@@ -147,7 +183,7 @@ describe("mountOverlay", () => {
 });
 
 describe("unmountOverlay", () => {
-  it("removes the host, the listener, the watch and the interval", () => {
+  it("removes the host, the listener, the observers, the global and the interval", () => {
     const octx = createOctx();
     mountOverlay(octx, false);
     openOverlay(octx);
@@ -158,13 +194,14 @@ describe("unmountOverlay", () => {
     unmountOverlay({ state: octx.state });
 
     expect(hostElement()).toBeNull();
-    expect(octx.channel.stopped).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
     expect(octx.state.host).toBeUndefined();
     expect(octx.state.root).toBeUndefined();
     expect(octx.state.isolate).toBeUndefined();
-    expect(octx.state.paintTimer).toBeUndefined();
-    expect(octx.state.stopRender).toBeUndefined();
+    expect(octx.state.tick).toBeUndefined();
+    expect(octx.state.off).toEqual([]);
+    expect(octx.state.channel).toBeUndefined();
+    expect(globalThis.__MOKU_GAME_OVERLAY__).toBeUndefined();
 
     const seen = vi.fn();
     globalThis.addEventListener("keydown", seen);
@@ -183,32 +220,33 @@ describe("unmountOverlay", () => {
 
 describe("startOverlay", () => {
   it("mounts hidden and stays closed by default", () => {
-    const octx = createOctx();
+    const octx = createOctx({ remember: false });
 
     startOverlay(pluginCtxOf(octx));
 
     expect(hostElement()?.hidden).toBe(true);
-    expect(octx.channel.opened).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
+    stopOverlay({ state: octx.state });
   });
 
-  it("opens when config.open is set", () => {
-    const octx = createOctx({ open: true });
+  it("opens when config.mode is visible", () => {
+    const octx = createOctx({ mode: "card", remember: false });
 
     startOverlay(pluginCtxOf(octx, true));
 
     expect(hostElement()?.hidden).toBe(false);
     expect(octx.state.hasBridge).toBe(true);
-    expect(octx.channel.opened).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+    stopOverlay({ state: octx.state });
   });
 
   it("honours an open() called before start", () => {
-    const octx = createOctx();
+    const octx = createOctx({ remember: false });
     openOverlay(octx);
 
     startOverlay(pluginCtxOf(octx));
 
     expect(hostElement()?.hidden).toBe(false);
-    expect(octx.channel.opened).toBe(1);
+    stopOverlay({ state: octx.state });
   });
 });

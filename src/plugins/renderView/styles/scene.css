@@ -1,0 +1,431 @@
+/* renderView · scene. The Render workspace frame ("Mission control", spec 09 § M15 Layout): the root is the `render` inline-size container and the scroller (padding 14 18 56, gap 12), it carries the source tint (--src: the accent for a device, muted for the local preview, --line-2 when nothing runs) and the local tokens (17 px and 22 px sizes, the pick colours of the canvases); the body grid (minmax(0, 1fr) and the 320 px inspector, gap 12; one column under 1180 px); Mission control's atoms on the prototype's measures (buttons 28 / sm 22 / lg 32 / icon 28, tags 20 high mono 12, kbd 20, the segmented control, dots, legend marks and their colours); and "Scene details" (a 36+ px header, collapsed by default, the scene cards' two columns inside, one column under 1180 px). The scene cards keep their own sheets: the scope ends at them. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-render="workspace"]) to (
+  [data-render="tree"],
+  [data-render="textures"],
+  [data-render="bundles"],
+  [data-render="pools"],
+  [data-render="releases"]
+) {
+  :scope {
+    --render-size-17: 17px;
+    --render-size-22: 22px;
+    --pick-pink: var(--pick-tree);
+    --pick-blue: var(--pick-hover);
+    --src: var(--accent);
+    --src-ink: var(--accent-ink);
+
+    container: render / inline-size;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    block-size: 100%;
+    min-inline-size: 0;
+    padding: 14px 18px 56px;
+    overflow: auto;
+    background: var(--surface-ground);
+    color: var(--text-ink);
+    font-size: var(--font-size-13);
+  }
+
+  :scope:is([data-src="local"], [data-src="page"]) {
+    --src: var(--text-muted);
+    --src-ink: var(--text-2);
+  }
+
+  :scope[data-src="none"] {
+    --src: var(--line-2);
+    --src-ink: var(--text-muted);
+  }
+
+  :scope > * {
+    flex-shrink: 0;
+  }
+
+  [data-visually-hidden] {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ─── The body: the left column and the inspector ─── */
+  :scope > [data-part="body"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 12px;
+    align-items: start;
+  }
+
+  :scope > [data-part="body"] > [data-part="main"] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-inline-size: 0;
+  }
+
+  /* ─── Atoms: buttons, tags, keys, segmented control, switch ─── */
+  button[data-variant] {
+    gap: 6px;
+    border: 1px solid transparent;
+  }
+
+  button[data-variant="outline"] {
+    border-color: var(--line-2);
+  }
+
+  button[data-variant="primary"] {
+    border-color: var(--accent);
+  }
+
+  button[data-size="sm"] {
+    gap: 4px;
+    padding: 0 7px;
+  }
+
+  button[data-size="lg"] {
+    height: 32px;
+    padding: 0 14px;
+    font-size: var(--font-size-13);
+    font-weight: 600;
+  }
+
+  button[data-size="icon"] {
+    justify-content: center;
+    inline-size: 28px;
+    padding: 0;
+  }
+
+  button:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  [data-tag] {
+    gap: 4px;
+    block-size: 20px;
+    font-size: var(--font-size-12);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  kbd {
+    min-inline-size: 20px;
+    block-size: 20px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-segmented] > button {
+    min-inline-size: 0;
+    height: 22px;
+    padding: 0 8px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  [data-segmented] > button:is([aria-pressed="true"], [aria-checked="true"]) {
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
+  }
+
+  [data-segmented="rate"] > button {
+    height: 20px;
+    padding: 0 6px;
+  }
+
+  [role="switch"][data-switch] {
+    height: auto;
+    padding: 0;
+  }
+
+  [data-anchor] {
+    position: relative;
+    display: inline-flex;
+  }
+
+  [data-part="spacer"] {
+    flex: 1;
+  }
+
+  /* ─── Dots: live (a ring every 1.6 s), calm, paused, warn, recording ─── */
+  [data-dot] {
+    --ring: var(--status-live);
+
+    flex: none;
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--ring);
+    animation: render-ring 1.6s ease-out infinite;
+  }
+
+  [data-dot="calm"] {
+    --ring: var(--text-muted);
+
+    animation: none;
+  }
+
+  [data-dot="paused"],
+  [data-dot="warn"] {
+    --ring: var(--status-warn);
+
+    animation: none;
+  }
+
+  [data-dot="rec"] {
+    --ring: var(--status-error);
+  }
+
+  [data-rec-ring] {
+    flex: none;
+    inline-size: 9px;
+    block-size: 9px;
+    border: 2px solid var(--status-error);
+    border-radius: 50%;
+  }
+
+  /* ─── The "from" chip of the frames card and the passes panel ─── */
+  [data-from] {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    block-size: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--src) 13%, transparent);
+    color: var(--src-ink);
+    font-size: var(--font-size-12);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* ─── Marks of the legend and the rows, in the canvas colours ─── */
+  [data-mark] {
+    --c: var(--text-2);
+
+    display: inline-block;
+    flex: none;
+  }
+
+  [data-mark="square"] {
+    inline-size: 10px;
+    block-size: 10px;
+    border-radius: 2px;
+    background: var(--c);
+  }
+
+  [data-mark="dot"] {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 2px;
+    background: var(--c);
+  }
+
+  [data-mark="line"],
+  [data-mark="dash"] {
+    inline-size: 14px;
+    block-size: 0;
+    border-block-start: 1.5px solid var(--c);
+  }
+
+  [data-mark="dash"] {
+    border-block-start-style: dashed;
+  }
+
+  [data-mark="diamond"] {
+    inline-size: 7px;
+    block-size: 7px;
+    background: var(--c);
+    rotate: 45deg;
+  }
+
+  [data-mark="flag"] {
+    inline-size: 12px;
+    block-size: 10px;
+    border: 1px solid var(--c);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--c) 18%, transparent);
+  }
+
+  [data-colour="phase1"] {
+    --c: var(--phase-1);
+  }
+
+  [data-colour="phase2"] {
+    --c: var(--phase-2);
+  }
+
+  [data-colour="phase3"] {
+    --c: var(--phase-3);
+  }
+
+  [data-colour="edge"] {
+    --c: var(--edge);
+  }
+
+  [data-colour="teal"] {
+    --c: var(--teal);
+  }
+
+  [data-colour="warn"] {
+    --c: var(--status-warn);
+  }
+
+  [data-colour="error"] {
+    --c: var(--status-error);
+  }
+
+  [data-colour="live"] {
+    --c: var(--status-live);
+  }
+
+  [data-colour="pickPink"] {
+    --c: var(--pick-pink);
+  }
+
+  [data-colour="pickBlue"] {
+    --c: var(--pick-blue);
+  }
+
+  [data-colour="text2"] {
+    --c: var(--text-2);
+  }
+
+  [data-colour="muted"] {
+    --c: var(--text-muted);
+  }
+
+  [data-colour="src"] {
+    --c: var(--src);
+  }
+
+  /* ─── Scene details ─── */
+  [data-render="scene"] {
+    overflow: hidden;
+  }
+
+  [data-render="scene"] > [data-part="head"] {
+    font-size: var(--font-size-13);
+  }
+
+  [data-part="toggle"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    inline-size: 100%;
+    min-block-size: 44px;
+    padding: 8px 14px;
+    text-align: start;
+  }
+
+  [data-part="toggle"]:hover {
+    background: var(--surface-panel-2);
+  }
+
+  [data-part="toggle"] > svg {
+    color: var(--text-2);
+    rotate: -90deg;
+    transition: rotate var(--duration-zoom) var(--ease-out);
+  }
+
+  [data-part="toggle"][aria-expanded="true"] > svg {
+    rotate: 0deg;
+  }
+
+  [data-part="toggle"] > [data-part="title"] {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  [data-part="toggle"] > [data-part="note"] {
+    flex: 1;
+    min-inline-size: 0;
+    overflow: hidden;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-part="toggle"] > [data-part="meta"] {
+    margin-inline-start: auto;
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-mono);
+    white-space: nowrap;
+  }
+
+  [data-render="scene"] > [data-part="body"] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 14px;
+    border-block-start: 1px solid var(--line-1);
+  }
+
+  [data-error] {
+    color: var(--status-warn);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-12);
+  }
+
+  [data-columns] {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  [data-column] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-inline-size: 0;
+  }
+
+  @container render (width < 1180px) {
+    :scope > [data-part="body"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    [data-columns] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    [data-part="toggle"] > [data-part="note"] {
+      display: none;
+    }
+  }
+
+  @container render (width < 560px) {
+    [data-columns] {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+  }
+}
+
+/* The live dot's ring: a halo that grows out of the dot in its own colour and fades. */
+@keyframes render-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring) 45%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}

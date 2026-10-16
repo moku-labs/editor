@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPanelsApi } from "../../api";
 import { startPanels, stopPanels } from "../../lifecycle";
 import { definePanel } from "../../shared/define";
-import { createCtx, manifestOf } from "../helpers";
+import { createCtx, manifestOf, stopCreatedCtxs } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // onStart: mount the active workspace, one palette item per panel, manifest
@@ -20,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopCreatedCtxs();
   vi.unstubAllGlobals();
 });
 

@@ -46,6 +46,37 @@ describe("tagFrame", () => {
   });
 });
 
+describe("tagFrame with a player (the dev page's scenario)", () => {
+  it("a player sets player= before the frame id", () => {
+    expect(tagFrame("http://127.0.0.1:3000/", "3f9a1c2b7d4e", "full")).toBe(
+      "http://127.0.0.1:3000/?player=full&__editorFrame=3f9a1c2b7d4e"
+    );
+    expect(tagFrame("http://127.0.0.1:3000/?player=empty", "f1", "full")).toBe(
+      "http://127.0.0.1:3000/?player=full&__editorFrame=f1"
+    );
+  });
+
+  it("no player keeps the URL's own player parameter", () => {
+    expect(tagFrame("http://127.0.0.1:3000/?player=empty", "f1")).toBe(
+      "http://127.0.0.1:3000/?player=empty&__editorFrame=f1"
+    );
+  });
+
+  it("an empty player counts as none", () => {
+    expect(tagFrame("http://127.0.0.1:3000/", "f1", "")).toBe(
+      "http://127.0.0.1:3000/?__editorFrame=f1"
+    );
+    expect(tagFrame("http://127.0.0.1:3000/?player=empty", "f1", "")).toBe(
+      "http://127.0.0.1:3000/?player=empty&__editorFrame=f1"
+    );
+  });
+
+  it("an unparsable URL comes back unchanged with a player too", () => {
+    vi.stubGlobal("location", undefined);
+    expect(tagFrame("/game/", "f1", "full")).toBe("/game/");
+  });
+});
+
 describe("frameOf", () => {
   it("reads the frame id of a tagged page, undefined for an untagged page or no URL", () => {
     expect(frameOf("http://127.0.0.1:3000/?level=2&__editorFrame=f1")).toBe("f1");

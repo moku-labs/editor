@@ -6,9 +6,13 @@
  * 0.1, nothing when the manifest lists neither); the catalogue reads the asset manifest the project
  * index names (`manifestOf(link.project())`, the only source) and reads it again when a project
  * change makes it stale. No timer
- * reads a frame source. Each entry point resolves link once and passes it down: no delivered value
- * resolves it again.
+ * reads a frame source. On a device session (a phone, `SessionInfo.device`) no scene source is
+ * watched and nothing is calibrated (spec 09 R4: serializing a scene tree costs the phone the
+ * frames Mission control measures). Each entry point resolves link once and passes it down: no
+ * delivered value resolves it again.
  */
+
+import type { SessionDevice } from "../hub/protocol";
 import { linkPlugin } from "../link";
 import type { LinkApi } from "../link/types";
 import { manifestOf } from "../panels/shared/project";
@@ -52,6 +56,18 @@ const EFFECTS_ID = "game.effects";
  * The states with a scene build queued for the next animation frame.
  */
 const queued = new WeakSet<RenderViewState>();
+
+/**
+ * The device of the chosen session: set for a device session (a phone), undefined for a browser
+ * session or no session. A device session gets no scene watch and no calibration (spec 09 R4).
+ *
+ * @param link - The link api.
+ * @returns The device.
+ */
+export function sessionDevice(link: LinkApi): SessionDevice | undefined {
+  const id = link.session();
+  return id === undefined ? undefined : link.sessions().find(session => session.id === id)?.device;
+}
 
 /**
  * The frame a link status reports, or a fallback.
@@ -119,15 +135,14 @@ function currentFrame(ctx: RenderViewCtx, link: LinkApi): number {
 }
 
 /**
- * One game.render value: stats, frame, one FPS sample (trimmed to fpsSamples) and the page heap
- * link holds from the last heartbeat.
+ * One game.render value: stats and frame.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API, resolved once by the caller.
  * @param value - The value.
  */
 function onRender(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
-  const { state, config } = ctx;
+  const { state } = ctx;
   const stats = asRenderStats(value);
   if (stats === undefined) {
     shapeError(ctx, "game.render");
@@ -135,13 +150,10 @@ function onRender(ctx: RenderViewCtx, link: LinkApi, value: Json): void {
   }
 
   const frame = currentFrame(ctx, link);
-  const heap = link.heap();
   clearError(state, "game.render");
   state.render = stats;
   state.lastFrame = frame;
   state.firstFrame ??= frame;
-  state.fps = [...state.fps, stats.fps].slice(-config.fpsSamples);
-  state.heap = heap === undefined ? undefined : { usedMb: heap.usedMb, limitMb: heap.limitMb };
   notify(state);
 }
 
@@ -234,19 +246,44 @@ export function syncEffects(
 }
 
 /**
- * Starts the session watches of game.render and game.assets and the manifest listener that
- * starts game.effects when the manifest lists it (once).
+ * Follows the kind of the chosen session on every attach: the scene watches while Render is shown —
+ * none on a device session (R4), the usual three on any other. An undefined manifest (session lost)
+ * keeps everything.
  *
  * @param ctx - Domain context of renderView.
+ * @param link - The link API, resolved once by the caller.
+ * @param manifest - The manifest of the session, undefined while none is attached.
  */
-export function startTracker(ctx: RenderViewCtx): void {
+export function syncSession(
+  ctx: RenderViewCtx,
+  link: LinkApi,
+  manifest: Manifest | undefined
+): void {
+  if (manifest === undefined || !ctx.state.active) return;
+  if (sessionDevice(link) === undefined) startScene(ctx);
+  else stopScene(ctx);
+}
+
+/**
+ * Starts the session watches of game.render and game.assets and the one manifest listener that
+ * starts game.effects when the manifest lists it, follows the kind of session and tells the caller
+ * (Mission control restarts its reads with what the new manifest lists) (once).
+ *
+ * @param ctx - Domain context of renderView.
+ * @param onManifest - Also called on every manifest change.
+ */
+export function startTracker(ctx: RenderViewCtx, onManifest?: () => void): void {
   if (ctx.state.tracker.length > 0) return;
 
   const link = ctx.require(linkPlugin);
   ctx.state.tracker.push(
     link.watch("game.render", undefined, value => onRender(ctx, link, value)),
     link.watch("game.assets", undefined, value => onAssets(ctx, link, value)),
-    link.onManifest(manifest => syncEffects(ctx, link, manifest))
+    link.onManifest(manifest => {
+      syncEffects(ctx, link, manifest);
+      syncSession(ctx, link, manifest);
+      onManifest?.();
+    })
   );
 }
 
@@ -317,7 +354,7 @@ function scheduleBuild(ctx: RenderViewCtx, link: LinkApi): void {
 
 /**
  * Starts the scene watches while Render is shown (once): every value is stored, game.ui asks the
- * calibration once, and a build is queued.
+ * calibration once, and a build is queued. A device session gets none (R4).
  *
  * @param ctx - Domain context of renderView.
  */
@@ -326,6 +363,7 @@ export function startScene(ctx: RenderViewCtx): void {
   if (state.watching.length > 0) return;
 
   const link = ctx.require(linkPlugin);
+  if (sessionDevice(link) !== undefined) return;
   for (const [key, id] of SCENE_SOURCES) {
     const stop = link.watch(id, undefined, value => {
       // A late value after stopScene is dropped.
@@ -356,7 +394,7 @@ export function stopScene(ctx: RenderViewCtx): void {
  * read of `game.locate`, else `game.rect`). A manifest that lists neither reports no element
  * rects: nothing is read, nothing is warned and the calibration stays undefined. Marks the
  * calibration asked first, so a burst reads once; queues a rebuild while the scene is watched.
- * Never rejects.
+ * A device session is never calibrated (R4). Never rejects.
  *
  * @param ctx - Domain context of renderView.
  * @param link - The link API; resolved from ctx when left out.
@@ -368,7 +406,7 @@ export async function calibrate(
 ): Promise<void> {
   const { state } = ctx;
   const { ui } = state.sources;
-  if (ui === undefined) return;
+  if (ui === undefined || sessionDevice(link) !== undefined) return;
 
   // Mark asked first, so a burst of game.ui values reads once.
   state.calibrationAsked = true;

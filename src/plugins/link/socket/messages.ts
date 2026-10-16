@@ -1,9 +1,10 @@
 /**
  * @file link plugin — routes what the hub sends: responses settle calls; `editor` requests go to
- * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice,
- * `hotReload` the hot reload state, `selection` the editor selection, `project` the project index;
- * `game` notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the
- * heap, the watches and the tap listeners (R1).
+ * the page's handlers; `editor` notifications (`sessions`, `session`) drive the session choice and
+ * the session listeners, `hotReload` the hot reload state, `selection` the editor selection,
+ * `project` the project index, `devices` and `deviceTelemetry` connect's published values; `game`
+ * notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the heap, the
+ * heartbeat listeners, the watches and the tap listeners (R1).
  */
 
 import type { Json, Message, Notification } from "../../registry/protocol";
@@ -12,10 +13,14 @@ import { onEditorRequest } from "../page/requests";
 import { onSelectionNote } from "../page/selection";
 import { settle } from "../rpc/calls";
 import { flagOf, numberOf, objectOf, readSessions, textOf } from "../rpc/shapes";
+import { onEngineNote } from "../server/engine";
 import { onHotReloadNote } from "../server/hot-reload";
 import { onProjectNote } from "../server/project";
+import { onPublishedNote } from "../server/published";
 import { applySessions, closeChosen } from "../sessions/choose";
+import { notifySessions } from "../sessions/listeners";
 import { applyStatus } from "../status/machine";
+import { notifyHeartbeat } from "../subscriptions/heartbeats";
 import { notifyTap } from "../subscriptions/taps";
 import { deliver } from "../subscriptions/watch";
 import type { LinkCtx, LinkState } from "../types";
@@ -31,16 +36,21 @@ const DEFAULT_CLOSE_REASON = "game_reloaded";
 type Route = (ctx: LinkCtx, note: Notification) => void;
 
 /**
- * `editor` · `sessions { list }`: the new session list.
+ * `editor` · `sessions { list }`: the new session list, applied, then given to the session
+ * listeners.
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
  */
 function onSessions(ctx: LinkCtx, note: Notification): void {
   const list = readSessions(note.params);
+  if (list === undefined) {
+    ctx.log.warn("link:bad-sessions", {});
+    return;
+  }
 
-  if (list === undefined) ctx.log.warn("link:bad-sessions", {});
-  else applySessions(ctx, list);
+  applySessions(ctx, list);
+  notifySessions(ctx, list);
 }
 
 /**
@@ -93,6 +103,36 @@ function onProject(ctx: LinkCtx, note: Notification): void {
 }
 
 /**
+ * `editor` · `engine {EngineInfo}`: the computer's engine fingerprint the hub keeps and replays.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onEngine(ctx: LinkCtx, note: Notification): void {
+  onEngineNote(ctx, note.params);
+}
+
+/**
+ * `editor` · `devices {DeviceDirectory}`: connect's device directory the hub keeps and replays.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onDevices(ctx: LinkCtx, note: Notification): void {
+  onPublishedNote(ctx, "devices", note.params);
+}
+
+/**
+ * `editor` · `deviceTelemetry {DeviceTelemetry}`: the wired telemetry of a watched phone.
+ *
+ * @param ctx - Domain context of link.
+ * @param note - The notification.
+ */
+function onDeviceTelemetry(ctx: LinkCtx, note: Notification): void {
+  onPublishedNote(ctx, "deviceTelemetry", note.params);
+}
+
+/**
  * The `heap` of a heartbeat: finite `usedMb` and `limitMb`.
  *
  * @param value - The `heap` member.
@@ -114,7 +154,8 @@ function heapOf(value: Json | undefined): NonNullable<LinkState["heartbeat"]>["h
 
 /**
  * `game` · `heartbeat` of the chosen session: stored with the local arrival time and its heap
- * (a beat without a well-formed heap clears it).
+ * (a beat without a well-formed heap clears it), then, when it carries its `at`, given to the
+ * heartbeat listeners.
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
@@ -124,13 +165,16 @@ function onHeartbeat(ctx: LinkCtx, note: Notification): void {
   const params = objectOf(note.params);
   const frame = params && numberOf(params, "frame");
   const paused = params && flagOf(params, "paused");
-  if (note.session !== state.chosen || frame === undefined || paused === undefined) return;
+  const session = state.chosen;
+  if (note.session !== session || frame === undefined || paused === undefined) return;
 
   const receivedAt = Date.now();
   const heap = heapOf(params?.heap);
   state.heartbeat =
     heap === undefined ? { frame, paused, receivedAt } : { frame, paused, receivedAt, heap };
   applyStatus(ctx, { type: "heartbeat", frame, paused });
+  const at = params && numberOf(params, "at");
+  if (session !== undefined && at !== undefined) notifyHeartbeat(ctx, { session, at, receivedAt });
 }
 
 /**
@@ -174,6 +218,9 @@ const ROUTES: ReadonlyMap<string, Route> = new Map([
   ["editor.hotReload", onHotReload],
   ["editor.selection", onSelection],
   ["editor.project", onProject],
+  ["editor.engine", onEngine],
+  ["editor.devices", onDevices],
+  ["editor.deviceTelemetry", onDeviceTelemetry],
   ["game.heartbeat", onHeartbeat],
   ["game.value", onValue],
   ["game.tap", onTap]

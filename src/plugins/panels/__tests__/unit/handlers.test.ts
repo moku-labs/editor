@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPanelsApi } from "../../api";
 import { createHandlers, handleLinkStatus, handleWorkspaceChanged } from "../../handlers";
 import { definePanel } from "../../shared/define";
-import { createCtx } from "../helpers";
+import { createCtx, stopCreatedCtxs } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hooks: link:status fans out to every mounted panel; workspace:changed mounts
@@ -20,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopCreatedCtxs();
   vi.unstubAllGlobals();
 });
 

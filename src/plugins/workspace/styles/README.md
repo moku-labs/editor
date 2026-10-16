@@ -71,13 +71,15 @@ The top bar has two layouts, picked by the component from the window width and w
 
 | Window | Layout | What the CSS does |
 |---|---|---|
-| 1180 px and up | `wide` | Every label visible. The search box grows to 380 px. |
-| 900–1179 px | `wide` | Pause and Step show icons only; the Preview, Overlay and Hot reload switches keep their labels in a tighter box (gap 4 px). |
+| 1360 px and up | `wide` | Every label visible. The search box grows to 380 px. |
+| 1140–1359 px | `wide` | Pause and Step show icons only; the Preview, Overlay and Hot reload switches keep their labels in a tighter box (gap 4 px); the game name drops its version; the source pill names the source only (140 px at most). The engine fingerprint shows from 1100 px. |
+| 900–1139 px | `wide` | As above, and the source pill shows its dot only (the name stays its accessible name, the title the full label). |
 | 561–899 px | `compact` | The game mark, game name (120 px at most, no version), link pill, Pause, Step, the Hot reload icon toggle, a 28 px search icon and the ⋯ button. |
 | 560 px and below | `compact` | The game name hides too; gaps and padding use the density tokens. |
 
 Every control keeps its size (`flex-shrink: 0`). Only the game name and the wide search box shrink.
-The search box stops at 88 px and clips its own content (`overflow: hidden`), so it never runs
+The search box grows from a zero basis (`flex: 1 1 0`), so it is down to 88 px before the game name
+gives up any width; it stops there and clips its own content (`overflow: hidden`), so it never runs
 over a neighbour. The ⋯ menu (`[data-ui="more-menu"]`) is a top-layer popover: a row grid of
 label, state and key, using `--row-h` and the spacing tokens.
 

@@ -10,6 +10,7 @@
 @import "../ui/TopBar.css" layer(components);
 @import "../ui/LinkPill.css" layer(components);
 @import "../ui/SessionChip.css" layer(components);
+@import "../ui/SourcePill.css" layer(components);
 @import "../ui/StepPopover.css" layer(components);
 @import "../ui/RegistryPopover.css" layer(components);
 @import "../ui/MoreMenu.css" layer(components);
@@ -17,6 +18,7 @@
 @import "../ui/Preview.css" layer(components);
 @import "../ui/Toasts.css" layer(components);
 @import "../ui/StaleBar.css" layer(components);
+@import "../ui/SourceNotice.css" layer(components);
 @import "../ui/StatusCard.css" layer(components);
 @import "../palette/Palette.css" layer(components);
 @import "../frame/Frame.css" layer(components);

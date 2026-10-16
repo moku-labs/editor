@@ -3,6 +3,8 @@
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
+import type { SessionDevice } from "../../../hub/protocol";
 import { linkPlugin } from "../../../link";
 import type {
   CommandDescriptor,
@@ -18,11 +20,14 @@ import type { RanEvent, WorkspaceId } from "../../types";
 import { createScriptedHub, type ScriptedHub } from "./fake-hub";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A tools core with the real link and workspace over a scripted hub:
-// createApp → start → mount → keys, top bar, stale bar, D-07 reload → stop
+// A tools core with the real link, activeSource and workspace over a scripted
+// hub: createApp → start → mount → keys, top bar, stale bar, D-07 reload, the
+// source pill, veil and notice, startLocalPreview → stop
 // ─────────────────────────────────────────────────────────────────────────────
 
-const framework = createToolsCore(toolsCoreConfig, { plugins: [linkPlugin, workspacePlugin] });
+const framework = createToolsCore(toolsCoreConfig, {
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin]
+});
 
 const BOOT: ToolsBoot = {
   v: 1,
@@ -75,6 +80,61 @@ function manifestOf(): Manifest {
  */
 function sessionOf(id: string): SessionInfo {
   return { id, game: "merge-game 0.0.0", page: BOOT.gameUrl, embedded: true, connectedAt: 1000 };
+}
+
+/** A Galaxy A26 linked by wire. */
+const A26: SessionDevice = {
+  id: "d-7f3a",
+  model: "SM-A266B",
+  link: "adb",
+  address: "127.0.0.1",
+  port: 47_600,
+  engine: "0.15.0+9c41e0",
+  build: "debug-20261016T090000Z"
+};
+
+/**
+ * The session of this page's own game frame: embedded, tagged with the page's frame id.
+ *
+ * @param url - The tagged game URL (`app.link.frameUrl(...)`).
+ * @returns The session.
+ */
+function ownSessionOf(url: string): SessionInfo {
+  return { id: "s-1", game: "merge-game 0.0.0", page: url, embedded: true, connectedAt: 1000 };
+}
+
+/**
+ * A phone's session.
+ *
+ * @returns The session.
+ */
+function deviceSessionOf(): SessionInfo {
+  return {
+    id: "s-9",
+    game: "merge-game 0.0.0",
+    page: "http://localhost/index.html",
+    embedded: false,
+    connectedAt: 2000,
+    device: A26
+  };
+}
+
+/**
+ * The source pill's text.
+ *
+ * @returns The text, undefined without a pill.
+ */
+function pill(): string | null | undefined {
+  return root.querySelector("[data-ui='source-pill']")?.textContent;
+}
+
+/**
+ * The paused veil of the game frame.
+ *
+ * @returns The element, null without one.
+ */
+function veil(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("[data-frame-veil]");
 }
 
 let hub: ScriptedHub;
@@ -255,6 +315,32 @@ describe("workspace integration", () => {
     await app.stop();
   });
 
+  it("a scenario picked after the first listing starts the frame from it: player=full, new session", async () => {
+    hub.listings.set("tests/scenarios", [
+      { path: "tests/scenarios/full.ts", kind: "file", size: 9 },
+      { path: "tests/scenarios/full.test.ts", kind: "file", size: 9 }
+    ]);
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    hub.open(sessionOf("s-1"), manifestOf());
+    await until(() => app.workspace.scenarios().scenarios.length === 1, "the first listing");
+    expect(app.workspace.scenarios()).toEqual({ scenarios: ["full"], chosen: undefined });
+    await until(() => app.link.manifest() !== undefined, "attach");
+
+    const pending = app.workspace.setScenario("full");
+    const iframe = document.querySelector<HTMLIFrameElement>("iframe[data-game-frame]");
+    expect(new URL(iframe?.src ?? "").searchParams.get("player")).toBe("full");
+    hub.close("s-1", "game_reloaded");
+    hub.open(sessionOf("s-2"), manifestOf());
+
+    await expect(pending).resolves.toEqual({ restored: false });
+    expect(app.link.session()).toBe("s-2");
+    expect(hub.runs("game.bookmark")).toEqual([]);
+    expect(ran).toEqual([]);
+    await app.stop();
+  });
+
   it("reload({ restore: true }) while paused: the restored game is paused again", async () => {
     const app = createApp();
     await app.start();
@@ -421,6 +507,52 @@ describe("workspace integration", () => {
     expect(menu?.querySelectorAll("[role^='menuitem']")).toHaveLength(6);
     expect(root.querySelector("[data-action='copy-on-select']")).toBeNull();
     expect(app.workspace.copyOnSelect()).toBe(true);
+    await app.stop();
+  });
+
+  it("startLocalPreview before mount mounts the one frame and resolves when its session opens", async () => {
+    const app = createApp();
+    await app.start();
+    const pending = app.workspace.startLocalPreview();
+    expect(document.querySelectorAll("iframe[data-game-frame]")).toHaveLength(1);
+
+    hub.open(ownSessionOf(app.link.frameUrl("http://127.0.0.1:3000/game.html")), manifestOf());
+    await expect(pending).resolves.toBeUndefined();
+    expect(app.link.ownSession()).toBe("s-1");
+
+    act(() => app.workspace.mount(root));
+    expect(document.querySelectorAll("iframe[data-game-frame]")).toHaveLength(1);
+    await expect(app.workspace.startLocalPreview()).resolves.toBeUndefined();
+    await app.stop();
+  });
+
+  it("a phone linking becomes the source: pill, veil over the paused frame; its loss shows the notice", async () => {
+    const app = createApp();
+    await app.start();
+    act(() => app.workspace.mount(root));
+    hub.answers.set("game.pause", () => ({ value: true }));
+    hub.open(ownSessionOf(app.link.frameUrl("http://127.0.0.1:3000/game.html")), manifestOf());
+    await until(() => app.activeSource.current().session === "s-1", "the local preview");
+    expect(pill()).toBe("Local preview");
+
+    hub.open(deviceSessionOf(), manifestOf());
+    await until(() => app.activeSource.current().kind === "device", "the phone as the source");
+    expect(hub.runs("game.pause")).toHaveLength(1);
+    await until(() => pill() === "SM-A266B · by wire", "the pill names the phone");
+    await until(() => veil()?.hidden === false, "the veil");
+    expect(veil()?.textContent).toContain("SM-A266B is the source.");
+
+    hub.close("s-9", "bye");
+    await until(() => app.activeSource.current().kind === "local", "back on the local preview");
+    await until(
+      () => root.querySelector("[data-ui='source-notice'] [data-part='bar']") !== null,
+      "the notice"
+    );
+    expect(root.querySelector("[data-ui='source-notice']")?.textContent).toContain(
+      "SM-A266B disconnected."
+    );
+    await until(() => veil()?.hidden === true, "the veil gone");
+    expect(pill()).toBe("Local preview");
     await app.stop();
   });
 

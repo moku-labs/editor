@@ -3,9 +3,10 @@
  * in the file name). The live regions (link pill, session chip, game canvas, frame counters, fps
  * tiles, the runner and session cards, the Last commit body and tags) are masked; animations are
  * off and fonts are ready. State shows one known commit, so the Last commit card always has the
- * same height: whether a boot commit lands after the tools page attached is timing. The goldens
- * show what a fresh viewer sees: the default device (the iPhone 18 Pro since round 2b R10), not
- * the iPhone 15 the other specs pin.
+ * same height: whether a boot commit lands after the tools page attached is timing. Render is
+ * shot once the game rests over its whole view, so Mission control's live header keeps one
+ * layout. The goldens show what a fresh viewer sees: the default device (the iPhone 18 Pro since
+ * round 2b R10), not the iPhone 15 the other specs pin.
  */
 import type { Frame, Page } from "@playwright/test";
 import { expect, type Tools, test, WORKSPACES } from "./fixtures";
@@ -91,6 +92,21 @@ async function showKnownCommit(tools: Tools): Promise<void> {
   await expect(list.locator("[data-part=count]")).toHaveText("1 patch");
 }
 
+/**
+ * Waits until Render's frames header reads a game resting over the whole view: the tiny game rests
+ * at home a few seconds after boot. Mission control's headline is live and masked, but its length
+ * decides whether the span switch wraps under it at a narrow width; resting, it is the same text
+ * on every run ("0 spikes in view", "rest 6.0 s at 30 fps"), so the layout below it is too.
+ *
+ * @param tools - The tools driver.
+ */
+async function showRestingView(tools: Tools): Promise<void> {
+  await expect(tools.page.locator("[data-render=frames] [data-headline]")).toHaveText(
+    /^0 spikes in view\s*rest 6\.0 s at \d+ fps/,
+    { timeout: 30_000 }
+  );
+}
+
 test.describe("baseline", () => {
   test.use({ pinnedDevice: false });
 
@@ -98,6 +114,7 @@ test.describe("baseline", () => {
     test(`${label} workspace`, async ({ tools }) => {
       await tools.show(id);
       if (id === "state") await showKnownCommit(tools);
+      if (id === "render") await showRestingView(tools);
       // Let the view settle on its first snapshot (Flow layout, Files index, Render bundles).
       await tools.page.waitForTimeout(1500);
       await tools.settle();

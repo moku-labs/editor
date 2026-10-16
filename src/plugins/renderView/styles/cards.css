@@ -1,4 +1,402 @@
-/* renderView · cards. The right column: bundles (rows with share bars, budget footer), pools (one row with a bar) and the release log. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* renderView · cards. The sync note (12 px, a live or paused dot); the cards on the shared axis (spec 09 § M9, § M15 Measures): a grid of 4 × minmax(0, 1fr), gap 10 (2 columns under 1180 px of the container), GPU passes and Memory two columns wide, Device load across; a card is padding 10 12, gap 4, radius 10, its header 18 high (title 12/500 --text-2, the source mark at the right), its value line 26 high (20/600 tabular numbers, 12 px units, tags), the 46 px sparkline with the mono 12 cursor chip at its top right and a dashed note over it, the 12 px footer (gap 3; mono 600 numbers), the "In selection" line in --accent-ink, the off panel (inset 30 8 8 8, radius 8); the rate switch's lines; the memory card's source, process and objects lines; Device load's two halves with a 1 px divider (one column under 680 px). The static facts row (chips 32 high, padding 0 12, radius 8, mono 600 12.5 values; the dashed source chip). And the scene cards of the right column: bundles, pools and the release log. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+@scope ([data-sync-note]) {
+  :scope {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 2px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  b {
+    color: var(--text-ink);
+    font-weight: 600;
+  }
+}
+
+@scope ([data-render="cards"]) to ([data-popover]) {
+  :scope {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  [data-spark-card] {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-inline-size: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-10);
+    background: var(--surface-panel);
+  }
+
+  [data-spark-card][data-wide] {
+    grid-column: span 2;
+  }
+
+  [data-spark-card][data-full] {
+    grid-column: 1 / -1;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-block-size: 18px;
+  }
+
+  h3 {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    font-weight: 500;
+  }
+
+  h4 {
+    color: var(--text-ink);
+    font-size: var(--font-size-12);
+    font-weight: 600;
+  }
+
+  header > [data-part="source"] {
+    display: inline-flex;
+    margin-inline-start: auto;
+    color: var(--src-ink);
+  }
+
+  header > [data-part="srcnote"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-inline-start: 8px;
+    color: var(--text-2);
+    font: 500 var(--font-size-12) var(--font-mono);
+    white-space: nowrap;
+  }
+
+  [data-part="srcnote"] > svg {
+    color: var(--src-ink);
+  }
+
+  [data-part="value"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 5px;
+    min-block-size: 26px;
+  }
+
+  [data-part="pair"] {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  [data-part="pair"] + [data-part="pair"] {
+    margin-inline-start: 8px;
+  }
+
+  [data-part="pair"] > [data-mark] {
+    align-self: center;
+  }
+
+  strong {
+    font-size: var(--font-size-20);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  [data-part="unit"] {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-part="value"] > [data-tag] {
+    align-self: center;
+    margin-inline-start: 4px;
+  }
+
+  [data-part="plot"] {
+    position: relative;
+  }
+
+  [data-part="plot"] > canvas {
+    display: block;
+    inline-size: 100%;
+    block-size: 46px;
+  }
+
+  [data-cursor] {
+    position: absolute;
+    inset-block-start: -2px;
+    inset-inline-end: 0;
+    max-inline-size: 100%;
+    padding: 1px 6px;
+    overflow: hidden;
+    border-radius: var(--radius-4);
+    background: var(--surface-panel);
+    box-shadow: 0 0 0 1px var(--line-2);
+    color: var(--accent-ink);
+    font: 500 var(--font-size-12) var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  [data-part="plot"] > [data-part="note"] {
+    position: absolute;
+    inset: 0 0 4px;
+    display: grid;
+    place-items: center;
+    padding: 0 8px;
+    border: 1px dashed var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    text-align: center;
+  }
+
+  footer {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  footer b {
+    color: var(--text-ink);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+
+  footer b[data-warn] {
+    color: var(--status-warn);
+  }
+
+  [data-insel] {
+    color: var(--accent-ink);
+    font-weight: 500;
+  }
+
+  [data-bar] {
+    display: block;
+    block-size: 6px;
+    overflow: hidden;
+    border-radius: var(--radius-4);
+    background: var(--surface-panel-2);
+  }
+
+  [data-bar] > span {
+    display: block;
+    block-size: 100%;
+    background: var(--phase-3);
+  }
+
+  [data-off] {
+    position: absolute;
+    inset: 30px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: var(--radius-8);
+    background: var(--surface-panel);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+    text-align: center;
+  }
+
+  [data-off] > p {
+    color: var(--text-ink);
+    font-size: var(--font-size-12-5);
+    font-weight: 600;
+  }
+
+  /* ─── The rate switch ─── */
+  [data-rate] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  [data-rate-now] {
+    color: var(--text-ink);
+    font-weight: 600;
+  }
+
+  [data-rate-now][data-tone="warn"] {
+    color: var(--status-warn);
+  }
+
+  [data-rate-answer] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 6px;
+    color: var(--text-ink);
+  }
+
+  [data-rate-answer] > code {
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-rate-answer="ok"] > b {
+    color: var(--status-live);
+    font-family: var(--font-sans);
+  }
+
+  [data-rate-answer="warn"] {
+    color: var(--status-warn);
+  }
+
+  [data-rate-answer="error"] {
+    color: var(--status-error);
+  }
+
+  /* ─── Memory ─── */
+  [data-part="source-line"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-ink);
+    font-weight: 500;
+  }
+
+  [data-part="source-line"] > svg {
+    color: var(--src-ink);
+  }
+
+  [data-part="source-line"]:not([data-measured]) > svg {
+    color: var(--status-warn);
+  }
+
+  [data-link-button] {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-block-size: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-6);
+    background: var(--surface-panel);
+    color: var(--text-ink);
+    font-size: var(--font-size-12);
+    text-align: start;
+  }
+
+  [data-link-button]:hover {
+    background: var(--surface-panel-2);
+  }
+
+  [data-link-button][aria-expanded="true"] {
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--accent-soft);
+  }
+
+  [data-link-button][aria-expanded="true"] > svg {
+    rotate: 180deg;
+  }
+
+  /* ─── Device load ─── */
+  [data-part="halves"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 14px;
+  }
+
+  [data-part="half"] {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-inline-size: 0;
+  }
+
+  [data-part="half"] + [data-part="half"] {
+    padding-inline-start: 14px;
+    border-inline-start: 1px solid var(--line-1);
+  }
+
+  [data-part="keys"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+  }
+
+  [data-part="keys"] > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  @container render (width < 1180px) {
+    :scope {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @container render (width < 680px) {
+    [data-part="halves"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    [data-part="half"] + [data-part="half"] {
+      padding-inline-start: 0;
+      border-inline-start: 0;
+    }
+  }
+}
+
+@scope ([data-render="facts"]) {
+  :scope {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  [data-fact-chip] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-block-size: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--radius-8);
+    background: var(--surface-panel);
+    color: var(--text-2);
+    font-size: var(--font-size-12);
+  }
+
+  [data-fact-chip] b {
+    color: var(--text-ink);
+    font: 600 var(--font-size-12-5) var(--font-mono);
+  }
+
+  [data-fact-chip][data-source-line] {
+    border-style: dashed;
+  }
+
+  [data-fact-chip][data-source-line] b {
+    color: var(--src-ink);
+    font-family: var(--font-sans);
+  }
+
+  [data-fact-chip][data-source-line] > svg {
+    color: var(--src-ink);
+  }
+}
+
+/* The scene cards' right column: bundles (rows with share bars, budget footer), pools (one row with a bar) and the release log. */
 @scope ([data-render="bundles"], [data-render="pools"], [data-render="releases"]) {
   :scope {
     display: flex;

@@ -1,177 +1,233 @@
 # renderView
 
-> Standard plugin of the **tools** core (`createToolsPlugin`). The Render workspace (design A3, C9).
+> Complex plugin of the **tools** core (`createToolsPlugin`). The Render workspace, "Mission control" (spec 09
+> § Delta 2026-10-16), and the scene cards (render tree, textures, bundles, pools, release log).
 
-Title "Render · game.render · frame N", five metric tiles (six with the JS heap tile in Chromium),
-the render tree card and the textures card on the left, the Bundles, Pools and Release log cards on the right.
+Mission control has exactly **one source** at a time — the local preview or one device — named in a connection bar,
+and every number on the page comes from it. renderView never chooses the source: it reads `activeSource.current()`
+and `label()` and takes `activeSource:changed`. Under the bar: a live frame timeline over a 2-minute history with a GC
+lane and rate-change, recording, compile and source-switch marks, a Shaders & passes lane on the same axis, an
+overview scrubber with pause, rewind and step, a range selection with an inspector, sparkline cards on the shared time
+axis (FPS with the rate switch, frame time, draw calls, textures, GPU passes, memory, device load), a static facts row,
+a Shaders & passes panel, and one collapsible "Scene details" section (collapsed by default) holding the scene cards.
 Hovering a tree row or a texture row draws a pink box (`--pick-tree`) around the element over the game frame.
-The box lives in renderView's own root inside `workspace.gameFrame().overlay()`, so it shows in the pinned preview.
+
+Build state: the data (`series/`, `view/`), the painters (`timeline/`), the words (`derive/`) and the wiring
+(`source/`, `actions/`, the api, the hooks and the lifecycle) are wave 3 (RV1–RV4); the components and the paint loop
+(`timeline/loop.ts`) are wave 4 (RV5, RV6).
 
 ## Configuration
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| `fpsSamples` | `number` | `60` | FPS samples kept for the sparkline, one per changed `game.render` value. |
 | `releaseLogMax` | `number` | `50` | Release log entries kept, newest first. |
 
-The asset manifest has no config: it is the one the project index names (`ProjectState.manifest`). The config `manifestPaths` is removed.
+`fpsSamples` is removed (the FPS card reads the history). Mission control adds no option: the history's size is perf's
+`HISTORY_MS` (120 000) and `HISTORY_ROWS` (14 400), a rule of the data. The asset manifest has no config: it is the one
+the project index names (`ProjectState.manifest`).
 
 ## API
 
-`app.renderView` is `RenderViewApi` (`types.ts`).
+`app.renderView` is `RenderViewApi` (`types.ts`). Every Mission control member re-renders Mission control after it acts.
 
 | Member | Signature | What |
 |---|---|---|
-| `refresh` | `() => Promise<void>` | Re-reads the asset manifest and the calibration (`game.locate` or `game.rect`). Not a poll. Does nothing while the link is not live or paused. Never rejects. |
-| `snapshot` | `() => RenderSnapshot` | `{ frame, tiles, tree, textures, bundles, pools, releases }`. Texture rows have the filter and sort applied. Copies. |
-| `reveal` | `(ref: ElementRef) => void` | Shows Render, opens the ancestors, selects the row and scrolls it into view. Waits for the first scene when Render was hidden. |
-| `highlight` | `(ref: ElementRef \| undefined) => void` | Pink box around the element over the game frame. `undefined` clears it. A ref without a rect draws nothing. |
-| `sortTextures` | `(key: TextureSortKey) => void` | The same key flips the direction. A new key sorts numbers descending, text ascending. |
+| `refresh` | `() => Promise<void>` | Re-reads the asset manifest and the calibration (`game.locate` or `game.rect`). Not a poll. Never rejects. |
+| `snapshot` | `() => RenderSnapshot` | The scene cards: `{ frame, tiles, tree, textures, bundles, pools, releases }` (tiles: draw calls, textures, scene). Copies. |
+| `reveal` | `(ref: ElementRef) => void` | Shows Render, opens the ancestors, selects the row. Waits for the first scene when Render was hidden. |
+| `highlight` | `(ref: ElementRef \| undefined) => void` | Pink box around the element over the game frame; `undefined` clears it. |
+| `sortTextures` | `(key: TextureSortKey) => void` | The same key flips the direction. |
 | `filterBundle` | `(bundle: string) => void` | `"all"` or a bundle name. |
+| `mission` | `() => MissionView \| undefined` | What the page shows, in copies: source and state (live, waiting, not started, no monitor), live or paused and how far behind, span, selection, the frames header numbers (GCs only while memory is measured and on), rate, Monitoring rows, overdraw, memory (source rule, heap, process memory, Leak?), recording. `undefined` without a source. |
+| `inspect` | `() => InspectorView \| undefined` | The inspector's summary of the view, or its range view of the selection. Copies. |
+| `pause` | `() => void` | Freezes the view at the live end; the history keeps filling. Nothing without frames. |
+| `live` | `() => void` | Back to live; clears the selection and its detail read. |
+| `setSpan` | `(span: 6000 \| 30000 \| 120000) => void` | Keeps the view end; a paused view whose start left the history is pushed forward. |
+| `seek` | `(endMs: number) => void` | Pauses and moves the view end (source clock), clamped into `[min(oldest + span, live), live]`. |
+| `select` | `(range: FrameRange \| undefined) => FrameRange \| undefined` | Pauses, clamps to the history, scrolls into view (re-centred at 45 % in the outer 8 %), starts the detail read and looks up its systems' files; `undefined` clears. |
+| `step` | `(dir: 1 \| -1) => number \| undefined` | One frame from the selection's edge (no selection: the view's centre frame); stops at the ends. |
+| `jump` | `(kind: "spike" \| "gc" \| "rate", dir: 1 \| -1) => FrameRange \| undefined` | The next spike group (whole), GC or rate change; none toasts "No spike after this point" / "No spike earlier in the 2 min history". |
+| `setRate` | `(choice: 60 \| 120 \| "adaptive") => Promise<RateAnswer>` | `game.frameRate { fps }` or `{}`. One in flight ("Busy…" at once). A held pin (`heldBy: "panel"`, or `asked` above `fps`) is `ok: false` and keeps the previous radio. Never rejects. |
+| `setSection` | `(section: MonitorSection, on: boolean) => Promise<SectionsAnswer>` | `editor.perf.sections` with exactly the row's keys (`nodes` → `{ nodes }`, `passes` → `{ passes, shaders }`); Frames and Render stats are always on. Flips after the answer. Never rejects. |
+| `setOverdraw` | `(on: boolean) => Promise<boolean>` | `game.debug { overdraw }`; the old flag (and a toast) on a refusal. |
+| `record` | `(on: boolean, label?: string) => Promise<RecordAnswer>` | `editor.record { on, label }`; the page sends no origin (the hub stamps it). Stop toasts the saved path. |
+| `mark` | `(label?: string) => Promise<boolean>` | `editor.record { mark }`; an empty label becomes "mark {n + 1}". |
 
-`TextureSortKey` is `"key" | "bundle" | "size" | "gpuMb" | "fileMb" | "use"`.
+Removed with the D1 strip: `device`, `stepSpike`, `openSpike`, `closeSpike`, `setMore` (use `mission`, `jump`, `step`,
+`select`, `inspect`).
 
 ```ts
-const { tiles } = app.renderView.snapshot();
-tiles.drawCalls; // { kind: "absent" } in a production build
-tiles.scene?.effects; // { particles: 18, emitters: 1, filters: 24, renderPasses: 49 } on game 0.0.3
-tiles.effectsInstalled; // false on a game without the effects plugin, else absent
-tiles.heap; // { kind: "value", usedMb: 12.8, limitMb: 4095.8 } in Chromium, { kind: "absent" } elsewhere
-
-app.renderView.reveal({ kind: "entity", id: 3_145_728 });
-app.renderView.snapshot().tree.find(row => row.id === "entity:3145728")?.depth; // 2
-
-app.renderView.highlight({ kind: "ui", path: "boardScreen/boardSlot" });
-app.renderView.highlight(undefined);
-
-app.renderView.filterBundle("ui");
-app.renderView.snapshot().textures.every(row => row.bundle === "ui"); // true
+app.workspace.show("render");
+app.renderView.mission()?.source; // { session: "s-9", kind: "device", name: "Galaxy A26", link: "wire", state: "live" }
+app.renderView.select({ from: 4810, to: 4860 }); // { from: 4810, to: 4860 }: one editor.perf.detail read 150 ms later
+app.renderView.inspect()?.kind; // "range"
+await app.renderView.setRate(120); // { ok: true, choice: 120, text: "Pinned at 120, adaptive off", fps: 120, mode: "forced" }
 ```
 
-### Derivations
+## Data path — the one-source rule (spec 09 § M2)
 
-| Output | Rule |
-|---|---|
-| Draw calls tile | The `game.render` counter, a dev-build counter on any backend. Without it: "Not counted in a production build". Sub-line "R render pass(es)" when `game.render` reports `renderPasses` (game 0.0.3), else "game.render" or "game.render reports no draw counter". |
-| FPS tile | The newest sample, a sparkline of the kept samples. Sub-line "last N samples · low L". When the newest sample is 28-32 fps: "Resting at 30 fps: nothing moved for 2 s (game time.idleFps)". Game time rests at 30 fps after 2 s without a change (D-28). |
-| Frame time tile | `frameMs`. One bar, no phase split. |
-| Scene tile | Entities, "V display objects · P pooled", and "P particles · E emitters · F filters" from `game.effects`. On an older game: "Particles and filters are not reported (follow-up F-R1)". On a game without the effects plugin (`game.effects` listed with `available: false`): "Effects not installed in this game", also while the tile waits for the scene. |
-| JS heap tile | `link.heap()` read on each `game.render` change: "JS heap · <used> MB · of <limit> MB". The page reports it from `performance.memory` (Chromium). Absent: the tile is not rendered. Cleared on a session change. |
-| Texture rows | Catalogue textures whose bundle is in `game.assets`. GPU MB = w × h × 4 / 2^20. |
-| Texture use | Per scene: referenced keys are in use. A key seen before and not referenced now is "unused since fF". A key never seen is "not seen since f<firstFrame>". Precision is one delivered value, only while Render is shown. |
-| Pools | One row "All pools". No per-pool counts. |
-| Release log | A bundle in the previous `game.assets` value and not in this one, at the frame of the last `game.render`. Shown as "≈fN". |
-| Tree rows | Depth first over the scene roots, only through open nodes. The roots open on the first scene of a session. |
+| Read | Kind | Into |
+|---|---|---|
+| `editor.perf.second` | watched, 1 Hz | `mission.second` (rate, facts, Monitoring, memory trust, caps, epoch); its `sample` into the history (`appendSample`: the per-second systems a range falls back on) and the 1 Hz series (textures MB, object counters, render targets; the local preview's heap when trusted) |
+| `editor.perf.frames { after }` | the poll, 1 s | `appendFrames` into the 2-minute history; the overview's 500 ms buckets; each answer with new rows feeds the playout clock |
+| `editor.perf.events { after }` | the poll, after the frames answer | `appendEvents` (raw lines → marks: rate, gc, shader, problem, mark…) and the overview's GC and rate flags |
+| `editor.perf.passes` | watched, 1 Hz | `mission.passes` (the raw second for the panel, `passesSummaryOf`) and `appendSecond` |
+| `editor.recorder` | watched, 1 Hz | `mission.recorder` (the pill, the popover, the timeline's stripe) |
+| `editor.perf.detail { from, to }` | once per settled selection (150 ms) | `appendFrames` and the range's nodes |
+| `activeSource.onTelemetry` | 1 Hz, wired Android only | `mission.telemetry`; heap samples, inferred GCs and load placed at `at + clockOffsetMs − timeOrigin` (without an offset kept for the cards, not placed) |
+
+- Each read, watch or poll is sent only when the active session's manifest lists the id available (`source/listed.ts`):
+  an agent before the Mission control feeds sends nothing new and the page says its editor agent is older; never a crash.
+- The poll never doubles a read in flight, retries a failed read on the next tick (one debug line per failing streak),
+  and drops an answer that arrives after it stopped. A new `epoch` (a reload) resets the history, the series and the
+  selection.
+- **Source switch** (`activeSource:changed`): one burst — every watch and the poll of the old source stop; the history
+  (kept allocation), the series, the clock, live view, the selection, the detail read, the answers in flight, the file
+  cache and every popover reset or close (the Connect panel stays for its success alert on a switch to a device the
+  person asked for: "Connected to {name}.", one toast, closed after 1.3 s); the new source's reads start. A device
+  source gets no scene watch and no calibration (R4).
+- **Render hidden**: every Mission control watch and the poll stop, the history is kept (a return polls on from the
+  newest frame), the instrument's loop stops, popovers close (the scan lease ends).
+- Every value is checked (`source/guards.ts`): a value of another shape is warned (`renderView: unexpected source
+  shape`) and dropped, never shown.
+
+The scene cards keep their own reads: `game.render`, `game.assets` (and `game.effects` by manifest) for the session,
+`game.ui`, `game.entities`, `game.projections` only while Render is shown and never on a device session.
+
+### Motion, history, selection (spec 09 § M11)
+
+- `view/clock.ts`: the playout-delay display clock of every live graph, fed by the frames answers; reduced motion steps
+  every 500 ms at the newest data.
+- `view/view.ts`: live, pause (`behindMs` grows while the history fills), seek, span, the paused view kept inside the
+  history. `view/selection.ts`: click (one frame) or drag (≥ 4 px) ranges, any selection pauses, step, jump, a
+  selection whose first frame left the history is cleared. `view/keys.ts`: → steps, Shift+→ jumps a spike, Space
+  toggles live, Esc closes a popover first and only then clears the selection.
+- `series/`: the side series allocated once (`createMissionSeries`) — overview buckets, heap and GCs, textures, object
+  counters, device load — trimmed to the same 2 minutes, emptied by `clearSeries`; `series/stats.ts` the frames header
+  numbers (spike groups, worst, awake p90, rest clipped to the view, GCs); `series/groups.ts` spike groups.
+
+### The paint loop (spec 09 § M11)
+
+`timeline/loop.ts` `startLoop(ctx, root)` is the one `requestAnimationFrame` loop of the workspace, started while
+Render is shown and stopped on unmount. It paints every `canvas[data-paint]` under the root (`timeline`, `lane`,
+`overview`, `health`, `spark` with `data-spark` = `fps|frame|draws|textures|gpu|memory`, `cpu`, `gpu`), a canvas only
+when its key changed: the notification count, the view's end quantised to one device pixel, the span, the selection,
+the cursor, the palette, the size and the dpr. The live view's end comes from the playout clock every frame; the loop
+sleeps once nothing painted and the clock eased to a stop, and wakes on a Mission control notification (which also
+rescans the canvases a render added or removed), a cursor move (`view/hover.ts`), a resize (one `ResizeObserver`),
+the tab becoming visible or the reduced-motion preference changing. The backing store follows the box at the dpr and
+the transform is set before every paint. The palette is read once per theme and source kind (the root's `data-src`
+tints the sparklines) and kept for the life of Mission control, so a later start of the loop reads none. The Memory
+card's sparkline gets its GC marks and, while the card says Leak?, the baseline trend; the GPU passes card its compile
+marks. `paintedScene(mission)` is the scene the last frame painted, which the pointer handlers hit-test against.
+
+### Painters (spec 09 § M8, M9)
+
+`timeline/` paints on a `PaintContext` (a `CanvasRenderingContext2D` or a test fake) with a `PaintScene` reused frame
+after frame: the frame timeline (`frames.ts`, `marks.ts`), the Shaders & passes lane (`lane.ts`), the overview
+(`overview.ts`), the cards' sparklines and the Device load steps (`spark.ts`) and the health line (`health.ts`). A
+sparkline's marks sit at its column's middle, `top + 4`: GC diamonds in teal (hollow and dashed when inferred from a
+heap drop), compile diamonds in pick-blue (boot compiles left out); its optional trend is a dashed `[4, 3]` warn line
+across the view. A resting row's rate is its budget's (`1000 / budgetMs`, `derive/header.ts` `restFpsAt`): the engine
+keeps `rateMs` at the loop's rate while it rests. Rows newer than the view's end are not drawn yet (the playout
+delay); rows older than the view are skipped by a binary search. Painters allocate nothing per frame: strings come from bounded caches (`labels.ts`), flag boxes go into
+preallocated typed arrays (`hit.ts`), dash patterns are module arrays. Colours are the workspace tokens resolved once
+per theme (`palette.ts`, `MISSION_CAUSE`: JS warn, GPU pick-pink, upload phase-2, compile pick-blue, long frame error).
 
 ## Events
 
-renderView declares no events. It uses the global tools events (R4, R9).
+renderView declares no events.
 
 | Kind | Name | Payload | When |
 |---|---|---|---|
-| Emits | `workspace:inspect` | `{ ref }` | The C9 "Inspect in Game" button. gameView hooks it. |
-| Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches on, refresh once per session. Other: scene watches off, box cleared. |
-| Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept. A new session while live or paused: session data and effects cleared. `empty`: everything cleared. |
-| Hooks | `link:project` | `{ state, delta }` | Reads the catalogue again when it is stale: a gap (`delta.all`: the first state, a reconnect, the index turned off), another manifest named or none any more, or `delta.files` holds the manifest. A catalogue not read yet stays unread until Render is shown. The Textures palette follows. |
-| Hooks | `workspace:reveal` | `{ ref }` | gameView's "Show in render tree": `reveal(ref)`. |
+| Emits | `workspace:inspect` | `{ ref }` | The render tree card's "Inspect in Game". |
+| Emits | `workspace:open-file` | `{ path, line }` | A file link in the inspector (with the toast "Open in editor: {path}:{line}"). |
+| Hooks | `workspace:changed` | `{ ws }` | `render`: scene watches (not on a device), Mission control's watches and poll, refresh once per session. Other: all of them off (history kept), loop stopped, popovers closed, box cleared. |
+| Hooks | `link:status` | `{ status, session? }` | Silent or lost: data kept, Mission control re-renders stale. A new session while live or paused: session data cleared. `empty`: everything cleared. |
+| Hooks | `link:project` | `{ state, delta }` | Reads a stale catalogue again. |
+| Hooks | `workspace:reveal` | `{ ref }` | `reveal(ref)`. |
+| Hooks | `activeSource:changed` | `SourceChange` | The switch burst. |
+| Hooks | `activeSource:connect-requested` | `{ tab }` | Shows Render with the Connect panel open on that tab. |
 
-Log events: `renderView: unexpected source shape` (warn, once per wrong value), `renderView: calibration failed` (warn).
+Log events: `renderView: unexpected source shape` (warn), `renderView: calibration failed` (warn),
+`renderView:poll-failed` (debug, once per failing streak).
 
 ## Dependencies
 
 | Plugin | Used for |
 |---|---|
-| `linkPlugin` | `watch` of the game sources, `read("game.locate")` or `read("game.rect")`, `manifest()`, `project()` (the asset manifest path), `files.read` of the manifest, `onManifest`, `status()`, `heap()` |
-| `workspacePlugin` | `show("render")`, `active()`, `onPrefs` (device change), `gameFrame().overlay()`, `palette.add` |
+| `linkPlugin` | `watch`, `read`, `run` on the active session (link routes them to the source activeSource chose), `manifest()`, `onManifest`, `engine()`, `files.find("system:<name>")`, `files.read` of the asset manifest, `project()`, `sessions()` / `session()` |
+| `workspacePlugin` | `show("render")`, `active()`, `theme()`, `onPrefs`, `toast`, `startLocalPreview()`, `gameFrame().overlay()`, `palette.add` |
 | `panelsPlugin` | `register` the Render panel |
+| `activeSourcePlugin` | `current()`, `label()`, `preview()`, `health()`, `directory()`, `scan()`, `connectDevice`, `connectNetwork`, `confirmPairing`, `refusePairing`, `useDevice`, `useLocal`, `stopDevices`, `telemetry()`, `onTelemetry`, `markers()`, `clockOffsetMs()`, and its two events |
 
-Shared modules: `panels/shared/scene` builds the scene from `game.ui`, `game.entities` and `game.projections` (R8). `panels/shared/project` gives `manifestOf` and `projectOffText`.
-renderView depends on no other view (R4).
-
-### Data path (R6)
-
-| Watch | When | Why |
-|---|---|---|
-| `game.render`, `game.assets` | The whole session (onStart). | FPS samples and the release log need every change since the editor connected. Each `game.render` change also stores `link.heap()`. |
-| `game.effects` | The whole session, only while the manifest lists it as available (game 0.0.3). | Particles, emitters and filters for the Scene tile. |
-| `game.ui`, `game.entities`, `game.projections` | Only while Render is shown. | Entities can be large. |
-
-- The bridge re-reads each watched frame source once per heartbeat and sends changes only. No timer reads a frame source.
-- A burst of scene values builds one scene per animation frame.
-- The page rect of the first keyed ui element calibrates the scene once per session and again after a device change.
-- That rect is read with `{ key }` from `game.locate` when the manifest lists it (game 0.4), else from `game.rect` (game 0.1). A manifest that lists neither reports no element rects: nothing is read, nothing is warned, and the scene stays uncalibrated.
-- The asset manifest is the file the project index names (`manifestOf(link.project())`), read through `link.files.read`. Nothing is read while the index is off or names none. The textures card then says why: "Project index is off: <reason>", "The project index found no asset manifest", or "No asset manifest of version 1 at <path>". A project change that makes the catalogue stale reads it again (`link:project`), shown or hidden, so Render opened before the first project state still gets its rows.
-- `game.effects` follows `link.onManifest`. A manifest that lists it starts one watch. A manifest without it stops the watch and clears the value. A lost session keeps it.
-- A game without the effects plugin lists the source with `available: false` (the agent's probe). renderView sends no watch, sets `effectsInstalled: false` on the tiles and the Scene tile reads "Effects not installed in this game". Nothing is logged. `empty` forgets the flag.
-- A value of the wrong shape warns once and the last good value stays.
+`source/contract.ts` is the one door to the other units' runtime-free modules: `perf/protocol` (the history and its
+functions, the feeds' wire types, the monitoring constants, the cause ranking) and, type-only, `recorder/protocol`,
+`activeSource/types` and `connect/protocol`. The tools page no longer imports `perf/graph` (the overlay keeps it).
 
 ## Lifecycle
 
 | Phase | What |
 |---|---|
 | `onInit` | Registers the Render panel. |
-| `onStart` | Starts the session watches (`game.render`, `game.assets`, `game.effects` by manifest). Recalibrates on a device or orientation change (`workspace.onPrefs`). Runs the `workspace:changed` logic at once when Render is already shown. |
-| `onStop` | Stops every watch and the effects watch. Removes the overlay root and the palette items. Clears the listeners. |
-
-## Usage
-
-```ts
-const app = createApp({ pluginConfigs: { renderView: { fpsSamples: 120, releaseLogMax: 20 } } });
-await app.start();
-app.workspace.show("render");
-await app.renderView.refresh();
-app.renderView.snapshot().textures.length; // 3: the textures of the loaded bundles
-```
-
-Another view reveals an element without depending on renderView:
-
-```ts
-ctx.emit("workspace:reveal", { ref: { kind: "entity", id: 3_145_728 } });
-```
-
-## Integration
-
-- **gameView** emits `workspace:reveal` from "Show in render tree" and hooks `workspace:inspect` from "Inspect in Game".
-- **workspace** palette: one item per catalogue texture, group "Textures". Running it shows Render, filters to the bundle and reveals the first node that draws the texture.
-- **workspace** game frame: the pink box is drawn in renderView's own overlay root, in device space.
+| `onStart` | Takes the active source; starts the session watches (the one manifest listener also restarts Mission control's reads with what a new manifest lists); recalibrates on a device change and re-renders Mission control on a theme change (`workspace.onPrefs`); takes the active device's telemetry (`activeSource.onTelemetry`); runs the `workspace:changed` logic at once when Render is already shown. |
+| `onStop` | Every watch and listener, Mission control's watches, poll, loop, detail read and popovers (the scan lease ends), the overlay root and the palette items. |
 
 ## Files
 
-| File | Role |
+| Path | Role |
 |---|---|
-| `index.ts` | Wiring. |
-| `types.ts` | Config, state, rows, tiles, snapshot, api, ctx, hooks. |
-| `state.ts` | State factory, `notify`, `subscribe`. |
-| `api.ts` | The api over `actions.ts`, `derive.ts`, `watch.ts`. |
-| `watch.ts` | Tracker, effects and scene watches, scene builds, calibration, catalogue, refresh. Each entry point resolves link once and passes it down. |
-| `derive.ts` | Pure derivations. |
-| `format.ts` | Pure tile texts, sparkline points, tags. |
-| `guards.ts` | `asRenderStats`, `asAssetsUsage`, `asEffectsStats`. |
-| `actions.ts` | Reveal, select, open, sort, filter, highlight, inspect, palette items. |
-| `overlay.ts` | The box root in the game frame's overlay. |
-| `handlers.ts` | The four hooks. |
-| `lifecycle.ts` | onInit, onStart, onStop. |
-| `panel.tsx`, `components/` | The Render panel and its Preact components. |
-| `styles/` | `render.css` and its `@scope` sheets (no `@layer` wrapper, R7). |
+| `index.ts`, `types.ts`, `state.ts`, `api.ts`, `handlers.ts`, `lifecycle.ts` | Wiring, types, state and the two UI stores (`notify` for the scene cards, `notifyMission` for Mission control), the api, the hooks, the lifecycle. |
+| `watch.ts`, `derive.ts`, `format.ts`, `actions.ts`, `guards.ts`, `overlay.ts`, `panel.tsx` | The scene cards. |
+| `source/` | `contract.ts` (the one door), `types.ts`, `guards.ts`, `listed.ts`, `sync.ts` (watch set, switch burst), `poll.ts`. |
+| `series/` | `types.ts`, `series.ts` (allocation, `pushSample`, `clearSeries`), `rows.ts` (binary searches), `overview.ts`, `samples.ts`, `telemetry.ts`, `stats.ts`, `groups.ts`. |
+| `view/` | `types.ts`, `clock.ts`, `view.ts`, `selection.ts`, `keys.ts`, `hover.ts` (the shared cursor). |
+| `timeline/` | `layout.ts`, `palette.ts`, `scene.ts`, `labels.ts`, `draw.ts`, `frames.ts`, `marks.ts`, `lane.ts`, `overview.ts`, `spark.ts`, `health.ts`, `hit.ts`, `loop.ts`. |
+| `derive/` | Pure words and views: `words.ts`, `connection.ts`, `rate.ts`, `monitoring.ts`, `record.ts`, `connect.ts`, `cards.ts`, `memory.ts`, `load.ts`, `passes.ts`, `inspector.ts`, `states.ts`, `mission.ts`, `header.ts`, `tooltip.ts`. |
+| `actions/` | `rate.ts`, `sections.ts`, `record.ts`, `detail.ts`, `files.ts`, `connect.ts` (incl. the local preview's start), `popover.ts`. |
+| `components/` | The scene cards; Mission control's components (see Components); `icons.tsx`, `parts.tsx`, `useMission.ts`, `start.ts`. |
+| `styles/` | `render.css` and its `@scope` sheets. |
 
-## Narrow layout
+## Components (spec 09 § M7–M10, M15)
 
-The Render workspace is the inline-size container `render`.
+`RenderWorkspace` (`data-render="workspace"`, `data-src="local|device"`, `data-stale` while the link is silent) holds
+the connection bar, then the instrument, the sync note, the cards, the Shaders & passes panel, the static facts and
+Scene details, with the inspector on the right. Each part reads `ctx.state.mission` through `useMission` and re-renders
+on `notifyMission`; the cursor's tooltip and the cards' cursor chips re-render only when the hovered frame changes
+(`onHoverFrame`). Popovers (Connect, Monitoring, Record, the split menu, the memory breakdown) are top-layer
+`popover="manual"` elements, one open at a time, placed under their trigger; Esc or a click outside closes one and
+focus returns to its trigger. The timeline, the lane and the overview take the keys of `view/keys.ts`. Reduced motion:
+the workspace's utilities stop the live rings and the spinners, and the loop steps the live view every 500 ms.
 
-| Container width | Tiles grid | Card columns |
-|---|---|---|
-| ≥ 560 px | 6 columns, 3 at a viewport ≤ 1380 px | 2: tree and textures left, bundles, pools and release log right |
-| < 560 px | 2 columns | 1: the left column above the right |
-| < 380 px | 1 column | 1 |
-
-The render tree header wraps: Expand all and Collapse are one group that moves onto its own line, and the counts shrink (`min-inline-size: 0`).
-
-## Limits and game follow-ups
-
-| Limit | Follow-up in `@moku-labs/game` |
+| Folder | Parts |
 |---|---|
-| No render phase split, no per-pool counts. | F-R1. Particles, emitters, filters and render passes come from `game.effects` since game 0.0.3. The JS heap comes from the page heartbeat. |
-| Texture rows come from the committed asset manifest. Without one the card says so. Texture use is approximate. | F-R2: `game.textures` with size and last use per texture. |
-| The release log is a diff. Its frame is approximate ("≈fN"). No reason. | F-R3: `assets:bundle-unloaded` with frame and reason. |
-| Tree types are ui tags and entity display kinds, not Pixi classes. | F-G1: a display-tree source. |
-| Draw calls are counted in a dev build only. | None. |
+| `components/connection/` | `ConnectionBar`, `SourcePill`, `HealthLine`, `Facts`, `PausedChip`, `Actions`, `RecordControl`, `RecordPopover`, `MonitoringPopover`, `ConnectPanel` (`WireTab`, `NetworkTab`, `AskingRow`, `LinkedList`), `Popover`. |
+| `components/instrument/` | `FramesCard`, `FramesHeader`, `TimelineCanvas`, `Tooltip`, `EmptyOverlay`, `LaneCanvas`, `OverviewCanvas`, `Transport`, `Legend`, `usePlotPointer`. |
+| `components/cards/` | `CardsGrid`, `SparkCard`, `FpsCard` with `RateSwitch`, `MemoryCard` with `MemoryBreakdown`, `DeviceLoadCard`, `StaticFacts`, `SyncNote`. |
+| `components/passes/`, `inspector/`, `scene/` | `PassesPanel`; `Inspector` (`Summary`, `RangeView`, `Rows`, `FileLink`); `SceneDetails`. |
+
+Hooks for tests and the e2e (data-* only): `[data-source-pill][data-kind]`, `[data-source-name]`,
+`[data-popover-trigger="connect|split|monitoring|record|memory"]`, `[data-popover="…"]`, `[data-connect-panel][data-tab]`,
+`[role=menuitem][data-tab]`, `[data-linked-row][data-device-id]` with `[data-action="use"]`, `[data-card-kind]`
+(`fps`, `frame`, `draws`, `textures`, `gpu`, `memory`, `load`), `[data-paint]`, `[data-scene-meta]`.
+
+## Scene details and narrow layout
+
+The scene cards sit in one collapsible "Scene details" section, collapsed by default (`mission.sceneOpen`, not
+persisted); collapsed, nothing inside renders, and its heading reads "frame N · nodes · textures · bundles". `reveal`
+and `highlight` open it first. renderView's root is the inline-size container `render`: below 1180 px the inspector
+moves under the instrument, the cards and the passes panel go to 2 columns and the connection bar stacks; below 680 px
+the timeline is 220 high and the Connect and passes panels are one column. No horizontal scroll.
+
+## Limits
+
+| Limit | Shown as |
+|---|---|
+| iOS / WebKit: no GPU timer, no JS heap. | "not measured on this device", never 0. |
+| Tile GPUs (Mali, Adreno, Apple, PowerVR): a pass's GPU time is a share of the frame. | "≈ {share} %", never ms per pass; the frame's GPU sum keeps ms. |
+| An Android WebView's `performance.memory` is frozen (the A26 finding). | Never shown as the device's heap: a wired phone's heap comes from CDP over USB; a phone on the network reads "Not available: connect by wire to read the heap". |
+| GPU clock scaling (DVFS). | A wired phone's GPU ms carries its clock ("at 585 MHz, 64 % busy"). |
+| Filters by kind only (v1). | No filter parameters. |
+| Connect v1: no LAN scan, no editor-issued code, no QR, no iOS debug build. | "Listen on the network" and the address the phone dials; the iPhone line. |
+| `editor.perf.detail` rows older than the newest held frame are not merged (perf's `appendFrames` dedups by frame). | The range keeps the history's rows; the detail's nodes still show. |
+| No render phase split, no per-pool counts (F-R1); texture rows from the committed asset manifest (F-R2); the release log is a diff (F-R3); tree types are ui tags and entity kinds (F-G1). | As before. |

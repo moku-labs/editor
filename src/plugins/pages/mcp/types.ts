@@ -223,6 +223,11 @@ export type HubClient = {
   isOpen(): boolean;
   /** Closes the socket; pending calls fail `link_closed`. */
   close(): void;
+  /**
+   * Tells the hub the MCP client's name with the editor-channel notification `client { name }`;
+   * the hub stamps it on every run of this connection. Nothing goes out once the socket closed.
+   */
+  identify(name: string): void;
 };
 
 /**
@@ -271,6 +276,11 @@ export type EditorLink = {
   stopOwned(): Promise<{ readonly stopped: boolean; readonly status: EditorStatus }>;
   /** Closes the connection and stops an owned bin (stdin end). */
   shutdown(): Promise<void>;
+  /**
+   * Keeps the MCP client's name (`initialize`'s `clientInfo.title`, else `clientInfo.name`) and tells it to the open hub
+   * connection and to every connection that opens later (a reconnect after the bin's restart).
+   */
+  identify(name: string): void;
 };
 
 /**

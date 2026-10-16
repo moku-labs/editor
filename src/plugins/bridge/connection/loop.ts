@@ -1,19 +1,29 @@
 /**
- * @file bridge plugin — the connection loop: hello fetch, socket, `hello` first, the heartbeat
- * tick, close and failure handling with backoff. `connect` never throws and is never awaited by
- * onStart. The token is never logged: log lines name the hello origin and path only.
+ * @file bridge plugin — the connection loop. Page mode: hello fetch, socket, `hello` first. Device
+ * mode: the address's socket without a hello fetch, pairing or the remembered credentials, the
+ * 4401 re-pair at once, a refusal that stops retrying. Both: the heartbeat tick, close and failure
+ * handling with backoff, quiet while no computer answers. `connect` never throws and is never
+ * awaited by onStart. The token is never logged: log lines name the hello origin and path, or the
+ * device address.
  */
+import { DEVICE_UNPAIRED_CODE, DEVICE_UNPAIRED_REASON } from "../../hub/protocol";
 import type { Heartbeat, HelloBody } from "../../registry/protocol";
-import { bareMessage, notification, toWireValue } from "../../registry/protocol";
-import { helloManifest } from "../checkpoint/checkpoint";
+import { bareMessage } from "../../registry/protocol";
 import { asError, handleText } from "../dispatch/dispatch";
-import { dropInflight, flushPending, messageOf, sendNow } from "../dispatch/send";
+import { dropInflight, flushPending, messageOf, NORMAL_CLOSE } from "../dispatch/send";
 import { dropAll, sampleFrames } from "../dispatch/subscriptions";
-import { setStatus, statusOfBeat } from "../status";
+import { dropShipping, shipNext } from "../lines";
+import { noteSeen, setStatus } from "../status";
 import type { BridgeDeps, SocketLike } from "../types";
+import { DEFAULT_DEVICE_ADDRESS, PAIRING_REFUSED } from "../types";
+import { deviceSocketUrl } from "./address";
 import { nextDelay } from "./backoff";
+import { credentialsOf, onUnpaired, startPairing } from "./device";
 import { fetchHello, helloOrigin, resolveHelloUrl, socketUrl } from "./hello";
-import { hasNetwork } from "./socket";
+import { linkLabel, onLinked, sendBeat } from "./link";
+import { hasNetwork, hasSocket } from "./socket";
+
+export { sendBeat } from "./link";
 
 /**
  * Close code of the bin's restart (1012, service restart): the hub closes every socket with it
@@ -22,31 +32,13 @@ import { hasNetwork } from "./socket";
 const SERVICE_RESTART = 1012;
 
 /**
- * The hello URL as log lines show it: origin and path, never a query.
- *
- * @param deps - The domain deps.
- * @returns `origin + pathname`, or config.hello when it does not resolve.
+ * Close code of a policy refusal (1008): the hub's pairing refusals and timeouts.
  */
-function helloLabel(deps: BridgeDeps): string {
-  const url = resolveHelloUrl(deps.config.hello, deps.page.href);
-  return url === undefined ? deps.config.hello : `${url.origin}${url.pathname}`;
-}
-
-/**
- * Sends a heartbeat, records its frame and publishes live or paused (on a kind flip only).
- *
- * @param deps - The domain deps.
- * @param beat - The beat.
- */
-export function sendBeat(deps: BridgeDeps, beat: Heartbeat): void {
-  sendNow(deps, notification("game", "heartbeat", beat));
-  deps.state.lastFrame = beat.frame;
-  setStatus(deps, statusOfBeat(beat));
-}
+const POLICY_CLOSE = 1008;
 
 /**
  * The channel heartbeat tick, active only while open: beat (even congested), status, backlog
- * flush, then the frame-source sampling (R6).
+ * flush, the frame-source sampling (R6), then the next log batch (device mode).
  *
  * @param deps - The domain deps.
  * @param beat - The beat of this tick.
@@ -56,31 +48,22 @@ export function onBeat(deps: BridgeDeps, beat: Heartbeat): void {
   sendBeat(deps, beat);
   flushPending(deps);
   sampleFrames(deps);
+  shipNext(deps);
 }
 
 /**
- * Socket open: resets the failure streak, sends `hello { manifest }` first (the hub closes an
- * agent that sends anything else first; the first hello after a checkpoint restore carries
- * `manifest.restored`), then a heartbeat, publishes live or paused.
+ * Socket open in page mode (and a credentialed device socket): the link step.
  *
  * @param deps - The domain deps.
  */
 export function onOpen(deps: BridgeDeps): void {
-  const { state } = deps;
-  state.attempt = 0;
-  state.failureLogged = false;
-  state.phase = "open";
-  if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
-  state.retryTimer = undefined;
-
-  sendNow(deps, notification("game", "hello", { manifest: toWireValue(helloManifest(deps)) }));
-  sendBeat(deps, deps.channel.heartbeat());
-  deps.log.info("bridge:connected", { url: helloLabel(deps) });
+  onLinked(deps);
 }
 
 /**
- * Logs a loss: the first failure of a streak at warn (at info for the bin's restart), the rest at
- * debug (a game without an editor server must not flood its log).
+ * Logs a loss: the first failure of a streak once, the rest at debug (a game without an editor
+ * server must not flood its log). The first is info `bridge:no-computer` in device mode before the
+ * page ever linked, info for the bin's restart, warn otherwise.
  *
  * @param deps - The domain deps.
  * @param reason - The status reason.
@@ -94,14 +77,33 @@ function logLoss(deps: BridgeDeps, reason: string, retryInMs: number, restarting
     return;
   }
   state.failureLogged = true;
-  if (restarting) log.info("bridge:lost", { reason, retryInMs });
-  else log.warn("bridge:lost", { reason, retryInMs });
+  if (state.mode === "device" && !state.everLinked) {
+    log.info("bridge:no-computer", { address: state.address, retryInMs });
+  } else if (restarting) {
+    log.info("bridge:lost", { reason, retryInMs });
+  } else {
+    log.warn("bridge:lost", { reason, retryInMs });
+  }
 }
 
 /**
- * A failure: drops the socket, the session, every subscription and every deadline (late results
- * are dropped), then publishes lost and schedules a reconnect with backoff, or gives up when
- * `retry` is false. Does nothing more once stopped.
+ * Forgets the socket and what lived on it: the session, every subscription, every request
+ * deadline (late results are dropped) and the log batch in flight (its lines stay unsent).
+ *
+ * @param deps - The domain deps.
+ */
+function dropLink(deps: BridgeDeps): void {
+  const { state } = deps;
+  state.socket = undefined;
+  state.session = undefined;
+  dropAll(deps);
+  dropInflight(state);
+  dropShipping(state);
+}
+
+/**
+ * A failure: drops the socket and what lived on it, then publishes lost and schedules a
+ * reconnect with backoff, or gives up when `retry` is false. Does nothing more once stopped.
  *
  * @param deps - The domain deps.
  * @param reason - The status reason, e.g. "hello 404".
@@ -110,10 +112,7 @@ function logLoss(deps: BridgeDeps, reason: string, retryInMs: number, restarting
  */
 export function fail(deps: BridgeDeps, reason: string, retry: boolean, restarting = false): void {
   const { state } = deps;
-  state.socket = undefined;
-  state.session = undefined;
-  dropAll(deps);
-  dropInflight(state);
+  dropLink(deps);
   if (state.phase === "stopped") return;
 
   state.phase = "lost";
@@ -133,35 +132,115 @@ export function fail(deps: BridgeDeps, reason: string, retry: boolean, restartin
 }
 
 /**
+ * True for the hub's 4401 `unpaired` close of a socket that carried a device id and token: the
+ * credentials are dead.
+ *
+ * @param code - The close code.
+ * @param reason - The close reason.
+ * @param credentialed - The socket carried a device id and token.
+ * @returns Whether the device should pair again at once.
+ * @example
+ * ```ts
+ * isUnpairedClose(4401, "unpaired", true); // true
+ * ```
+ */
+function isUnpairedClose(code: number, reason: string, credentialed: boolean): boolean {
+  return code === DEVICE_UNPAIRED_CODE && reason === DEVICE_UNPAIRED_REASON && credentialed;
+}
+
+/**
+ * True for the hub's 1008 `pairing refused` close: the person said no.
+ *
+ * @param code - The close code.
+ * @param reason - The close reason.
+ * @returns Whether the pairing was refused.
+ * @example
+ * ```ts
+ * isPairingRefused(1008, "pairing refused"); // true
+ * ```
+ */
+function isPairingRefused(code: number, reason: string): boolean {
+  return code === POLICY_CLOSE && reason === PAIRING_REFUSED;
+}
+
+/**
+ * A device-mode close the hub gave a meaning: 4401 `unpaired` on a credentialed socket drops the
+ * dead credentials and dials again at once (no backoff, the streak unchanged), so the next socket
+ * pairs; 1008 `pairing refused` stops retrying until `connect` asks again.
+ *
+ * @param deps - The domain deps.
+ * @param code - The close code.
+ * @param reason - The close reason.
+ * @param credentialed - The socket carried a device id and token.
+ * @returns Whether the close was handled here.
+ */
+function onDeviceClose(
+  deps: BridgeDeps,
+  code: number,
+  reason: string,
+  credentialed: boolean
+): boolean {
+  if (isUnpairedClose(code, reason, credentialed)) {
+    dropLink(deps);
+    onUnpaired(deps);
+    connectInBackground(deps);
+    return true;
+  }
+  if (isPairingRefused(code, reason)) {
+    deps.state.pairing = undefined;
+    deps.log.warn("bridge:pairing-refused", { address: deps.state.address });
+    fail(deps, PAIRING_REFUSED, false);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Socket close: a failure with retry, named after the close code and the hub's reason (1008
  * `hello first`, 1001 `editor stopping`, 1012 `editor restarting`; a rejected upgrade shows as
- * 1006 in browsers). The bin's restart (1012) is logged at info, not warn.
+ * 1006 in browsers). The bin's restart (1012) is logged at info, not warn. In device mode 4401
+ * `unpaired` and 1008 `pairing refused` have their own rules; the pairing code survives any other
+ * close, so the code on the phone does not change while the person types it.
  *
  * @param deps - The domain deps.
  * @param code - The close code.
  * @param reason - The close reason, possibly empty.
+ * @param credentialed - The socket carried a device id and token (device mode).
  */
-export function onClose(deps: BridgeDeps, code: number, reason: string): void {
+export function onClose(
+  deps: BridgeDeps,
+  code: number,
+  reason: string,
+  credentialed = false
+): void {
+  if (deps.state.mode === "device" && onDeviceClose(deps, code, reason, credentialed)) return;
   const base = `socket closed (${String(code)})`;
   fail(deps, reason === "" ? base : `${base}: ${reason}`, true, code === SERVICE_RESTART);
 }
 
 /**
- * Wires the socket events; events of a socket that is no longer the current one are ignored.
+ * Wires the socket events; events of a socket that is no longer the current one are ignored. An
+ * open page socket or credentialed device socket runs the link step, a device socket without
+ * credentials pairs. Every message is a sign of the computer.
  *
  * @param deps - The domain deps.
  * @param socket - The new socket.
+ * @param credentialed - The socket carries the hub token (page) or the device's credentials.
  */
-function listen(deps: BridgeDeps, socket: SocketLike): void {
-  const label = helloLabel(deps);
+function listen(deps: BridgeDeps, socket: SocketLike, credentialed: boolean): void {
+  const label = linkLabel(deps);
   socket.addEventListener("open", () => {
-    if (deps.state.socket === socket) onOpen(deps);
+    if (deps.state.socket !== socket) return;
+    if (credentialed) onLinked(deps);
+    else startPairing(deps);
   });
   socket.addEventListener("message", event => {
-    if (deps.state.socket === socket) handleText(deps, event.data);
+    if (deps.state.socket !== socket) return;
+    noteSeen(deps);
+    handleText(deps, event.data);
   });
   socket.addEventListener("close", event => {
-    if (deps.state.socket === socket) onClose(deps, event.code, event.reason);
+    if (deps.state.socket === socket) onClose(deps, event.code, event.reason, credentialed);
   });
   socket.addEventListener("error", () => {
     deps.log.debug("bridge:socket-error", { url: label });
@@ -169,7 +248,32 @@ function listen(deps: BridgeDeps, socket: SocketLike): void {
 }
 
 /**
- * Opens the socket of a hello answer (steps 8 and 9 of the connect sequence).
+ * Opens a socket and wires it; a throwing constructor is a failure with retry.
+ *
+ * @param deps - The domain deps.
+ * @param url - The socket URL.
+ * @param origin - The Origin to send (a Bun process in page mode), or undefined.
+ * @param credentialed - The socket carries a token.
+ */
+function openSocket(
+  deps: BridgeDeps,
+  url: URL,
+  origin: string | undefined,
+  credentialed: boolean
+): void {
+  let socket: SocketLike;
+  try {
+    socket = deps.net.openSocket(url.href, origin);
+  } catch {
+    fail(deps, "socket failed", true);
+    return;
+  }
+  deps.state.socket = socket;
+  listen(deps, socket, credentialed);
+}
+
+/**
+ * Opens the socket of a hello answer (steps 8 and 9 of the page-mode connect sequence).
  *
  * @param deps - The domain deps.
  * @param helloUrl - The hello URL.
@@ -183,42 +287,34 @@ function openLink(deps: BridgeDeps, helloUrl: URL, body: HelloBody): void {
     fail(deps, "hello answered a bad ws URL", true);
     return;
   }
-  let socket: SocketLike;
-  try {
-    socket = deps.net.openSocket(url.href, helloOrigin(helloUrl));
-  } catch {
-    fail(deps, "socket failed", true);
-    return;
-  }
-  deps.state.socket = socket;
-  listen(deps, socket);
+  openSocket(deps, url, helloOrigin(helloUrl), true);
 }
 
 /**
- * True once onStop ran (read again after an await: stop may run meanwhile).
+ * True when a page-mode attempt is no longer the current one (read again after an await): stop
+ * ran, a newer connect started (connect(address), overlay:connect, a retry), or the bridge left
+ * page mode. Its hello answer then opens nothing and its failure fails nothing.
  *
  * @param deps - The domain deps.
- * @returns Whether the phase is "stopped".
+ * @param dial - The generation of the attempt.
+ * @returns Whether the attempt is stale.
  */
-function isStopped(deps: BridgeDeps): boolean {
-  return deps.state.phase === "stopped";
+function isStale(deps: BridgeDeps, dial: number): boolean {
+  const { state } = deps;
+  return state.phase === "stopped" || state.dial !== dial || state.mode !== "page";
 }
 
 /**
- * The connect sequence: connecting, network check, hello URL, hello fetch (every attempt: a hub
- * restart rotates the token), then the socket. In a Bun process the hello origin goes along as
- * the Origin header and Bun's socket option (R6). A stop during the fetch opens nothing.
+ * Page mode: network check, hello URL, hello fetch (every attempt: a hub restart rotates the
+ * token), then the socket. In a Bun process the hello origin goes along as the Origin header and
+ * Bun's socket option (R6). A stop or a newer connect during the fetch opens nothing.
  *
  * @param deps - The domain deps.
+ * @param dial - The generation of this attempt.
  * @returns A promise that settles when the socket is opening or the attempt failed.
  */
-export async function connect(deps: BridgeDeps): Promise<void> {
-  const { state, config, page } = deps;
-  if (state.phase === "stopped") return;
-  state.retryTimer = undefined;
-  state.phase = "connecting";
-  setStatus(deps, { kind: "connecting" });
-
+async function connectPage(deps: BridgeDeps, dial: number): Promise<void> {
+  const { config, page } = deps;
   if (!hasNetwork(globalThis)) {
     fail(deps, "no WebSocket in this runtime", false);
     return;
@@ -234,11 +330,57 @@ export async function connect(deps: BridgeDeps): Promise<void> {
     const origin = helloOrigin(helloUrl);
     body = await fetchHello(deps.net, helloUrl, origin === undefined ? undefined : { origin });
   } catch (error) {
-    fail(deps, bareMessage(messageOf(error)), true);
+    if (!isStale(deps, dial)) fail(deps, bareMessage(messageOf(error)), true);
     return;
   }
-  if (isStopped(deps)) return;
+  if (isStale(deps, dial)) return;
   openLink(deps, helloUrl, body);
+}
+
+/**
+ * Device mode: the address's socket `ws://<address>{path}/ws?kind=agent&role=device`, with the
+ * remembered credentials unless the next socket must pair. No hello fetch, no Origin of ours (the
+ * WebView sets the native one).
+ *
+ * @param deps - The domain deps.
+ */
+function connectDevice(deps: BridgeDeps): void {
+  const { state, config } = deps;
+  if (!hasSocket(globalThis)) {
+    fail(deps, "no WebSocket in this runtime", false);
+    return;
+  }
+  const address = state.address ?? DEFAULT_DEVICE_ADDRESS;
+  state.address = address;
+  const credentials = credentialsOf(state);
+
+  let url: URL;
+  try {
+    url = deviceSocketUrl(address, config.hello, credentials);
+  } catch {
+    fail(deps, `no socket URL for ${address}`, false);
+    return;
+  }
+  openSocket(deps, url, undefined, credentials !== undefined);
+}
+
+/**
+ * The connect sequence: a new generation, connecting, then page mode (hello, socket) or device
+ * mode (socket, pairing). A stopped bridge connects nothing.
+ *
+ * @param deps - The domain deps.
+ * @returns A promise that settles when the socket is opening or the attempt failed.
+ */
+export async function connect(deps: BridgeDeps): Promise<void> {
+  const { state } = deps;
+  if (state.phase === "stopped") return;
+  state.dial += 1;
+  state.retryTimer = undefined;
+  state.phase = "connecting";
+  setStatus(deps, { kind: "connecting" });
+
+  if (state.mode === "device") connectDevice(deps);
+  else await connectPage(deps, state.dial);
 }
 
 /**
@@ -250,4 +392,22 @@ export function connectInBackground(deps: BridgeDeps): void {
   connect(deps).catch((error: unknown) => {
     deps.log.error("bridge:connect-crashed", undefined, asError(error));
   });
+}
+
+/**
+ * Dials again now (another address, or the same one after a refusal): the current socket closes
+ * with 1000 "switch" and its link is dropped, the retry timer and the failure streak are reset.
+ *
+ * @param deps - The domain deps.
+ */
+export function redial(deps: BridgeDeps): void {
+  const { state } = deps;
+  const { socket } = state;
+  dropLink(deps);
+  socket?.close(NORMAL_CLOSE, "switch");
+  if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
+  state.retryTimer = undefined;
+  state.attempt = 0;
+  state.failureLogged = false;
+  connectInBackground(deps);
 }

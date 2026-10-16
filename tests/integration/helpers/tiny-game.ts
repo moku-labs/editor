@@ -145,7 +145,7 @@ type LoggingApp = HeadlessApp & { readonly log: Log.LogApi };
 
 /**
  * The tiny game's `.dev` module: `tiny.count` (frame source), `tiny.map` (a Map), `tiny.fn` (a
- * function, not JSON); `tiny.warn` (cheat, logs `tiny:warned`), `tiny.fail` (throws "boom"),
+ * function, not JSON); `tiny.warn` (cheat, an overlay button, logs `tiny:warned`), `tiny.fail` (throws "boom"),
  * `tiny.hang` (never answers), `tiny.bump` (adds 1 to `tiny.count`).
  */
 export const tinyModule: Registry.DevModule = {
@@ -178,6 +178,7 @@ export const tinyModule: Registry.DevModule = {
       title: "Warn",
       input: {},
       effect: "cheat",
+      overlay: "button",
       run: (app: LoggingApp) => {
         const counted = countersOf(app);
         counted.warns += 1;

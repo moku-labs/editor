@@ -50,6 +50,8 @@ export type FakeHub = {
   readonly port: number;
   readonly url: string;
   readonly requests: Received[];
+  /** Every notification a client sent (the bridge's `editor.client`), in order. */
+  readonly notes: Received[];
   /** Origin headers of the upgrades, in order. */
   readonly origins: string[];
   /** Answers `<channel>.<method>` with the handler. */
@@ -118,6 +120,7 @@ export function startFakeHub(
   let http: HttpHandler | undefined;
   const clients = new Set<ServerWebSocket<undefined>>();
   const requests: Received[] = [];
+  const notes: Received[] = [];
   const origins: string[] = [];
   const subs = new Set<number>();
   let sessions: SessionInfo[] = options.sessions ?? [];
@@ -172,6 +175,11 @@ export function startFakeHub(
         },
         async message(ws, text) {
           const message = decode(String(text));
+          if (!("id" in message) && "method" in message) {
+            const { channel, method, params, session: asked } = message;
+            notes.push({ channel, method, params, session: asked });
+            return;
+          }
           if (!("id" in message) || !("method" in message)) return;
           const { id, channel, method, params, session: asked } = message;
           requests.push({ channel, method, params, session: asked });
@@ -203,6 +211,7 @@ export function startFakeHub(
     port,
     url: `http://127.0.0.1:${port}`,
     requests,
+    notes,
     origins,
     handle: (key, handler) => handlers.set(key, handler),
     setSessions: list => {

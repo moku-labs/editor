@@ -1,8 +1,9 @@
 // biome-ignore-all assist/source/organizeImports: sectioned entry (Framework API → Plugins → Types) is house style
 /**
  * The `@moku-labs/editor/agent` entry: the agent core for the game page. Default plugins:
- * registry, channel, overlay. The bridge (websocket to the editor server) and capture
- * (screenshots) are opt-in: a game's dev entry adds them.
+ * registry, channel, perf, recorder, overlay. The bridge (the websocket to the editor server, on
+ * the dev page or to `moku-editor perf` from a phone) and capture (screenshots) are opt-in: a
+ * game's dev entry and the engine's page agent (`@moku-labs/editor/agent/page`) add them.
  *
  * Plugin options and their defaults, set through `pluginConfigs`:
  *
@@ -12,12 +13,28 @@
  * | registry | modules | [] |
  * | registry | name | undefined: document.title, then "game" |
  * | channel | heartbeatMs | 1000 |
- * | overlay | open | false |
- * | overlay | corner | "top-right" |
+ * | perf | readEveryMs | 250 |
+ * | perf | windowMs | 6000 |
+ * | perf | frames | 1024 |
+ * | perf | feedPasses | false: no pass rows sent |
+ * | perf | feedSystems | true: the top 5 systems of each frame |
+ * | perf | feedNodes | false: no demand marks sent |
+ * | recorder | autoStart | false: nothing records until the phone, the tools page or an agent starts it ("device": a debug build only; true: always) |
+ * | recorder | keepMb | 64 |
+ * | recorder | flushEveryMs | 1000 |
+ * | recorder | persistEveryMs | 5000 |
+ * | recorder | storage | "auto": OPFS when the page has it, else memory |
+ * | recorder | keepFiles | 10 |
+ * | recorder | maxLogMb | 32: a log rotates to the next at 32 MB |
+ * | overlay | mode | "hidden" |
+ * | overlay | dock | "right" |
+ * | overlay | remember | true |
  * | overlay | mount | undefined: document.body |
  * | bridge | hello | "/__editor/hello" |
  * | bridge | retryMs | 1000 |
  * | bridge | callTimeoutMs | 5000 |
+ * | bridge | device | undefined: page mode on a served page; device mode with `__MOKU_GAME_EDITOR__` (`--editor`) or on a native page, at the remembered address, else the build's, else "127.0.0.1:47600" |
+ * | bridge | linesPerBatch | 200 |
  * | capture | maxDurationMs | 20000 |
  * | capture | minIntervalMs | 16 |
  *
@@ -34,18 +51,22 @@
 import { agentCoreConfig, createAgentCore } from "./config";
 import { channelPlugin } from "./plugins/channel";
 import { overlayPlugin } from "./plugins/overlay";
+import { perfPlugin } from "./plugins/perf";
+import { recorderPlugin } from "./plugins/recorder";
 import { registryPlugin } from "./plugins/registry";
 
 // Pure: a bundle that uses neither createApp nor createPlugin drops the agent core (and a game's
 // production build, which reaches this entry only behind `if (__MOKU_GAME_DEV__)`, drops it all).
 const framework = /* @__PURE__ */ createAgentCore(agentCoreConfig, {
-  // Dependency order: channel and overlay require registry, overlay requires channel.
-  plugins: [registryPlugin, channelPlugin, overlayPlugin]
+  // Dependency order: channel and perf require registry; recorder requires perf; overlay requires
+  // registry, channel, perf and recorder.
+  plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin]
 });
 
 // ─── Framework API ────────────────────────────────────────────
 /**
- * Creates the editor agent of a game page. `bridgePlugin` and `capturePlugin` are opt-in.
+ * Creates the editor agent of a game page: registry, channel, perf, recorder and overlay.
+ * `bridgePlugin` and `capturePlugin` are opt-in.
  *
  * @example
  * ```ts
@@ -69,6 +90,8 @@ export { bridgePlugin } from "./plugins/bridge";
 export { capturePlugin } from "./plugins/capture";
 export { channelPlugin } from "./plugins/channel";
 export { overlayPlugin } from "./plugins/overlay";
+export { perfPlugin } from "./plugins/perf";
+export { recorderPlugin } from "./plugins/recorder";
 export { registryPlugin } from "./plugins/registry";
 
 // ─── Plugin Types (namespace re-exports) ──────────────────────
@@ -76,4 +99,6 @@ export * as Bridge from "./plugins/bridge/types";
 export * as Capture from "./plugins/capture/types";
 export * as Channel from "./plugins/channel/types";
 export * as Overlay from "./plugins/overlay/types";
+export * as Perf from "./plugins/perf/types";
+export * as Recorder from "./plugins/recorder/types";
 export * as Registry from "./plugins/registry/types";

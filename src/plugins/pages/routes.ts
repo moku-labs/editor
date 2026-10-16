@@ -2,7 +2,8 @@
  * @file pages plugin — the five editor routes under `P = hub.path()`: `P` (308 to `P/`), `P/`
  * (the tools page with the boot JSON and the CSP), `P/hello` (`{ ws, token }`, same-origin only),
  * `P/hmr` (hot reload, hot-reload.ts) and `P/assets/*` (the built files). Every handler runs
- * hub.guard first; all but `P/hmr` answer GET and HEAD only.
+ * hub.guard first; all but `P/hmr` answer GET and HEAD only. With `toolsPage: false` (moku-editor
+ * perf --no-ui) `P`, `P/` and `P/assets/*` answer 404 after the guard.
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path/posix";
@@ -71,6 +72,11 @@ const NOT_BUILT = "tools page not built · run bun run build:tools";
  * The body of the 503 before start and after stop (the hub has no token).
  */
 const NOT_STARTED = "editor not started · call await editor.start()";
+
+/**
+ * The body of the 404 of the tools page routes with `toolsPage: false`.
+ */
+const TOOLS_OFF = "tools page off (moku-editor perf --no-ui)";
 
 /**
  * A relative asset name: segments of letters, digits, `.`, `_` and `-`.
@@ -242,6 +248,20 @@ function assetAnswer(deps: RouteDeps, path: string): Answer {
 }
 
 /**
+ * The answer of a tools page route with `toolsPage: false`: 404.
+ *
+ * @param req - The request (GET or HEAD).
+ * @returns The 404.
+ * @example
+ * ```ts
+ * toolsOff(new Request("http://127.0.0.1:47600/__editor/")).status; // 404
+ * ```
+ */
+function toolsOff(req: Request): Response {
+  return textResponse(req, 404, TOOLS_OFF);
+}
+
+/**
  * Creates the editor routes of pages (frozen), keyed under hub.path().
  *
  * @param deps - Hub, files, config, state and log.
@@ -249,12 +269,13 @@ function assetAnswer(deps: RouteDeps, path: string): Answer {
  */
 export function createRoutes(deps: RouteDeps): EditorRoutes {
   const path = deps.hub.path();
+  const isOn = deps.config.toolsPage;
 
   return Object.freeze({
-    [path]: guarded(deps, "navigate", redirectTo(path)),
-    [`${path}/`]: guarded(deps, "navigate", pageAnswer(deps)),
+    [path]: guarded(deps, "navigate", isOn ? redirectTo(path) : toolsOff),
+    [`${path}/`]: guarded(deps, "navigate", isOn ? pageAnswer(deps) : toolsOff),
     [`${path}/hello`]: guarded(deps, "same-origin", helloAnswer(deps)),
     [`${path}/hmr`]: hotReloadRoute(deps),
-    [`${path}/assets/*`]: guarded(deps, "navigate", assetAnswer(deps, path))
+    [`${path}/assets/*`]: guarded(deps, "navigate", isOn ? assetAnswer(deps, path) : toolsOff)
   });
 }

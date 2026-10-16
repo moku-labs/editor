@@ -1,9 +1,11 @@
 /**
  * @file Protocol barrel — the only barrel of the protocol module. Runtime-free: re-exports every
- * wire type and pure helper (commandsHash, pickSession and the project-index helpers included),
+ * wire type and pure helper (commandsHash, refusalOf, isAllowed, pickSession and the project-index
+ * helpers included),
  * the device presets and the overlay host marker. Imported by hub, files, pages, link, workspace,
  * panels, the views, the agent plugins and src/index.ts by relative path (D-02).
  */
+export { isAllowed, refusalOf } from "./build";
 export { checkInput, isJson } from "./check";
 export {
   DEFAULT_DEVICE,
@@ -62,9 +64,13 @@ export { isHotSwapEntry, isReloading } from "./reload";
 export { isSelectionInfo, parseSelectionInfo, parseSelectParams } from "./selection";
 export { pickSession } from "./session-choice";
 export type {
+  BuildInfo,
+  BuildProfile,
   Changes,
   Channel,
   CommandDescriptor,
+  CommandRefusal,
+  CommandVia,
   DeviceInfo,
   DeviceParams,
   DevicePresetId,
@@ -100,6 +106,7 @@ export type {
   NodeRef,
   Notification,
   Orientation,
+  OverlayMarker,
   PathParams,
   PictureFormat,
   ProjectAnchor,

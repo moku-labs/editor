@@ -9,7 +9,10 @@
  * bunfig; this bin, the parent, runs the engine's keys watch until that child exits (D-55).
  * `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
  * prints the Claude Code setup; `e2e` runs a Playwright config once per project and spec file,
- * each on its own PORT (`e2e.ts`, D-52, D-53). The token is never printed.
+ * each on its own PORT (`e2e.ts`, D-52, D-53). `perf` measures phones (`perf/`): device mode with
+ * the terminal as the pairing prompt, the tools page on the device port, live lines per phone log;
+ * `perf mark`, `perf summary` and `perf compare` reach a running perf or read finished logs. The
+ * token is never printed.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path/posix";
@@ -32,11 +35,18 @@ import {
 } from "./engine-page";
 import { runBridge } from "./mcp/bridge";
 import { mcpConfigLines } from "./mcp-config";
+import { processPerfDeps } from "./perf/deps";
+import { perfMark } from "./perf/mark";
+import { perfCompare, perfSummary } from "./perf/report";
+import { runPerf } from "./perf/run";
+import type { PerfDeps } from "./perf/types";
 import { processReexec, reexecBin, reexecEngine, stopWithParent } from "./reexec";
 import type { GameServer } from "./serve";
 import { createGameServer } from "./serve";
 import { createStaticFetch } from "./static";
-import type { McpConfigArgs, ReexecDeps, RunArgs, ServeArgs } from "./types";
+import type { BinArgs, McpConfigArgs, ReexecDeps, RunArgs, ServeArgs, Started } from "./types";
+
+export type { Started } from "./types";
 
 /**
  * The usage lines of `--help` and of an argument error.
@@ -47,10 +57,13 @@ const USAGE = [
   "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
   "       moku-editor e2e -c <playwright config> [playwright args…]",
+  "       moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]",
+  '       moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jsonl> <b.jsonl>',
   "  without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine",
   "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
   "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
   "  e2e         one Playwright run per project and spec file, each on its own PORT",
+  "  perf        phones over adb reverse (--lan: by pairing code): JSONL logs, heat, live lines, tools page on the port",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)"
@@ -93,12 +106,9 @@ export type CliDeps = {
   readonly importCli?: EnginePageDeps["importCli"];
   /** The `bun x` runs of `e2e`; default `processE2eDeps()`; tests pass a stub. */
   readonly e2e?: E2eDeps;
+  /** What `perf` and its subcommands talk to; default `processPerfDeps()`; tests pass a stub. */
+  readonly perf?: PerfDeps;
 };
-
-/**
- * The result of starting the bin: the exit code, and the stop function while serving.
- */
-export type Started = { readonly code: number; readonly stop?: () => Promise<void> };
 
 /**
  * The editor server app of the bin.
@@ -434,15 +444,34 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
 }
 
 /**
- * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, `e2e`, the engine page when
- * no game HTML file is given, or serving the game HTML file (from a re-spawned bin when
- * `deps.reexec` asks for one: then the child's exit code).
+ * Runs one of the four perf commands with the perf deps.
+ *
+ * @param args - The perf arguments.
+ * @param deps - The bin deps (`deps.perf`, else the real process).
+ * @returns `perf`: 0 with the stop function, or 1; the others: their exit code.
+ */
+async function startPerf(
+  args: Extract<BinArgs, { kind: "perf" | "perf-mark" | "perf-summary" | "perf-compare" }>,
+  deps: CliDeps
+): Promise<Started> {
+  const perf = deps.perf ?? processPerfDeps();
+  if (args.kind === "perf") return runPerf(args, perf, deps.ui);
+  if (args.kind === "perf-mark") return { code: await perfMark(args, perf, deps.ui) };
+  if (args.kind === "perf-summary") return { code: await perfSummary(args, perf, deps.ui) };
+  return { code: await perfCompare(args, perf, deps.ui) };
+}
+
+/**
+ * Parses and dispatches: help, an argument error, `mcp-config`, `mcp`, `e2e`, the four `perf`
+ * commands, the engine page when no game HTML file is given, or serving the game HTML file (from
+ * a re-spawned bin when `deps.reexec` asks for one: then the child's exit code).
  *
  * @param argv - Arguments after the script name.
  * @param deps - The bin deps.
  * @returns The exit code (0 help, mcp-config, the mcp bridge after stdin ended, or serving; 1
  * runtime error; 2 bad arguments or a root that is not a moku-game folder; for `e2e` the code of
- * its Playwright runs) and, while serving, the stop function.
+ * its Playwright runs; for `perf mark|summary|compare` theirs) and, while serving or measuring,
+ * the stop function.
  */
 export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
   const { ui } = deps;
@@ -466,7 +495,18 @@ export async function startBin(argv: readonly string[], deps: CliDeps): Promise<
   }
   if (args.kind === "mcp") return { code: await runBridge(args) };
   if (args.kind === "e2e") return { code: await runE2e(args, deps.e2e ?? processE2eDeps(), ui) };
+  if (args.kind === "run") return startServing(args, deps);
+  return startPerf(args, deps);
+}
 
+/**
+ * Serves: the engine page when no game HTML file is given, else the game HTML file.
+ *
+ * @param args - The `run` arguments.
+ * @param deps - The bin deps.
+ * @returns What serving started.
+ */
+function startServing(args: RunArgs, deps: CliDeps): Promise<Started> {
   // Without a game HTML file the engine writes the page; with one the bin serves it.
   if (args.html === undefined) return runEngine(args, deps);
   return serveOrReexec({ ...args, html: args.html }, deps);
@@ -625,11 +665,13 @@ export async function main(
   // The parent pid at process start: a parent that dies while the bin starts is still seen (A4).
   const parent = deps.reexec?.ppid();
 
-  // A bin given a game HTML file owns its signals from the start. Other commands keep the default
+  // A bin given a game HTML file, and a perf run, own their signals from the start (a Ctrl+C
+  // during the start must not leave .moku/perf.json behind). Other commands keep the default
   // action, the engine form too: it never serves here, so a caught signal would be lost.
   const parsed = parseBinArgs(argv);
   const servesHtml = parsed.kind === "run" && parsed.html !== undefined;
-  const early = servesHtml ? catchSignalsEarly() : undefined;
+  const ownsSignals = servesHtml || parsed.kind === "perf";
+  const early = ownsSignals ? catchSignalsEarly() : undefined;
   const { code, stop } = await startBin(argv, deps).catch((error: unknown) => {
     early?.release();
     throw error;
