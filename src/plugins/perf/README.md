@@ -131,8 +131,12 @@ and `overMs` are its own row's. A ring without the `budgetMs` column falls back 
     axis's seconds) and `"fixed"` (the tape and its readout, the caption, `now`, the stack legend, on a transparent
     ground) for a sliding canvas under a still one; `"base"` (the well, the grid, the tape's ground, spine and ticks)
     for an offscreen canvas redrawn on a size, look or scale change, and `"over"` (everything else) painted over it.
-  - `nowMs` — the plot's right edge in page-clock ms, for interpolated drawing: the axis runs to it, the newest row
-    ends at its own end, only rows inside the span are drawn. The window's `endMs` by default.
+  - `nowMs` — the plot's right edge in page-clock ms, for interpolated drawing: the axis runs to it and only rows
+    inside the span are drawn. Past the newest row, that row ends at its own end; before it, the rows it has not
+    reached are held back (no bar, flag or cursor, and no hit) and the row it is inside of is cut at the plot's
+    right edge. The window's `endMs` by default.
+  - `spanMs` — the time the plot spans under a `nowMs` (the tools strip cuts its playout delay off the window's
+    span). The window's span by default; the wide axis puts each second at its own time.
   - `leadPx` — CSS px of plot past the visible right edge, for a canvas wider than its well slid by a compositor
     transition: the time scale is the one of `width − leadPx`, `now` and the left-anchored texts move by it.
 

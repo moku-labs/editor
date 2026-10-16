@@ -242,16 +242,24 @@ const COCKPIT_LOOK: GraphLook = {
 };
 
 /**
- * The look of the paint in progress: its colours, cause hues and fonts, and the first row inside
- * the span (0 unless a moving now hides older rows). Set by `paintGraph` before it draws; one
- * object for every paint, so nothing is allocated.
+ * The look of the paint in progress: its colours, cause hues and fonts, the first row inside the
+ * span (0 unless a moving now hides older rows) and the end of the rows drawn (the window's count
+ * unless a now before the newest row holds the newer ones back). Set by `paintGraph` before it
+ * draws; one object for every paint, so nothing is allocated.
  */
 const look: {
   colours: GraphPalette;
   hues: readonly string[];
   fonts: GraphFonts;
   firstRow: number;
-} = { colours: GRAPH_COLOURS, hues: COCKPIT_LOOK.hues, fonts: GRAPH_FONTS.wide, firstRow: 0 };
+  endRow: number;
+} = {
+  colours: GRAPH_COLOURS,
+  hues: COCKPIT_LOOK.hues,
+  fonts: GRAPH_FONTS.wide,
+  firstRow: 0,
+  endRow: 0
+};
 
 /** The y of each tape label drawn so far in one paint (module scratch, never reallocated). */
 const TAPE_Y = new Float64Array(8);
@@ -551,14 +559,14 @@ function paintRow(
  */
 function paintRows(g: GraphContext2D, window: PerfWindowView, state: GraphState): void {
   let breaks = 0;
-  for (let row = look.firstRow; row < window.count; row += 1) {
+  for (let row = look.firstRow; row < look.endRow; row += 1) {
     const rest = restAt(window, row);
     if (rest === REST.break) breaks += 1;
     else paintRow(g, window, state, row, rest);
   }
   band(g, look.colours.baseline, state.px0, state.px1 - state.px0, state.py1, state.py1 + 1);
   if (breaks === 0) return;
-  for (let row = look.firstRow; row < window.count; row += 1) {
+  for (let row = look.firstRow; row < look.endRow; row += 1) {
     if (restAt(window, row) === REST.break) paintBreak(g, window, state, row);
   }
 }
@@ -584,7 +592,7 @@ function paintBudget(
   g.lineWidth = full ? BUDGET_LINE : HAIRLINE;
   g.setLineDash(full ? DASH_NONE : DASH_HALF);
   g.beginPath();
-  for (let row = look.firstRow; row < window.count; row += 1) {
+  for (let row = look.firstRow; row < look.endRow; row += 1) {
     const y = yOf(state, cell(window.budgetMs, row) * share);
     const left = rowLeft(state, window, row);
     if (row === look.firstRow) g.moveTo(left, y);
@@ -658,7 +666,7 @@ function paintRateSwitches(
   state: GraphState,
   layout: Layout
 ): void {
-  for (let row = Math.max(1, look.firstRow); row < window.count; row += 1) {
+  for (let row = Math.max(1, look.firstRow); row < look.endRow; row += 1) {
     const rate = cell(window.rateMs, row);
     if (Math.abs(rate - cell(window.rateMs, row - 1)) <= RATE_EPSILON) continue;
     const x = xOf(state, cell(window.t, row));
@@ -842,8 +850,8 @@ function paintFlag(
 }
 
 /**
- * Steps 6–7: the cursor at the focus row, then every spike, oldest first. A cause code the editor
- * does not know is skipped.
+ * Steps 6–7: the cursor at the focus row, then every spike, oldest first; a row held back by the
+ * moving now gets neither. A cause code the editor does not know is skipped.
  *
  * @param g - The context.
  * @param window - The window.
@@ -859,14 +867,15 @@ function paintSpikes(
   layout: Layout
 ): void {
   const focus = focusRow(window, view);
-  if (focus >= 0) {
+  if (focus >= 0 && focus < look.endRow) {
     band(g, look.colours.ink, rowCentre(state, window, focus), 1, state.py0, state.py1);
   }
   state.flagCount = 0;
   for (let index = 0; index < window.spikeCount; index += 1) {
     const row = cell(window.spikes, index);
     const code = cell(window.cause, row);
-    if (code < 1 || code > STYLE_OF_CODE.length || row < look.firstRow) continue;
+    const shown = row >= look.firstRow && row < look.endRow;
+    if (code < 1 || code > STYLE_OF_CODE.length || !shown) continue;
     paintSpikeBar(g, window, state, layout, row, code);
     paintFlag(g, window, state, layout, row, code, row === view.selected);
   }
@@ -1254,9 +1263,7 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState): void 
   if (view.wide) {
     g.textAlign = "center";
     for (let second = seconds - 1; second > 0; second -= 1) {
-      const x =
-        lead === 0 ? px1 - ((px1 - px0) * second) / seconds : px1 - second * SECOND_MS * pxPerMs;
-      g.fillText(state.axisText[seconds - second] ?? "", x, y);
+      g.fillText(state.axisText[seconds - second] ?? "", px1 - second * SECOND_MS * pxPerMs, y);
     }
   }
 }
@@ -1380,7 +1387,8 @@ export function msToPx(window: PerfWindowView, width: number, wide: boolean, ms:
 
 /**
  * Lays out a paint in `state`: the plot box and the time axis, kept for spikeAt / rowAt. A lead
- * keeps the time scale of the visible width and reaches further back by the time it covers.
+ * keeps the time scale of the visible width and reaches further back by the time it covers; a
+ * moving now spans `view.spanMs` when given.
  *
  * @param window - The window.
  * @param view - The view.
@@ -1389,9 +1397,12 @@ export function msToPx(window: PerfWindowView, width: number, wide: boolean, ms:
  */
 function layOut(window: PerfWindowView, view: GraphView, state: GraphState, layout: Layout): void {
   const lead = view.leadPx ?? 0;
-  const span = spanOf(window);
-  const leadMs = lead === 0 ? 0 : (lead * span) / plotWidth(view.width - lead, layout);
   const now = view.nowMs;
+  const span =
+    now === undefined || view.spanMs === undefined
+      ? spanOf(window)
+      : Math.max(MIN_SPAN_MS, view.spanMs);
+  const leadMs = lead === 0 ? 0 : (lead * span) / plotWidth(view.width - lead, layout);
   state.px0 = PLOT_LEFT;
   state.px1 = view.width - layout.tape;
   state.py0 = layout.flagBand + PLOT_TOP_GAP;
@@ -1401,6 +1412,25 @@ function layOut(window: PerfWindowView, view: GraphView, state: GraphState, layo
   state.spanMs = span + leadMs;
   // Under a moving now the newest row ends at its own end; the rest of the plot is still empty.
   state.edgeX = now === undefined ? state.px1 : Math.min(state.px1, xOf(state, window.endMs));
+}
+
+/**
+ * The rows the moving now has reached: the count of rows that start before it (the newer ones are
+ * held back until it reaches them).
+ *
+ * @param window - The window.
+ * @param nowMs - The plot's right edge, page-clock ms.
+ * @returns The end of the rows to draw (exclusive); 0 for an empty window.
+ */
+function rowsBefore(window: PerfWindowView, nowMs: number): number {
+  let low = 0;
+  let high = window.count;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (cell(window.t, middle) < nowMs) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 /**
@@ -1476,7 +1506,8 @@ function paintFixed(
  * a transparent ground); or, for the tools page's interpolated drawing, its static `base` (the well,
  * the grid, the tape's body) and the `over` layer painted each frame on a blit of it. `view.look`
  * picks the cockpit's or the editor's light or dark colours, cause hues and fonts; `view.nowMs`
- * moves the time axis's right edge past the newest row (only the rows inside the span are drawn).
+ * moves the time axis's right edge (only the rows inside the span are drawn; rows it has not reached
+ * are held back) and `view.spanMs` sets the time the plot spans under it.
  * The caller owns the canvas: it sizes the backing store and sets the dpr transform first (and
  * clears a fixed layer's canvas); the painter works in CSS px. Allocates nothing per paint; label
  * strings are built only when their cached key changed and the legends are measured only while
@@ -1499,6 +1530,7 @@ export function paintGraph(
   useLook(state, view.look ?? COCKPIT_LOOK, view.wide);
   layOut(window, view, state, layout);
   look.firstRow = view.nowMs === undefined ? 0 : firstVisibleRow(window, state);
+  look.endRow = view.nowMs === undefined ? window.count : rowsBefore(window, view.nowMs);
   if (layer === "base") {
     paintWell(g, view, state);
     paintTapeTicks(g, view, state);

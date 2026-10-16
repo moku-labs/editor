@@ -14,7 +14,8 @@ const BAR_SLOP = 9;
 
 /**
  * The spike under a tap at CSS px `(x, y)`: inside the flag band on a flag box ± 4 px, its row;
- * else the spike bar whose centre is nearest, within 9 px.
+ * else the spike bar whose centre is nearest, within 9 px (a bar right of the plot, not drawn yet
+ * under a moving now, is not hit).
  *
  * @param state - The painter state of the last paint.
  * @param window - The window it painted.
@@ -39,8 +40,9 @@ export function spikeAt(state: GraphState, window: PerfWindowView, x: number, y:
   let distance = Number.POSITIVE_INFINITY;
   for (let index = 0; index < window.spikeCount; index += 1) {
     const row = cell(window.spikes, index);
-    const away = Math.abs(rowCentre(state, window, row) - x);
-    if (away <= BAR_SLOP && away < distance) {
+    const centre = rowCentre(state, window, row);
+    const away = Math.abs(centre - x);
+    if (centre <= state.px1 && away <= BAR_SLOP && away < distance) {
       best = row;
       distance = away;
     }
@@ -49,7 +51,8 @@ export function spikeAt(state: GraphState, window: PerfWindowView, x: number, y:
 }
 
 /**
- * The row under `x` by time (binary search on `t`), clamped to the window.
+ * The row under `x` by time (binary search on `t`), clamped to the window and to the plot's right
+ * edge (a row the moving now has not reached is not drawn).
  *
  * @param state - The painter state of the last paint.
  * @param window - The window it painted.
@@ -63,7 +66,7 @@ export function spikeAt(state: GraphState, window: PerfWindowView, x: number, y:
 export function rowAt(state: GraphState, window: PerfWindowView, x: number): number {
   if (window.count === 0) return -1;
   const width = Math.max(1, state.px1 - state.px0);
-  const t = state.startMs + ((x - state.px0) / width) * state.spanMs;
+  const t = state.startMs + ((Math.min(x, state.px1) - state.px0) / width) * state.spanMs;
   let low = 0;
   let high = window.count - 1;
   while (low < high) {

@@ -17,6 +17,7 @@ import type { RenderViewCtx, RenderViewState } from "../types";
 import { readWireWindow } from "./contract";
 import { stripView } from "./derive";
 import { isPerfSecond, isRecorderStatus, isSpikeList, isSpikeRecord } from "./guards";
+import { notePlayoutArrival } from "./playout";
 import { clearStripData, notifyStrip } from "./state";
 import { stepFrom } from "./step";
 import type { DeviceStripState, DeviceStripView } from "./types";
@@ -164,7 +165,9 @@ function storesOf(strip: DeviceStripState): readonly (readonly [string, Store])[
       PERF_WINDOW,
       value => {
         if (!readWireWindow(value, strip.window)) return false;
-        strip.windowAt = performance.now();
+        const at = performance.now();
+        notePlayoutArrival(strip.playout, strip.windowAt, at);
+        strip.windowAt = at;
         return true;
       }
     ],

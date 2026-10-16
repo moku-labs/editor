@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { GraphContext2D, GraphView } from "../../graph";
-import { CAUSE_STYLE, createGraphState, GRAPH_COLOURS, paintGraph, rowAt } from "../../graph";
+import {
+  CAUSE_STYLE,
+  createGraphState,
+  GRAPH_COLOURS,
+  paintGraph,
+  rowAt,
+  spikeAt
+} from "../../graph";
+import { axisLabel } from "../../graph/labels";
 import { causeHue, GRAPH_PALETTES, graphLook } from "../../graph/themes";
 import type { PerfCause, PerfWindowView } from "../../protocol";
 import { CAUSE_BITS, CAUSE_RANK, GPU_BIT } from "../../protocol";
@@ -229,6 +237,51 @@ describe("the moving now (spec 09 Amendment 2026-10-15)", () => {
       calls.filter(call => call.op === "fillRect" && call.fill === js).length;
     expect(bars(moved.calls)).toBeLessThan(bars(all.calls));
     expect(bars(all.calls) - bars(moved.calls)).toBeLessThanOrEqual(16);
+  });
+
+  it("a now before the newest row holds the newer rows back: no bar, flag or cursor right of the plot, and no hit on them (spec 09 Amendment 2026-10-16)", () => {
+    const window = demoWindow();
+    const state = createGraphState(window.capacity);
+    const rec = recorder();
+    // The gpu spike (row 330) starts 10 ms after now: it has not slid in yet; row 329 straddles now.
+    const now = (window.t[330] ?? 0) - 10;
+
+    paintGraph(
+      rec.g,
+      window,
+      { ...WIDE, look: graphLook("light"), layer: "over", nowMs: now },
+      state
+    );
+
+    const { light } = GRAPH_PALETTES;
+    const bars = rec.calls.filter(call => call.op === "fillRect" && call.fill === light.js);
+    expect(bars.length).toBeGreaterThan(100);
+    expect(bars.every(call => Number(call.args[0]) + Number(call.args[2]) <= state.px1 + 0.5)).toBe(
+      true
+    );
+    expect(state.flagCount).toBe(1);
+    expect(state.flagRow[0]).toBe(300);
+    const plotHigh = state.py1 - state.py0;
+    const cursor = rec.calls.filter(
+      call => call.op === "fillRect" && call.fill === light.ink && call.args[3] === plotHigh
+    );
+    expect(cursor).toHaveLength(0);
+    expect(spikeAt(state, window, state.px1 + 2, 150)).toBe(-1);
+    expect(rowAt(state, window, state.px1 + 20)).toBe(329);
+  });
+
+  it("spanMs is the time the plot spans under a now: the origin, and the axis's seconds at their own times", () => {
+    const window = demoWindow();
+    const state = createGraphState(window.capacity);
+    const rec = recorder();
+
+    paintGraph(rec.g, window, { ...WIDE, nowMs: 5000, spanMs: 4500 }, state);
+
+    expect(state.startMs).toBeCloseTo(500);
+    expect(state.spanMs).toBe(4500);
+    const second = rec.calls.find(call => call.op === "fillText" && call.args[0] === axisLabel(1));
+    const pxPerMs = (state.px1 - state.px0) / 4500;
+    expect(Number(second?.args[1])).toBeCloseTo(state.px1 - 1000 * pxPerMs, 6);
   });
 
   it("the base layer is the static part, the over layer everything else on it", () => {

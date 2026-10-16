@@ -2,6 +2,7 @@
  * @file renderView device strip — the strip's state factory and its reset on a session change.
  */
 import { createPerfWindow } from "./contract";
+import { createPlayout, resetPlayout } from "./playout";
 import type { DeviceStripState } from "./types";
 
 /**
@@ -23,6 +24,7 @@ export function createDeviceStripState(): DeviceStripState {
     secondAt: undefined,
     window: createPerfWindow(STRIP_ROWS),
     windowAt: undefined,
+    playout: createPlayout(),
     spikes: [],
     recorder: undefined,
     perf: "absent",
@@ -62,8 +64,9 @@ export function subscribeStrip(strip: DeviceStripState, fn: () => void): () => v
 }
 
 /**
- * Forgets the data of the session: the values, the window's rows, the selection and the record
- * (a late record answer is dropped). The watches and More are left as they are.
+ * Forgets the data of the session: the values, the window's rows and the playout clock that drew
+ * them, the selection and the record (a late record answer is dropped). The watches and More are
+ * left as they are.
  *
  * @param strip - The strip state.
  */
@@ -72,6 +75,7 @@ export function clearStripData(strip: DeviceStripState): void {
   strip.secondAt = undefined;
   strip.window.count = 0;
   strip.windowAt = undefined;
+  resetPlayout(strip.playout);
   strip.window.spikeCount = 0;
   strip.window.version += 1;
   strip.spikes = [];

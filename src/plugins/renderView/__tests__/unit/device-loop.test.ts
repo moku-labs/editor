@@ -20,9 +20,10 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // device/paint.ts, spec 09 Amendment 2026-10-15: on the tools page the strip
-// repaints on requestAnimationFrame with a moving now (capped at one read past
-// the newest row), over a static base layer redrawn only on a size, theme or
-// scale change; the loop runs only while Render shows, the tab is visible and
+// repaints on requestAnimationFrame with a moving now (since the Amendment
+// 2026-10-16 a playout clock behind the newest row: device-playout.test.ts),
+// over a static base layer redrawn only on a size, theme or scale change; the
+// loop runs only while Render shows, the tab is visible and
 // values arrive (2 s without one: it stops at the last frame); reduced motion
 // keeps the 4 Hz steps. The painter is mocked: perf/graph owns its pixels.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,7 +190,7 @@ describe("the interpolated loop", () => {
     expect(frames).toHaveLength(0);
   });
 
-  it("now runs with the clock past the newest row but never past one read", () => {
+  it("now runs with the clock behind the newest row and never past it (spec 09 Amendment 2026-10-16)", () => {
     start();
     deliverWindow();
     vi.advanceTimersByTime(REPAINT_MS);
@@ -202,8 +203,9 @@ describe("the interpolated loop", () => {
     runFrames();
     const capped = views("over").at(-1)?.nowMs ?? 0;
 
-    expect(moving).toBe(endMs + 100);
-    expect(capped).toBe(endMs + REPAINT_MS);
+    expect(moving).toBeLessThan(endMs);
+    expect(capped).toBeGreaterThan(moving);
+    expect(capped).toBe(endMs);
   });
 
   it("the static base layer redraws only on a size, theme or scale change", () => {

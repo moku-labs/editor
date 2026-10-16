@@ -1,26 +1,28 @@
 /**
  * @file renderView device strip — the drawing of the strip's canvas on the tools page (spec 09
- * Amendment 2026-10-15): a requestAnimationFrame loop with a moving now (the newest row's end plus
- * the time since its window arrived, at most one read past it), over a static base layer drawn into
- * an offscreen canvas only on a size, theme or scale change; only while Render shows, the tab is
- * visible and windows arrive (2 s without one: it stops at its last frame); reduced motion keeps
- * the 4 Hz steps. The graph follows the editor's light or dark theme (perf/graph's palettes) and
- * repaints on a switch. The caller-owned canvas: the backing store is sized `width × dpr` by
- * `height × dpr` only when the CSS size or the dpr changed, and the dpr transform is set before
- * every paint. The loop lives with the mounted canvas: its cleanup stops it.
+ * Amendments 2026-10-15 and 2026-10-16): a requestAnimationFrame loop with a moving now, the
+ * playout clock that runs at real time a measured delay behind the newest row (`playout.ts`), over a
+ * static base layer drawn into an offscreen canvas only on a size, theme or scale change; only while
+ * Render shows, the tab is visible and windows arrive (2 s without one: it stops at its last frame);
+ * reduced motion keeps the 4 Hz steps at the newest row. The graph follows the editor's light or
+ * dark theme (perf/graph's palettes) and repaints on a switch. The caller-owned canvas: the backing
+ * store is sized `width × dpr` by `height × dpr` only when the CSS size or the dpr changed, and the
+ * dpr transform is set before every paint. The loop lives with the mounted canvas: its cleanup
+ * stops it.
  */
 import { workspacePlugin } from "../../workspace";
 import type { RenderViewCtx } from "../types";
 import type { GraphContext2D, GraphLayer, GraphLook, GraphState, GraphTheme } from "./contract";
 import { graphLook, paintGraph, resetGraphText, rowAt, spikeAt } from "./contract";
+import { playoutSpan, resetPlayout, stepPlayout } from "./playout";
 import { notifyStrip } from "./state";
 import { selectedRow } from "./step";
 import type { DeviceStripState } from "./types";
 import { openSpike, selectFrame } from "./watch";
 
 /**
- * One window read, ms: the supervisor's period (the 4 Hz steps of reduced motion) and how far the
- * moving now may run past the newest row (spec 09 Amendment 2026-10-15).
+ * One window read, ms: the supervisor's period and the 4 Hz steps of reduced motion (spec 09
+ * Amendment 2026-10-15).
  */
 export const REPAINT_MS = 250;
 
@@ -103,9 +105,9 @@ type FrameView = {
 };
 
 /**
- * The view of a frame with a moving now.
+ * The view of a frame with a moving now: the right edge's time and the time the plot spans.
  */
-type MovingView = FrameView & { nowMs: number };
+type MovingView = FrameView & { nowMs: number; spanMs: number };
 
 /**
  * What one mounted canvas paints with: its context, the painter state, the base layer and its key,
@@ -232,8 +234,9 @@ function editorTheme(ctx: RenderViewCtx): GraphTheme {
 }
 
 /**
- * The moving now: the newest row's end plus the time since its window arrived, never more than one
- * read past it (spec 09 Amendment 2026-10-15).
+ * The moving now: the strip's playout clock stepped to this frame, a measured delay behind the
+ * newest row and never past it (spec 09 Amendment 2026-10-16); the newest row's end before a window
+ * arrived.
  *
  * @param strip - The strip state.
  * @returns Page-clock ms of the plot's right edge.
@@ -241,7 +244,7 @@ function editorTheme(ctx: RenderViewCtx): GraphTheme {
 export function movingNow(strip: DeviceStripState): number {
   const { endMs } = strip.window;
   if (strip.windowAt === undefined) return endMs;
-  return endMs + Math.min(REPAINT_MS, Math.max(0, performance.now() - strip.windowAt));
+  return stepPlayout(strip.playout, endMs, strip.windowAt, performance.now());
 }
 
 /**
@@ -277,18 +280,20 @@ function drawBase(surface: Surface, strip: DeviceStripState, look: GraphLook): v
 /**
  * Paints one frame: sizes the backing store when the CSS size or the dpr changed, sets the dpr
  * transform, blits the base layer (redrawn only when stale) and paints the moving part over it;
- * without a base layer the whole graph. Records the window version painted.
+ * without a base layer the whole graph. A moving frame steps the playout clock and spans the window
+ * less its cut; a step paints the whole window at the newest row. Records the window version
+ * painted.
  *
  * @param surface - The canvas's surface.
  * @param strip - The strip state.
  * @param painter - The canvas's painter.
- * @param nowMs - The right edge's time; undefined for a step at the newest row.
+ * @param moving - At the playout clock (the loop); false for a 4 Hz step at the newest row.
  */
 function drawFrame(
   surface: Surface,
   strip: DeviceStripState,
   painter: Painter,
-  nowMs: number | undefined
+  moving: boolean
 ): void {
   const { canvas, g, box, size } = surface;
   if (box.width === 0 || box.height === 0) return;
@@ -305,8 +310,10 @@ function drawFrame(
   drawBase(surface, strip, look);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   let view: FrameView = surface.still;
-  if (nowMs !== undefined) {
-    surface.moving.nowMs = nowMs;
+  if (moving) {
+    const { window } = strip;
+    surface.moving.nowMs = movingNow(strip);
+    surface.moving.spanMs = playoutSpan(strip.playout, window.endMs - window.startMs);
     view = surface.moving;
   }
   view.width = size.width;
@@ -381,16 +388,16 @@ function makeSurface(
     size: { width: 0, height: 0, dpr: 0 },
     theme,
     still: viewOf(paints),
-    moving: { ...viewOf(paints), nowMs: 0 },
+    moving: { ...viewOf(paints), nowMs: 0, spanMs: 0 },
     base: viewOf("base")
   };
 }
 
 /**
- * Starts the drawing of a mounted strip canvas (spec 09 Amendment 2026-10-15): a
- * requestAnimationFrame loop with a moving now while Render shows, the tab is visible and windows
- * arrive (it stops at its last frame 2 s after the last one); reduced motion paints 4 Hz steps
- * instead. A supervisor every `REPAINT_MS` starts the loop again, a second interval re-renders the
+ * Starts the drawing of a mounted strip canvas (spec 09 Amendments 2026-10-15 and 2026-10-16): a
+ * requestAnimationFrame loop at the playout clock while Render shows, the tab is visible and windows
+ * arrive (it stops at its last frame 2 s after the last one); reduced motion paints 4 Hz steps at
+ * the newest row instead. A supervisor every `REPAINT_MS` starts the loop again, a second interval re-renders the
  * strip's clocks once a second; the editor's theme switch repaints with the other palette; the fonts
  * reset the painter's measured legends when they load.
  *
@@ -399,7 +406,7 @@ function makeSurface(
  * @param graph - The painter state made with the canvas.
  * @param makeLayer - Makes the offscreen canvas of the base layer (a document canvas by default).
  * @returns The cleanup: stops the loop and both intervals, drops the theme and motion listeners and
- * the size observer (idempotent).
+ * the size observer, starts the playout clock over (idempotent).
  */
 export function startRepaint(
   ctx: RenderViewCtx,
@@ -426,12 +433,12 @@ export function startRepaint(
     strip.windowAt !== undefined && performance.now() - strip.windowAt <= STALE_AFTER_MS;
   const shouldRun = (): boolean => state.active && isTabVisible() && !motion.reduced && isLive();
   const paintStill = (): void => {
-    drawFrame(surface, strip, painter, motion.reduced ? undefined : movingNow(strip));
+    drawFrame(surface, strip, painter, !motion.reduced);
   };
   const frame = (): void => {
     loop.handle = undefined;
     if (!shouldRun()) return;
-    drawFrame(surface, strip, painter, movingNow(strip));
+    drawFrame(surface, strip, painter, true);
     loop.handle = requestAnimationFrame(frame);
   };
   const supervise = (): void => {
@@ -463,7 +470,10 @@ export function startRepaint(
     motion.stop();
     stopSize();
     if (painters.get(graph) === painter) painters.delete(graph);
-    if (strip.stopPaint === stop) strip.stopPaint = undefined;
+    // Only the canvas that draws now starts the clock over: a late second stop of an old one does not.
+    if (strip.stopPaint !== stop) return;
+    strip.stopPaint = undefined;
+    resetPlayout(strip.playout);
   };
   strip.stopPaint?.();
   strip.stopPaint = stop;

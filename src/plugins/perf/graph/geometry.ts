@@ -52,8 +52,8 @@ export function rowLeft(state: GraphState, window: PerfWindowView, row: number):
 }
 
 /**
- * The right x of a row's bar: the start of the next frame (the newest row's reaches `px1`), at
- * least 1 px right of its left.
+ * The right x of a row's bar: the start of the next frame (the newest row's reaches `px1`), cut at
+ * the plot's right edge (a row the moving now is inside of), at least 1 px right of its left.
  *
  * @param state - The painter state.
  * @param window - The window.
@@ -63,7 +63,7 @@ export function rowLeft(state: GraphState, window: PerfWindowView, row: number):
 export function rowRight(state: GraphState, window: PerfWindowView, row: number): number {
   const left = rowLeft(state, window, row);
   const right = row + 1 < window.count ? xOf(state, cell(window.t, row + 1)) : state.edgeX;
-  return Math.max(right, left + 1);
+  return Math.max(Math.min(right, state.px1), left + 1);
 }
 
 /**

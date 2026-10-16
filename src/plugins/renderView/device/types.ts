@@ -30,6 +30,31 @@ export type RecordState =
   | { readonly kind: "failed"; readonly frame: number; readonly message: string };
 
 /**
+ * The playout clock of the strip's graph (spec 09 Amendment 2026-10-16): the display clock that runs
+ * at real time behind the newest row, and the measured arrival interval its delay follows. One
+ * object per strip, changed in place every frame; started over on cleared data and a stopped loop.
+ *
+ * @example
+ * ```ts
+ * const clock: PlayoutClock = { ms: 45_120, at: 9031.2, gapMs: 1004, gapDevMs: 12, delayMs: 1202, cutMs: 1198 };
+ * ```
+ */
+export type PlayoutClock = {
+  /** Page-clock ms (the game's) of the plot's right edge at the last frame; undefined before the first. */
+  ms: number | undefined;
+  /** `performance.now()` of the last frame. */
+  at: number;
+  /** The smoothed gap between two window arrivals, ms; undefined before two arrivals. */
+  gapMs: number | undefined;
+  /** The smoothed deviation of the gaps from `gapMs`, ms. */
+  gapDevMs: number;
+  /** How far the clock sits behind the newest row: 1000 ms before two arrivals, then 250 to 1500 ms. */
+  delayMs: number;
+  /** The time cut off the left of the plot, ms: the delay, followed at the clock's trimmed pace. */
+  cutMs: number;
+};
+
+/**
  * The device strip's data and UI state (part of RenderViewState).
  */
 export type DeviceStripState = {
@@ -47,6 +72,8 @@ export type DeviceStripState = {
   readonly window: PerfWindow;
   /** `performance.now()` when the last window arrived: the moving now's origin and the loop's liveness. */
   windowAt: number | undefined;
+  /** The display clock the graph is drawn at, behind the newest row by a measured playout delay. */
+  readonly playout: PlayoutClock;
   /** The last `editor.perf.spikes` value, oldest first; [] before the first. */
   spikes: readonly PerfSpikeSummary[];
   /** The last `editor.recorder` value; undefined when the agent has no recorder source. */

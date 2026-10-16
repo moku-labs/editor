@@ -80,10 +80,18 @@ export type GraphView = {
   readonly look?: GraphLook;
   /**
    * Page-clock ms of the plot's right edge, for the tools page's interpolated drawing (spec 09
-   * Amendment 2026-10-15): the axis runs to this moving now, the newest row ends at its own end, and
-   * only the rows inside the span are drawn. The window's `endMs` by default.
+   * Amendments 2026-10-15 and 2026-10-16): the axis runs to this moving now and only the rows inside
+   * the span are drawn. Past the newest row, that row ends at its own end; before it, the newer rows
+   * are held back (they slide in from the right edge as the now reaches them). The window's `endMs`
+   * by default.
    */
   readonly nowMs?: number;
+  /**
+   * The time the plot spans under a `nowMs`, ms (the tools page cuts its playout delay off the
+   * window's span, so the left edge never runs before the oldest row). The window's span by default;
+   * without a `nowMs` it is not read.
+   */
+  readonly spanMs?: number;
 };
 
 /**
