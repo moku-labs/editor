@@ -4,10 +4,11 @@
  * /proc/stat), the GPU nodes (A5 of the table, else A6 + A5 of a devfreq GPU) and the start times
  * of the app candidates and the sandboxed processes (A5). `resolveProbe` then picks the three
  * processes: the app (the non-sandboxed process of a WebView devtools socket; several → the one CDP
- * matched), its WebView renderer (the sandboxed process started closest after the app; another
+ * matched; no socket → the process named like the linked device's app id), its WebView renderer (the sandboxed process started closest after the app; another
  * within 2 s → ambiguous) and surfaceflinger.
  */
 
+import { baseAppId } from "../../hub/protocol";
 import type {
   AdbCommand,
   AttachRecord,
@@ -235,14 +236,42 @@ function found(process: PsProcess): ProcessFind {
 }
 
 /**
- * The app: the pid CDP matched, else the only candidate; none → not-found, several → ambiguous.
+ * The process of an app by its name: the one named exactly like the app id, else the only one
+ * named like it once a trailing `.debug` is stripped from both (a store and a debug install of one
+ * game running side by side are told apart only by the exact name).
+ *
+ * @param processes - The processes of `ps`.
+ * @param appId - The linked device's app id.
+ * @returns The process, or undefined for none or several.
+ * @example
+ * ```ts
+ * namedApp([{ pid: 23811, name: "com.moku.garden.debug" }], "com.moku.garden.debug")?.pid; // 23811
+ * ```
+ */
+function namedApp(processes: readonly PsProcess[], appId: string): PsProcess | undefined {
+  const exact = processes.find(process => process.name === appId);
+  if (exact !== undefined) return exact;
+  const base = baseAppId(appId);
+  const alike = processes.filter(process => baseAppId(process.name) === base);
+  return alike.length === 1 ? alike[0] : undefined;
+}
+
+/**
+ * The app: the pid CDP matched, else the process named like the linked device's app (engine E3),
+ * else the only candidate; none → not-found, several → ambiguous.
  *
  * @param probe - What the probe found.
  * @param matched - The pid of the socket CDP attached to, if any.
+ * @param appId - The linked device's app id, if its pair named one.
  * @returns The app.
  */
-function appOf(probe: ProbeFound, matched: number | undefined): ProcessFind {
-  const pid = matched ?? (probe.apps.length === 1 ? probe.apps[0] : undefined);
+function appOf(
+  probe: ProbeFound,
+  matched: number | undefined,
+  appId: string | undefined
+): ProcessFind {
+  const named = appId === undefined ? undefined : namedApp(probe.processes, appId);
+  const pid = matched ?? named?.pid ?? (probe.apps.length === 1 ? probe.apps[0] : undefined);
   const process = probe.processes.find(item => item.pid === pid);
   if (process !== undefined) return found(process);
   return { found: false, reason: probe.apps.length > 1 ? "ambiguous" : "not-found" };
@@ -279,14 +308,16 @@ function rendererOf(probe: ProbeFound, app: ProcessFind): ProcessFind {
  *
  * @param probe - What the probe found.
  * @param socket - The devtools socket CDP attached to, if any (it names the app among several).
+ * @param appId - The linked device's app id, if its pair named one: the app's process by name
+ *   when no socket names it.
  * @returns The probe the ticks read.
  * @example
  * ```ts
  * resolveProbe({ cores: 8, gpu: [], sockets: [], apps: [], processes: [{ pid: 612, name: "surfaceflinger" }], starts: new Map() }, undefined).surfaceflinger; // { found: true, pid: 612, name: "surfaceflinger" }
  * ```
  */
-export function resolveProbe(probe: ProbeFound, socket: string | undefined): Probe {
-  const app = appOf(probe, socketPid(socket));
+export function resolveProbe(probe: ProbeFound, socket: string | undefined, appId?: string): Probe {
+  const app = appOf(probe, socketPid(socket), appId);
   const flinger = probe.processes.find(process => process.name === "surfaceflinger");
   return {
     cores: probe.cores,

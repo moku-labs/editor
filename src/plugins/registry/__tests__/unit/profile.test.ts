@@ -63,6 +63,26 @@ describe("readBuildInfo", () => {
     expect("engine" in build).toBe(false);
   });
 
+  it("carries the app id the build wrote (__MOKU_GAME_APP__, the header's app.id), suffix kept", () => {
+    // Bug: a phone pairing without its app id, so two phones of one model stay ambiguous.
+    stubBuild({ agent: true, engine: "0.15.1+2b7c11", app: "com.mokulabs.timber.debug" });
+
+    expect(readBuildInfo()).toEqual({
+      profile: "read",
+      engine: "0.15.1+2b7c11",
+      appId: "com.mokulabs.timber.debug"
+    });
+  });
+
+  it("leaves the app id out on an engine that writes none (0.15.0) or a non-string one", () => {
+    stubBuild({ agent: true, engine: "0.15.0+9c41e0" });
+    expect("appId" in readBuildInfo()).toBe(false);
+
+    // eslint-disable-next-line unicorn/no-null -- a global the page set to null
+    stubBuild({ agent: true, app: null });
+    expect("appId" in readBuildInfo()).toBe(false);
+  });
+
   it("answers a frozen object", () => {
     stubBuild({ dev: true });
 

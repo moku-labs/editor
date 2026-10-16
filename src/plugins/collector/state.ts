@@ -22,8 +22,8 @@ export function createCollectorState(): CollectorState {
 }
 
 /**
- * A new device log session: live, nothing written, its build from the pairing until a header
- * names one.
+ * A new device log session: live and recording (a phone ships a log only while it records),
+ * nothing written, its build from the pairing until a header names one.
  *
  * @param fields - Its device, the device's log name, the computer file and the normalized model.
  * @param fields.device - The device, as hub:device reported it.
@@ -60,6 +60,7 @@ export function createLogSession(fields: {
     emitTimer: undefined,
     stopTimedOut: false,
     queued: 0,
-    queueFull: false
+    queueFull: false,
+    recording: true
   };
 }

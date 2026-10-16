@@ -49,7 +49,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `envelope()` | `RunState` | `{ path, frame, tainted }` for editor commands that run no door. |
 | `clock()` | `Clock` | `{ frame, paused, held, reasons }` from the game clock and its pause stack. The channel heartbeat reads `frame` and `paused`; the reload checkpoint reads `held`. |
 | `game()` | `GameLike` | The configured game app, for an editor plugin that reads the engine directly (perf reads the renderer monitor). Throws the missing-game error without one. |
-| `build()` | `BuildInfo` | `{ profile, id?, engine? }` of this page (see "Build profile and allowed commands"). Read once; the flags of a page never change. |
+| `build()` | `BuildInfo` | `{ profile, id?, engine?, appId? }` of this page (see "Build profile and allowed commands"). Read once; the flags of a page never change. |
 
 ```ts
 registry.manifest().commands.length; // 21 door commands + module + editor commands
@@ -98,8 +98,11 @@ listener error is caught and logged once per streak. The next good delivery ends
 The registry reads the page's build flags once per descriptor build, from `globalThis` (no engine
 import; a string `"true"` is not a flag): `__MOKU_GAME_DEV__` gives `dev`, else
 `__MOKU_GAME_CONTROL__` gives `full`, else `__MOKU_GAME_AGENT__` gives `read`, else `none`.
-`__MOKU_GAME_BUILD__` and `__MOKU_GAME_ENGINE__` give `build.id` and `build.engine` when they are
-strings. Each door and module command gets `allowed` by `refusalOf(profile, effect)` (spec 10 C1):
+`__MOKU_GAME_BUILD__`, `__MOKU_GAME_ENGINE__` and `__MOKU_GAME_APP__` give `build.id`,
+`build.engine` and `build.appId` when they are strings. `appId` is the app id the engine also writes
+as the PerfLog header's `app.id` (the bundle identifier, with the `.debug` suffix of a native debug
+install); an engine before it (0.15.0) sets none and `appId` is absent. The bridge sends it in its
+`pair`, so the editor can tell two phones of one model apart. Each door and module command gets `allowed` by `refusalOf(profile, effect)` (spec 10 C1):
 
 | profile | `read`, `cosmetic` | `route`, `cheat`, `raw` |
 |---|---|---|
@@ -384,7 +387,7 @@ allowed, no overlay commands, build unknown"; an older hub ignores the new field
 | `OverlayMarker` | `"toggle" \| "button"`. |
 | `CommandRefusal` | `"read-only" \| "dev-only"`. |
 | `BuildProfile` | `"dev" \| "full" \| "read" \| "none"`. |
-| `BuildInfo` | `{ profile, id?, engine? }`, all readonly. |
+| `BuildInfo` | `{ profile, id?, engine?, appId? }`, all readonly. |
 | `CommandVia` | `"overlay" \| "bridge" \| "tools" \| "mcp" \| "local"`: who ran a command. The bridge turns the hub's `from` into `"tools"` or `"mcp"`; `"bridge"` is a hub that does not say who. Agent-side only, never on the wire. |
 | `CommandDescriptor` | Gains `overlay?`, `allowed?` and `reason?`. This registry always writes `allowed`, writes `reason` only with `allowed: false`, `overlay` only when set. |
 | `Manifest.build?` | The page's `BuildInfo`. |

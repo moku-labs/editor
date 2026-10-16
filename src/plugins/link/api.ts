@@ -20,6 +20,7 @@ import { addManifestListener, currentManifest } from "./sessions/manifest";
 import { ownSessionOf } from "./sessions/own";
 import { retryNow } from "./socket/connect";
 import { expectReload } from "./status/reload";
+import { addHeartbeatListener } from "./subscriptions/heartbeats";
 import { addTapListener } from "./subscriptions/taps";
 import { addWatch } from "./subscriptions/watch";
 import type { LinkApi, LinkCtx } from "./types";
@@ -101,6 +102,8 @@ export function createLinkApi(ctx: LinkCtx): LinkApi {
     onPublished: (method, fn) => addPublishedListener(ctx, method, fn),
 
     onSessions: fn => addSessionsListener(ctx, fn),
+
+    onHeartbeat: fn => addHeartbeatListener(ctx, fn),
 
     ownSession: () => ownSessionOf(state.sessions, state.frame)?.id,
 

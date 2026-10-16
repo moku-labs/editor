@@ -3,6 +3,7 @@
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createToolsCore, type ToolsEvents, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { Json, Manifest, SessionInfo, ToolsBoot } from "../../../registry/protocol";
@@ -26,7 +27,7 @@ import { TRACE, traceValue } from "../helpers";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, consoleViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, consoleViewPlugin]
 });
 
 const BOOT: ToolsBoot = {

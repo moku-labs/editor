@@ -4,7 +4,7 @@
  * the session listeners, `hotReload` the hot reload state, `selection` the editor selection,
  * `project` the project index, `devices` and `deviceTelemetry` connect's published values; `game`
  * notifications of the chosen session (`heartbeat`, `value`, `tap`) drive the status, the heap, the
- * watches and the tap listeners (R1).
+ * heartbeat listeners, the watches and the tap listeners (R1).
  */
 
 import type { Json, Message, Notification } from "../../registry/protocol";
@@ -20,6 +20,7 @@ import { onPublishedNote } from "../server/published";
 import { applySessions, closeChosen } from "../sessions/choose";
 import { notifySessions } from "../sessions/listeners";
 import { applyStatus } from "../status/machine";
+import { notifyHeartbeat } from "../subscriptions/heartbeats";
 import { notifyTap } from "../subscriptions/taps";
 import { deliver } from "../subscriptions/watch";
 import type { LinkCtx, LinkState } from "../types";
@@ -153,7 +154,8 @@ function heapOf(value: Json | undefined): NonNullable<LinkState["heartbeat"]>["h
 
 /**
  * `game` · `heartbeat` of the chosen session: stored with the local arrival time and its heap
- * (a beat without a well-formed heap clears it).
+ * (a beat without a well-formed heap clears it), then, when it carries its `at`, given to the
+ * heartbeat listeners.
  *
  * @param ctx - Domain context of link.
  * @param note - The notification.
@@ -163,13 +165,16 @@ function onHeartbeat(ctx: LinkCtx, note: Notification): void {
   const params = objectOf(note.params);
   const frame = params && numberOf(params, "frame");
   const paused = params && flagOf(params, "paused");
-  if (note.session !== state.chosen || frame === undefined || paused === undefined) return;
+  const session = state.chosen;
+  if (note.session !== session || frame === undefined || paused === undefined) return;
 
   const receivedAt = Date.now();
   const heap = heapOf(params?.heap);
   state.heartbeat =
     heap === undefined ? { frame, paused, receivedAt } : { frame, paused, receivedAt, heap };
   applyStatus(ctx, { type: "heartbeat", frame, paused });
+  const at = params && numberOf(params, "at");
+  if (session !== undefined && at !== undefined) notifyHeartbeat(ctx, { session, at, receivedAt });
 }
 
 /**

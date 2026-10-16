@@ -1,79 +1,168 @@
 /**
- * @file renderView view — pause, live, seek and the span (spec 09 § M11): live, the view's end
- * is liveEnd() every frame; paused, it stays at endMs while the history keeps filling. Typed
- * stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract the other Mission
- * control units build against; build wave 3 (RV1) writes the bodies.
+ * @file renderView view — live, pause, seek and the span (spec 09 § M11): live, the view's end is
+ * the display clock's right edge every frame; paused, it stays at `endMs` while the history keeps
+ * filling ("Paused · N s behind live"). A seek pauses and is clamped into the history; a span change
+ * keeps the end; a paused view whose start left the history is pushed forward.
  */
 import type { PerfHistory } from "../source/contract";
-import { notBuilt } from "../stub";
 import type { MissionState } from "../types";
-import type { MissionSpan, MissionViewState } from "./types";
+import { liveEnd } from "./clock";
+import type { DisplayClock, MissionSpan, MissionViewState } from "./types";
 
 /** The spans of the view, ms (spec 09 § M12). */
 export const SPANS: readonly MissionSpan[] = [6000, 30_000, 120_000];
 
 /**
- * Freezes the view's end at liveEnd(); nothing without frames.
+ * The right edge of the live view now, outside the paint loop (an api call, a key): the display
+ * clock stepped to `now`, in the mode of its last frame — the reduced-motion step when the loop
+ * last painted with it, else the playout clock.
  *
- * @param _view - The view.
- * @param _liveEndMs - liveEnd() now; undefined before the first frames.
- * @returns Whether the view paused.
- * @throws {Error} Until build wave 3: "renderView view/pauseView is not built yet".
+ * @param clock - The display clock.
+ * @param now - `performance.now()`.
+ * @returns Source-clock ms; undefined before the first arrival.
+ * @example
+ * ```ts
+ * clockEnd(mission.clock, performance.now()); // 78_420: a delay behind the newest frame
+ * ```
  */
-export function pauseView(_view: MissionViewState, _liveEndMs: number | undefined): boolean {
-  return notBuilt("view/pauseView", 3);
+export function clockEnd(clock: DisplayClock, now: number): number | undefined {
+  return liveEnd(clock, now, clock.stepMs !== undefined && clock.stepAt > clock.at);
+}
+
+/**
+ * Freezes the view's end at the live end; nothing before the first frames arrived.
+ *
+ * @param view - The view.
+ * @param liveEndMs - The live end now; undefined before the first frames.
+ * @returns Whether the view is paused now.
+ * @example
+ * ```ts
+ * pauseView(mission.view, 78_420); // true: "Paused · 0.0 s behind live"
+ * ```
+ */
+export function pauseView(view: MissionViewState, liveEndMs: number | undefined): boolean {
+  if (!view.live) return true;
+  if (liveEndMs === undefined) return false;
+  view.live = false;
+  view.endMs = liveEndMs;
+  return true;
 }
 
 /**
  * Back to live: the view follows the clock and the selection is cleared.
  *
- * @param _mission - Mission control's state.
- * @throws {Error} Until build wave 3: "renderView view/liveView is not built yet".
+ * @param mission - Mission control's state.
+ * @example
+ * ```ts
+ * liveView(mission);
+ * mission.selection; // undefined
+ * ```
  */
-export function liveView(_mission: MissionState): void {
-  notBuilt("view/liveView", 3);
+export function liveView(mission: MissionState): void {
+  mission.view.live = true;
+  if (mission.selection === undefined) return;
+  mission.selection = undefined;
+  mission.selectionVersion += 1;
 }
 
 /**
- * Pauses and moves the view's end, clamped into `[min(firstT + span, liveEnd), liveEnd]`.
+ * The lowest end a paused view may have: one span after the oldest frame, but never past live.
  *
- * @param _view - The view.
- * @param _endMs - The asked end, source clock.
- * @param _history - The history the end is clamped into.
- * @param _liveEndMs - liveEnd() now.
- * @throws {Error} Until build wave 3: "renderView view/seekView is not built yet".
+ * @param view - The view.
+ * @param history - The history.
+ * @param liveEndMs - The live end now.
+ * @returns Source-clock ms.
+ */
+function lowestEnd(view: MissionViewState, history: PerfHistory, liveEndMs: number): number {
+  const oldest = history.count > 0 ? (history.t[0] ?? liveEndMs) : liveEndMs;
+  return Math.min(oldest + view.span, liveEndMs);
+}
+
+/**
+ * Pauses and moves the view's end, clamped into `[min(oldest + span, liveEnd), liveEnd]`.
+ *
+ * @param view - The view.
+ * @param endMs - The asked end, source clock.
+ * @param history - The history the end is clamped into.
+ * @param liveEndMs - The live end now.
+ * @example
+ * ```ts
+ * seekView(mission.view, 40_000, mission.history, 78_420); // paused 38.4 s behind live
+ * ```
  */
 export function seekView(
-  _view: MissionViewState,
-  _endMs: number,
-  _history: PerfHistory,
-  _liveEndMs: number
+  view: MissionViewState,
+  endMs: number,
+  history: PerfHistory,
+  liveEndMs: number
 ): void {
-  notBuilt("view/seekView", 3);
+  view.live = false;
+  view.endMs = Math.min(liveEndMs, Math.max(lowestEnd(view, history, liveEndMs), endMs));
 }
 
 /**
- * Sets the span; the view's end is kept.
+ * Sets the span; the view's end is kept (live stays live).
  *
- * @param _view - The view.
- * @param _span - The new span.
- * @throws {Error} Until build wave 3: "renderView view/setViewSpan is not built yet".
+ * @param view - The view.
+ * @param span - The new span.
+ * @example
+ * ```ts
+ * setViewSpan(mission.view, 30_000);
+ * mission.view.endMs; // unchanged: the end is kept
+ * ```
  */
-export function setViewSpan(_view: MissionViewState, _span: MissionSpan): void {
-  notBuilt("view/setViewSpan", 3);
+export function setViewSpan(view: MissionViewState, span: MissionSpan): void {
+  view.span = span;
 }
 
 /**
- * The view's end now: liveEnd() while live, endMs while paused.
+ * Pushes a paused view forward when its start left the history (the oldest rows dropped, or a
+ * longer span). A live view is left alone.
  *
- * @param _view - The view.
- * @param _liveEndMs - liveEnd() now.
+ * @param view - The view.
+ * @param history - The history.
+ * @param liveEndMs - The live end now.
+ * @example
+ * ```ts
+ * keepInHistory(mission.view, mission.history, 138_000); // a view rewound 2 min ago moves on
+ * ```
+ */
+export function keepInHistory(
+  view: MissionViewState,
+  history: PerfHistory,
+  liveEndMs: number
+): void {
+  if (view.live) return;
+  view.endMs = Math.min(liveEndMs, Math.max(view.endMs, lowestEnd(view, history, liveEndMs)));
+}
+
+/**
+ * The view's end now: the live end while live, the frozen end while paused.
+ *
+ * @param view - The view.
+ * @param liveEndMs - The live end now.
  * @returns Source-clock ms; undefined live before the first frames.
- * @throws {Error} Until build wave 3: "renderView view/viewEnd is not built yet".
+ * @example
+ * ```ts
+ * viewEnd(mission.view, 78_420); // 40_000 while paused there
+ * ```
  */
-export function viewEnd(
-  _view: MissionViewState,
-  _liveEndMs: number | undefined
-): number | undefined {
-  return notBuilt("view/viewEnd", 3);
+export function viewEnd(view: MissionViewState, liveEndMs: number | undefined): number | undefined {
+  return view.live ? liveEndMs : view.endMs;
+}
+
+/**
+ * How far the paused view is behind live ("Paused · N s behind live").
+ *
+ * @param view - The view.
+ * @param liveEndMs - The live end now.
+ * @returns ms; 0 while live or before the first frames.
+ * @example
+ * ```ts
+ * behindMs(mission.view, 78_420); // 38_420
+ * ```
+ */
+export function behindMs(view: MissionViewState, liveEndMs: number | undefined): number {
+  if (view.live || liveEndMs === undefined) return 0;
+  return Math.max(0, liveEndMs - view.endMs);
 }

@@ -71,9 +71,10 @@ function count(ctx: TestCtx, match: (args: readonly string[]) => boolean): numbe
  * A ctx in device mode by wire with the A26 linked and scanned, its watch granted, the probe done.
  *
  * @param run - The adb runner.
+ * @param device - The linked A26.
  * @returns The ctx.
  */
-async function watched(run: FakeRunner = tickRunner()): Promise<TestCtx> {
+async function watched(run: FakeRunner = tickRunner(), device = a26Device()): Promise<TestCtx> {
   let sample = 0;
   const cdp = fakeCdp(() => {
     const used = SAWTOOTH[sample % SAWTOOTH.length] ?? 0;
@@ -82,7 +83,6 @@ async function watched(run: FakeRunner = tickRunner()): Promise<TestCtx> {
   });
   const ctx = createCtx({ run, cdp });
   await turnWireOn(ctx);
-  const device = a26Device();
   ctx.hub.linked.push(device);
   ctx.hub.open.push(deviceSession(device));
   await scanOnce(ctx);
@@ -170,6 +170,25 @@ describe("the telemetry loop", () => {
     expect(ctx.emit).toHaveBeenCalledWith("connect:telemetry", second);
     expect(ctx.emit).toHaveBeenCalledTimes(records(ctx).length);
     expect(Object.isFrozen(second)).toBe(true);
+  });
+
+  it("finds the app by the session's app id when the WebView has no devtools socket", async () => {
+    // Bug: no CPU and no memory of the game on a build whose WebView socket is missing.
+    const noSocket = tickRunner(args =>
+      args[3] === "cat" ? ok(fixture("proc-net-unix.txt")) : undefined
+    );
+    const ctx = await watched(noSocket, a26Device({ appId: "com.moku.garden.debug" }));
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(records(ctx).at(-1)?.cpu.app).toMatchObject({
+      available: true,
+      value: { pid: PIDS.app, name: "com.moku.garden.debug" }
+    });
+    const blind = await watched(
+      tickRunner(args => (args[3] === "cat" ? ok(fixture("proc-net-unix.txt")) : undefined))
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(records(blind).at(-1)?.cpu.app).toMatchObject({ available: false, reason: "not-found" });
   });
 
   it("carries the CDP heap samples of the tick and the GCs inferred from them", async () => {

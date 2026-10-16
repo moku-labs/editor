@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-null, sonarjs/no-hardcoded-ip -- null is "no model" on the wire; addresses are the cases under test */
 import { describe, expect, it } from "vitest";
 import {
+  baseAppId,
   isLoopback,
   normalizeModel,
   parseAddress,
@@ -196,5 +197,25 @@ describe("pairing text is clean (review fix 1)", () => {
     expect(normalizeModel("\u001B[31mPixel 8\u0085")).toBe("[31MPIXEL-8");
     expect(normalizeModel("\u2066\u0000")).toBeNull();
     expect(normalizeModel("SM-A266B\n")).toBe("SM-A266B");
+  });
+});
+
+describe("the app id of a pair (spec 07 B, engine E3)", () => {
+  it("keeps a clean app id and refuses a pair whose app id hides a bidi override or runs over 128", () => {
+    // Bug: a crafted app id rewriting the terminal's pairing question or a log line.
+    expect(
+      parsePairParams({ code: "4821", device: { appId: "com.mokulabs.timber.debug" } })?.device
+    ).toEqual({ appId: "com.mokulabs.timber.debug" });
+    expect(parsePairParams({ code: "4821", device: { appId: "com.x\u202Egame" } })).toBeUndefined();
+    expect(parsePairParams({ code: "4821", device: { appId: "a".repeat(129) } })).toBeUndefined();
+    expect(parsePairParams({ code: "4821", device: { appId: 7 } })?.device).toEqual({});
+  });
+
+  it("baseAppId strips one trailing .debug, so a debug install pairs with its project", () => {
+    // Bug: com.mokulabs.timber.debug never matching the project's com.mokulabs.timber.
+    expect(baseAppId("com.mokulabs.timber.debug")).toBe("com.mokulabs.timber");
+    expect(baseAppId("com.mokulabs.timber")).toBe("com.mokulabs.timber");
+    expect(baseAppId("com.debug.timber")).toBe("com.debug.timber");
+    expect(baseAppId("com.mokulabs.timberdebug")).toBe("com.mokulabs.timberdebug");
   });
 });

@@ -13,6 +13,7 @@ import {
   rateLine,
   sampleLine,
   spikeLine,
+  telemetryLine,
   thermalLine
 } from "../helpers";
 
@@ -111,6 +112,14 @@ describe("summaryText", () => {
     expect(footer).toBe(
       "1 840 lines · 3 skipped (2 of a newer log version, 1 not JSON) · 12 lost on the device"
     );
+  });
+
+  it("counts a wired log's telemetry lines in the footer (bug: the wired device's lines read but never named)", () => {
+    const text = jsonl([headerLine(), sampleLine(1000), telemetryLine(1500), telemetryLine(2500)]);
+
+    const footer = summaryText(summarize(parsePerfLog(text))).at(-1);
+
+    expect(footer).toBe("4 lines · 2 telemetry lines (wired device)");
   });
 
   it("prints one Screen events line per screen and rate with trims, warm-ups and overlays", () => {

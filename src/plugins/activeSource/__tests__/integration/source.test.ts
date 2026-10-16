@@ -262,4 +262,25 @@ describe("activeSource over the real hub in device mode", () => {
     await vi.waitFor(() => expect(local.runs).toEqual(["game.pause", "game.resume", "game.pause"]));
     expect(app.activeSource.notice()).toBeUndefined();
   });
+
+  it("estimates the phone's clock offset from the heartbeats the hub forwards", async () => {
+    // Bug: clockOffsetMs null forever for a phone: GC marks and telemetry off the phone's axis.
+    const running = await startEditor();
+    const app = await startTools(running);
+    await startLocal(running, app);
+    const { phone } = await startPhone(running);
+    await vi.waitFor(() => expect(app.activeSource.current().kind).toBe("device"), {
+      timeout: 4000
+    });
+    expect(app.activeSource.clockOffsetMs()).toBeNull();
+
+    for (const frame of [1, 2, 3]) {
+      phone.send(
+        notification("game", "heartbeat", { frame, paused: false, at: Date.now() - 60_000 })
+      );
+    }
+
+    await vi.waitFor(() => expect(app.activeSource.clockOffsetMs()).toBeLessThan(-59_000));
+    expect(app.activeSource.clockOffsetMs()).toBeGreaterThan(-61_000);
+  });
 });

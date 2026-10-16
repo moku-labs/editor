@@ -6,6 +6,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, createToolsPlugin, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { ElementRef, SceneSnapshot } from "../../../panels/shared/scene";
@@ -182,7 +183,14 @@ const stopProbe = createToolsPlugin("stopProbe", {
 });
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, stopProbe, gameViewPlugin]
+  plugins: [
+    linkPlugin,
+    activeSourcePlugin,
+    workspacePlugin,
+    panelsPlugin,
+    stopProbe,
+    gameViewPlugin
+  ]
 });
 
 let hub: TestHub;

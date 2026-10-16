@@ -737,6 +737,9 @@ export type GameViewApi = {
    * without `card`, `crop` and `line`. Nothing is bookmarked, captured, written or copied, and a
    * drag picks nothing. `copyReference` writes the card and copies its line on demand.
    *
+   * While a phone is the source (link's chosen session has `device`) the picker stays off: Game
+   * and the Element tab show, and the tab says to switch to the local preview (G1).
+   *
    * @param on - true for on, false for off, omitted to toggle.
    * @example
    * ```ts
@@ -795,10 +798,13 @@ export type GameViewApi = {
    * The scene built with the shared `buildScene` from the watched `game.ui`, `game.entities`
    * and `game.projections` (watched while Game is shown, R6); a calibration in flight is waited
    * for, so the rects are the calibrated ones. While Game is hidden it reads the three once.
-   * Rejects with the link's WireError when no game is connected.
+   * Rejects with the link's WireError when no game is connected. While a phone is the source
+   * nothing is read from it (G1, spec 09 R4).
    *
    * @returns The scene snapshot.
-   * @throws {Error} The link's WireError, or `[moku-editor] game.ui has the wrong shape …`.
+   * @throws {Error} The link's WireError, `[moku-editor] game.ui has the wrong shape …`, or
+   *   `[moku-editor] Element tools read the local preview.\n  Switch the source to Local preview.`
+   *   on a device session.
    * @example
    * ```ts
    * // merge-game on the inert renderer: one reference unit is one page px.
@@ -813,7 +819,8 @@ export type GameViewApi = {
    *
    * @param ref - The element.
    * @returns Its rect in page CSS px, undefined when it is unknown or could not be placed.
-   * @throws {Error} What `scene()` throws: the link's WireError, or a wrong game.ui shape.
+   * @throws {Error} What `scene()` throws: the link's WireError, a wrong game.ui shape, or the
+   *   switch to the local preview on a device session.
    * @example
    * ```ts
    * // The first board item of merge-game at board/awaitIntent.

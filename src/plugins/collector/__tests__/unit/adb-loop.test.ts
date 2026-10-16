@@ -344,6 +344,27 @@ describe("poll rounds", () => {
     ).toHaveLength(1);
   });
 
+  it("matches the phone to the configured app's log when another app's log of the same model is live", async () => {
+    // Bug: a second game's log of the same model making the phone ambiguous: no heat, no gfx.
+    const garden = liveSession(
+      deviceOf({ id: "d-0001", appId: "com.example.garden.debug" }),
+      "garden.jsonl"
+    );
+    const other = liveSession(deviceOf({ id: "d-0002", appId: "com.other.game" }), "other.jsonl");
+    const run = fakeRunner(scenarioOf());
+    const loop = createAdbLoop(ctx, 47_600, run);
+    ctx.state.adb = loop;
+
+    await reverseRound(ctx, loop, run);
+    await pollRound(ctx, loop, run);
+    await Promise.all([garden.queue, other.queue]);
+
+    const lines = await fileLines(garden.file);
+    expect(lines.map(line => line.kind)).toEqual(["thermal"]);
+    expect(existsSync(other.file)).toBe(false);
+    expect(ctx.log.info).not.toHaveBeenCalledWith("collector:adb-ambiguous", expect.anything());
+  });
+
   it("never writes adb lines into a LAN log", async () => {
     const session = liveSession(deviceOf({ link: "lan", address: "phone.lan" }));
     const run = fakeRunner(scenarioOf());

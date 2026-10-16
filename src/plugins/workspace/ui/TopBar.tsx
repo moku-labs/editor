@@ -1,15 +1,16 @@
 /**
  * @file workspace plugin — B1, the top bar, in two layouts by window width (round 2 R1).
  *
- * 900 px and wider (`data-layout="wide"`), left to right: the game mark, game name, session chip,
- * the computer's engine fingerprint (`engine 0.14.13+1ab7f2`, once link knows it; TopBar.css hides
- * it below 1100 px), link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G), Overlay (O)
- * and Hot reload (H) switches with visible labels, Registry (icon; counts in its title), theme
- * toggle.
+ * 900 px and wider (`data-layout="wide"`), left to right: the game mark, game name, source pill
+ * (W9: the local preview or the device the page reads, and the source menu), session chip, the
+ * computer's engine fingerprint (`engine 0.14.13+1ab7f2`, once link knows it; TopBar.css hides it
+ * below 1100 px), link pill, Pause/Resume, Step 1 frame, the palette search box, the Preview (G),
+ * Overlay (O) and Hot reload (H) switches with visible labels, Registry (icon; counts in its
+ * title), theme toggle.
  *
- * Below 900 px (`data-layout="compact"`): the game mark, game name, link pill (the session id in
- * its title; it opens the session menu), Pause/Resume and Step as icons (the label is their
- * accessible name), the Hot reload (H) icon toggle (round 2b R15), the search icon and the ⋯ menu
+ * Below 900 px (`data-layout="compact"`): the game mark, game name, source pill (the name only),
+ * link pill (the session id in its title; it opens the session menu), Pause/Resume and Step as
+ * icons (the label is their accessible name), the Hot reload (H) icon toggle (round 2b R15), the search icon and the ⋯ menu
  * holding the rest; the toggle stays in the menu too. The game name's title carries the engine
  * fingerprint there. At 560 px and narrower the game name hides (TopBar.css). Controls that cannot act now are `aria-disabled` so their tooltip still explains
  * why.
@@ -40,6 +41,7 @@ import { LinkPill } from "./LinkPill";
 import { MoreMenu } from "./MoreMenu";
 import { RegistryPopover } from "./RegistryPopover";
 import { SessionChip, SessionMenu, sessionsView } from "./SessionChip";
+import { SourcePill } from "./SourcePill";
 import { StepPopover } from "./StepPopover";
 import { useWorkspace } from "./store";
 import { heldNames } from "./text";
@@ -323,6 +325,7 @@ export function TopBar(props: TopBarProps): VNode {
           compact && engine !== undefined ? `${game ?? "No game"} · engine ${engine}` : undefined
         }
       />
+      <SourcePill ctx={ctx} />
       {!compact && <SessionChip ctx={ctx} />}
       {!compact && engine !== undefined && (
         <span data-part="engine" data-mono>

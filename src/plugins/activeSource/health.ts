@@ -1,11 +1,13 @@
 /**
  * @file activeSource plugin — link health and the clock offset (spec 11 § 4 health,
  * clockOffsetMs): the latency ring of the active device (one sample per directory update, NaN for a
- * gap, allocated once) and the phone − computer offset of its heartbeats, the median of the last 8.
+ * gap, allocated once) and the phone − computer offset of its heartbeats (link.onHeartbeat), the
+ * median of the last 8.
  */
 /* eslint-disable unicorn/no-null -- the spec's "no latency" and "no offset yet" */
 import type { DeviceDirectory } from "../connect/protocol";
-import type { ActiveSourceState } from "./types";
+import type { ReceivedHeartbeat } from "../link/types";
+import type { ActiveSourceCtx, ActiveSourceState } from "./types";
 
 /**
  * Empties the health ring in place: every sample NaN, no latency.
@@ -86,6 +88,22 @@ export function noteOffset(offsets: ActiveSourceState["offsets"], offset: number
 export function resetOffsets(offsets: ActiveSourceState["offsets"]): void {
   offsets.head = 0;
   offsets.count = 0;
+}
+
+/**
+ * A heartbeat link received: when it is the active device's session, its offset (the beat's `at`
+ * against its arrival, half the device's ping round trip earlier; 0 before the first pong) joins
+ * the ring. The local preview, another page and another session's beat change nothing.
+ *
+ * @param ctx - Domain context of activeSource.
+ * @param beat - The beat, from link.onHeartbeat.
+ */
+export function handleHeartbeat(ctx: ActiveSourceCtx, beat: ReceivedHeartbeat): void {
+  const { state } = ctx;
+  const { current } = state;
+  if (state.stopped || current.kind !== "device" || current.session !== beat.session) return;
+
+  noteOffset(state.offsets, offsetOf(beat.at, beat.receivedAt, state.health.latencyMs ?? 0));
 }
 
 /**

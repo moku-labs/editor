@@ -233,6 +233,7 @@ export function createLinkMock(files: FakeFiles): LinkMock {
       published: () => undefined,
       onPublished: () => unwatch,
       onSessions: () => unwatch,
+      onHeartbeat: () => unwatch,
       ownSession: () => undefined,
       runIn: vi.fn(() =>
         Promise.resolve({ value: null, state: { path: "", frame: 0, tainted: false } })

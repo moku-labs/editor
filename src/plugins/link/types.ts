@@ -1,8 +1,8 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
  * taps, the page heap, hot reload, the editor page's selection and request handlers, the project
- * index, the published values, the session listeners, the own frame's session, session-targeted
- * runs and editor-method calls), the files client, state and the domain context. Wire shapes come
+ * index, the published values, the session and heartbeat listeners, the own frame's session,
+ * session-targeted runs and editor-method calls), the files client, state and the domain context. Wire shapes come
  * from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
@@ -269,6 +269,24 @@ export type FilesClient = {
    * ```
    */
   find(key: string): Promise<readonly ProjectFound[]>;
+};
+
+/**
+ * A heartbeat of the chosen session as this page received it: the session, the phone's (or the
+ * page's) epoch ms of the beat (`Heartbeat.at`) and this computer's epoch ms of its arrival. The
+ * clock offset of a device is estimated from the two (activeSource `clockOffsetMs`).
+ *
+ * @example
+ * ```ts
+ * const beat: ReceivedHeartbeat = { session: "s-9", at: 1791986100000, receivedAt: 1791986100420 };
+ * ```
+ */
+export type ReceivedHeartbeat = {
+  readonly session: string;
+  /** `Heartbeat.at`: the epoch ms the game stamped on the beat, by its own clock. */
+  readonly at: number;
+  /** The epoch ms the beat arrived at this page, by this computer's clock. */
+  readonly receivedAt: number;
 };
 
 /**
@@ -668,6 +686,24 @@ export type LinkApi = EditorChannel & {
    */
   onSessions(fn: (list: readonly SessionInfo[]) => void): () => void;
   /**
+   * Listens to the heartbeats of the chosen session: called with each one that carries its `at`,
+   * with the time it arrived here. A beat of another session, one without `at` and a malformed one
+   * call nothing. Each listener gets the same frozen beat; a throwing listener is logged as
+   * `link:heartbeat-listener-failed` and the others still run.
+   *
+   * @param fn - Called with each beat.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // activeSource estimates the phone's clock: sent at 10 000 by the phone, here at 10 420.
+   * const off = ctx.require(linkPlugin).onHeartbeat(beat => {
+   *   beat.at - beat.receivedAt; // -420: the phone's clock reads behind this computer's (less half a ping)
+   * });
+   * off();
+   * ```
+   */
+  onHeartbeat(fn: (beat: ReceivedHeartbeat) => void): () => void;
+  /**
    * This page's own game frame session (the local preview): the newest open embedded session
    * whose page carries this page's frame id (`frameUrl`). The game frame of another tools tab, or
    * the frame URL opened outside an iframe, is never own. While the frame reloads, the newer of
@@ -849,6 +885,8 @@ export type LinkState = {
   publishedListeners: PublishedListeners;
   /** onSessions listeners (wrappers, like tapListeners). */
   sessionsListeners: Set<(list: readonly SessionInfo[]) => void>;
+  /** onHeartbeat listeners (wrappers, like tapListeners). */
+  heartbeatListeners: Set<(beat: ReceivedHeartbeat) => void>;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
   /**

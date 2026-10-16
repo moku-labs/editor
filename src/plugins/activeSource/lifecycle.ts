@@ -1,11 +1,12 @@
 /**
  * @file activeSource plugin — lifecycle: onInit validates the config (two-line TypeErrors), onStart
- * subscribes to link's sessions and connect's published values (B2), onStop is state-only (spec/08
- * §2: no emit, no log): every subscription, timer, wait and listener dropped. onStop does not
- * resume the local preview: the page is going away, and its frame with it.
+ * subscribes to link's sessions, connect's published values (B2) and the heartbeats, onStop is
+ * state-only (spec/08 §2: no emit, no log): every subscription, timer, wait and listener dropped.
+ * onStop does not resume the local preview: the page is going away, and its frame with it.
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
+import { handleHeartbeat } from "./health";
 import { handleDirectory, handleTelemetry } from "./published";
 import { handleSessions } from "./sessions";
 import type { ActiveSourceConfig, ActiveSourceCtx, ActiveSourceStopCtx } from "./types";
@@ -64,8 +65,9 @@ export function checkActiveSourceConfig(ctx: {
 }
 
 /**
- * onStart: subscribes to link's session lists and connect's `editor.devices` and
- * `editor.deviceTelemetry`, and applies the list link already has.
+ * onStart: subscribes to link's session lists, connect's `editor.devices` and
+ * `editor.deviceTelemetry`, and the chosen session's heartbeats (the clock offset), and applies the
+ * list link already has.
  *
  * @param ctx - Domain context of activeSource.
  */
@@ -74,7 +76,8 @@ export function startActiveSource(ctx: ActiveSourceCtx): void {
   ctx.state.off.push(
     link.onSessions(list => handleSessions(ctx, list)),
     link.onPublished("devices", directory => handleDirectory(ctx, directory)),
-    link.onPublished("deviceTelemetry", record => handleTelemetry(ctx, record))
+    link.onPublished("deviceTelemetry", record => handleTelemetry(ctx, record)),
+    link.onHeartbeat(beat => handleHeartbeat(ctx, beat))
   );
   const list = link.sessions();
   if (list.length > 0) handleSessions(ctx, list);

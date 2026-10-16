@@ -1,20 +1,44 @@
 /**
- * @file renderView actions — the rate switch (spec 09 § M9): runs `game.frameRate { fps }` or
- * `{}` on the active source, one in flight, a late answer after a source switch dropped. Typed
- * stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract the other Mission
- * control units build against; build wave 3 (RV4) writes the bodies.
+ * @file renderView actions — the rate switch (spec 09 § M9): runs `game.frameRate { fps }` or `{}`
+ * (adaptive) on the active source, one in flight (a second call answers Busy at once), the answer or
+ * the refusal kept for the answer line; a late answer after a source switch is dropped.
  */
-import { notBuilt } from "../stub";
+import { linkPlugin } from "../../link";
+import { rateAnswerOf, rateRefusalOf } from "../derive/rate";
+import { notifyMission } from "../state";
 import type { RateAnswer, RateChoice, RenderViewCtx } from "../types";
 
 /**
  * Runs the switch; never rejects.
  *
- * @param _ctx - Domain context of renderView.
- * @param _choice - 60, 120 or "adaptive".
+ * @param ctx - Domain context of renderView.
+ * @param choice - 60, 120 or "adaptive".
  * @returns The answer.
- * @throws {Error} Until build wave 3: "renderView actions/runRate is not built yet".
+ * @example
+ * ```ts
+ * await runRate(ctx, 120); // { ok: true, choice: 120, text: "Pinned at 120, adaptive off", fps: 120, mode: "forced" }
+ * ```
  */
-export function runRate(_ctx: RenderViewCtx, _choice: RateChoice): Promise<RateAnswer> {
-  return notBuilt("actions/runRate", 3);
+export async function runRate(ctx: RenderViewCtx, choice: RateChoice): Promise<RateAnswer> {
+  const { mission } = ctx.state;
+  if (mission.rate.pending !== undefined) {
+    return { ok: false, choice, text: "Busy: a rate change is still pending" };
+  }
+  const source = mission.source;
+  mission.rate.pending = choice;
+  mission.rate.answer = undefined;
+  notifyMission(mission);
+  let answer: RateAnswer;
+  try {
+    const input = choice === "adaptive" ? {} : { fps: choice };
+    const result = await ctx.require(linkPlugin).run("game.frameRate", input);
+    answer = rateAnswerOf(choice, result.value);
+  } catch (error) {
+    answer = rateRefusalOf(choice, error);
+  }
+  if (mission.source !== source) return answer;
+  mission.rate.pending = undefined;
+  mission.rate.answer = answer;
+  notifyMission(mission);
+  return answer;
 }

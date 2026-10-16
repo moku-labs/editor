@@ -12,8 +12,9 @@ selection to the hub and answers the editor requests the hub relays: `select`, `
 and `node` (D-33, D-60). It keeps the project index the hub publishes and asks it where a key
 lives (`files.find`). It also carries the generic seams the device source is built on (spec 11
 § 5.2): the values the server publishes (`published`, `onPublished`: connect's device directory
-and wired telemetry among them), a listener of the session list (`onSessions`), this page's own
-game frame session (`ownSession`), a command on a named session without changing the choice
+and wired telemetry among them), a listener of the session list (`onSessions`), a listener of the
+chosen session's heartbeats (`onHeartbeat`, the clock offset of a device), this page's own game
+frame session (`ownSession`), a command on a named session without changing the choice
 (`runIn`) and the server's editor methods of other plugins (`callEditor`). link stays
 policy-free: which session is the source is activeSource's. It renders nothing.
 
@@ -75,6 +76,7 @@ session listeners, the own frame's session, session-targeted runs, editor-method
 | `published` | `<M extends PublishMethod>(method: M) => PublishParams[M] \| undefined` | The last value the server published for a method, kept across reconnects (the hub replays it on open). `devices` (`DeviceDirectory`) and `deviceTelemetry` (`DeviceTelemetry`) come from `editor.devices` / `editor.deviceTelemetry`, checked whole with `readDirectory` / `readTelemetry` of `connect/protocol`: a malformed value is the warn `link:bad-published { method }` and keeps the held one. `engine` (the whole `EngineInfo`, also with the id `"unknown"`), `project`, `hotReload` and `selection` answer the values link keeps for `engine()`, `project()`, `hotReload()` and `selection()`; `selection` answers `undefined` also while nothing is selected. Frozen (`selection` a fresh copy). `undefined` before the first. |
 | `onPublished` | `<M extends PublishMethod>(method: M, fn: (value: PublishParams[M]) => void) => () => void` | Called with every new value of the method, never at once (read `published` for the current one). A replay of an equal value (the hub's replay after a reconnect) calls nothing; a malformed value calls nothing. `devices` and `deviceTelemetry` compare as JSON; `engine` compares the whole info; `project`, `hotReload` and `selection` use their own sameness (revision and manifest, `hmr` and `owner`, the info). A selection that clears passes `null`, once. Each listener gets the same frozen value. A throwing listener is logged as `link:published-listener-failed { method }`. Returns an idempotent unsubscribe. |
 | `onSessions` | `(fn: (list: readonly SessionInfo[]) => void) => () => void` | Called after every `sessions` notification of the hub is applied: the list stored, a lost choice dropped, the pick attached, so `session()` already answers it. Never at once. A socket close calls nothing (the list the hub sends after the reconnect does), nor does a malformed list. Each listener gets the same frozen list. A throwing listener is logged as `link:sessions-listener-failed`. Returns an idempotent unsubscribe. |
+| `onHeartbeat` | `(fn: (beat: ReceivedHeartbeat) => void) => () => void` | Called with each heartbeat of the chosen session that carries its `at`: a frozen `{ session, at, receivedAt }` (the game's epoch ms of the beat by its own clock, and this computer's epoch ms of its arrival). A beat of another session, one without `at` and a malformed one call nothing. Never at once. A throwing listener is logged as `link:heartbeat-listener-failed`. Returns an idempotent unsubscribe. activeSource estimates a device's clock offset from it. |
 | `ownSession` | `() => string \| undefined` | This page's own game frame session: the newest open embedded session whose page carries this page's frame id (`frameUrl`). Another tab's frame, and the frame URL opened outside an iframe, are never own; during a reload the newer of the two sessions wins. `undefined` when the frame has no session (not mounted, reloading, or no frame on this page). |
 | `runIn` | `(session, id, input?) => Promise<RunResult>` | Runs a command on a named open session without changing the choice: `session()`, the watches and the manifest stay. Checks the result shape like `run`; the long-call rule of `run` applies. Rejects -32003 `no_session` (not retryable) at once for an id that is not open, also while disconnected; the command's own error otherwise. activeSource pauses and resumes the local preview with it. |
 | `callEditor` | `(method, params?) => Promise<Json>` | Sends an editor-channel request with no session: a method another server plugin registered on the hub (`hub.addEditorMethods`), such as `connect.wire`. Rejects -32002 `link_closed` at once while disconnected; the method's wire error otherwise (-32601 for a method nobody registered). |
@@ -102,12 +104,14 @@ await app.link.files.find("node:board/merge"); // [{ path: "nodes/merge.ts", lin
 app.link.published("devices")?.mode.on; // true: device mode runs
 const offTelemetry = app.link.onPublished("deviceTelemetry", record => show(record.gpu)); // 221 MHz
 const offSessions = app.link.onSessions(list => list.filter(session => session.device)); // [s-9]
+const offBeats = app.link.onHeartbeat(beat => beat.at - beat.receivedAt); // -420: the phone's clock behind
 app.link.ownSession(); // "s-1": this page's game frame
 await app.link.runIn("s-1", "game.pause"); // the local preview holds; app.link.session() is unchanged
 await app.link.callEditor("connect.wire"); // { listen: { port: 47600, adb: "127.0.0.1:47600", lan: null } }
 await app.link.files.write("docs/plan.md", text);
 app.link.retry();
 offTelemetry();
+offBeats();
 offSessions();
 offTaps();
 offSelect();
@@ -261,7 +265,8 @@ const off = link.onManifest(manifest => recheck(manifest));
 - Published values (spec 11 § 5.2, `server/published.ts`): connect publishes the device directory as `editor.devices` and the wired telemetry of a watched phone as `editor.deviceTelemetry` (1 Hz). link checks each with the `connect/protocol` guards, keeps the last valid one frozen across reconnects and gives each new one to `onPublished`. activeSource reads both; link reads no device in them.
 - Device sources (spec 11 § 4): activeSource hears a phone link or leave through `onSessions`, pauses this page's frame (`ownSession`) with `runIn(own, "game.pause")` before it chooses the phone, and calls connect's methods (`connect.scan`, `connect.wire`, `connect.watch` …) through `callEditor`. The hub answers `callEditor` only on tools sockets (token, loopback).
 - Heartbeat readout (L9, spec 11 § 5.2): `readSessions` keeps the hub's `SessionInfo.heartbeat` (`{ frame, paused, silent }`, frozen) when every field has its type; a malformed readout is left out, never the session. The hub re-sends the list when `paused` or `silent` flips, so `sessions()` and `onSessions` show whether a session is paused, also one that is not chosen: activeSource reads the own frame's `heartbeat.paused` before it pauses the local preview, so it never resumes a game the developer paused on purpose (spec 11 § 4 B4). link's own status still comes from the forwarded heartbeats of the chosen session.
-- Device sessions: `readSessions` keeps `SessionInfo.device` (`{ id, model, link: "adb" | "lan", address, port, engine, build }`, spec 01 C8) when every field has its type, and leaves a malformed device out (the session then reads as a browser session). renderView reads it for the D1 device strip.
+- Device sessions: `readSessions` keeps `SessionInfo.device` (`{ id, model, link: "adb" | "lan", address, port, engine, build, appId? }`, spec 01 C8) when every field has its type, and leaves a malformed device out (the session then reads as a browser session); an `appId` that is not text drops only itself. renderView reads it for the D1 device strip.
+- Heartbeat listeners (L10, spec 11 § 5.2): `onHeartbeat` gives each heartbeat of the chosen session that carries `at` (`Heartbeat.at`, the game's epoch ms by its own clock) to every listener as a frozen `{ session, at, receivedAt }` (`receivedAt`: this computer's epoch ms of arrival). The hub forwards beats of every session; link passes only the chosen one's, which is the device while a phone is the source. activeSource estimates `clockOffsetMs()` from them. A throwing listener is logged `link:heartbeat-listener-failed`; onStop drops every listener.
 - Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.

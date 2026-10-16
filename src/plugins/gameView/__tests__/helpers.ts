@@ -15,6 +15,7 @@ import type {
   ProjectState,
   RelayedEditorMethod,
   RunResult,
+  SessionInfo,
   WireError
 } from "../../registry/protocol";
 import { DEVICES, presetOf, screenOf } from "../../registry/protocol";
@@ -237,6 +238,12 @@ export type LinkMock = {
   readonly values: Map<string, Json | ((input: Json | undefined) => Json)>;
   current: LinkStatus;
   manifestValue: Manifest | undefined;
+  /** What `sessions()` answers: empty by default. */
+  sessionsValue: SessionInfo[];
+  /** What `session()` answers: "s-1" by default. */
+  sessionValue: string | undefined;
+  /** The `onManifest` listeners still subscribed; link calls them on every attach and loss. */
+  readonly manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** What `project()` answers: on with no keys by default. */
   projectValue: ProjectState | undefined;
   /** Delivers a value to every active watch of a source id. */
@@ -270,6 +277,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
   const run = vi.fn<LinkApi["run"]>(() => Promise.reject(new Error("link.run is not for views")));
   const notify = vi.fn<LinkApi["notify"]>();
   const handle = vi.fn<HandleCall>(() => vi.fn());
+  const manifestListeners = new Set<(manifest: Manifest | undefined) => void>();
   const link: LinkMock = {
     files: store,
     watch,
@@ -281,6 +289,9 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
     values,
     current: { kind: "live", frame: 1841 },
     manifestValue: manifestOf(),
+    sessionsValue: [],
+    sessionValue: "s-1",
+    manifestListeners,
     projectValue: projectOn(),
     api: {
       read,
@@ -289,11 +300,14 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       status: () => link.current,
       manifest: () => link.manifestValue,
       onManifest: fn => {
+        manifestListeners.add(fn);
         fn(link.manifestValue);
-        return noop;
+        return () => {
+          manifestListeners.delete(fn);
+        };
       },
-      sessions: () => [],
-      session: () => "s-1",
+      sessions: () => link.sessionsValue,
+      session: () => link.sessionValue,
       choose: vi.fn(() => Promise.resolve(manifestOf())),
       retry: vi.fn(),
       expectReload: vi.fn(),
@@ -314,6 +328,7 @@ export function createLinkMock(files: Readonly<Record<string, string>> = {}): Li
       published: () => undefined,
       onPublished: () => noop,
       onSessions: () => noop,
+      onHeartbeat: () => noop,
       ownSession: () => undefined,
       runIn: vi.fn(() => Promise.reject(new Error("link.runIn is not for views"))),
       callEditor: vi.fn(() => Promise.reject(new Error("link.callEditor is not for views"))),
@@ -545,6 +560,7 @@ export function createWorkspaceMock(): WorkspaceMock {
           prefsListeners.delete(fn);
         };
       },
+      startLocalPreview: vi.fn(() => Promise.resolve()),
       scenarios: () => workspace.scenarioView,
       setScenario,
       refreshScenarios,

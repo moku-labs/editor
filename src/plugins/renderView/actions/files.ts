@@ -1,35 +1,76 @@
 /**
- * @file renderView actions — the inspector's file links (spec 09 § M10): `system:<name>` looked
- * up once per session through the project index, and the `workspace:open-file` emission. Typed
- * stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract the other Mission
- * control units build against; build wave 3 (RV4) writes the bodies.
+ * @file renderView actions — the inspector's file links (spec 09 § M10 Files): `system:<name>` looked
+ * up once per session through the project index (engine systems and unknown names answer null), and
+ * the `workspace:open-file` emission with its toast.
  */
-import { notBuilt } from "../stub";
+import { linkPlugin } from "../../link";
+import { workspacePlugin } from "../../workspace";
+import { notifyMission } from "../state";
 import type { RenderViewCtx } from "../types";
 
 /**
- * Where a system is defined (cached in `mission.files`).
+ * Where a system is defined (cached in `mission.files` for the session).
  *
- * @param _ctx - Domain context of renderView.
- * @param _system - A system name.
- * @returns The file and line; null for an engine system or an unresolved name.
- * @throws {Error} Until build wave 3: "renderView actions/systemFile is not built yet".
+ * @param ctx - Domain context of renderView.
+ * @param system - A system name.
+ * @returns The file and line; null for an engine system, an unresolved name or an index that is off.
+ * @example
+ * ```ts
+ * await systemFile(ctx, "ward.update"); // { path: "src/systems/ward.ts", line: 12 }
+ * ```
  */
-export function systemFile(
-  _ctx: RenderViewCtx,
-  _system: string
+export async function systemFile(
+  ctx: RenderViewCtx,
+  system: string
 ): Promise<{ readonly path: string; readonly line: number } | null> {
-  return notBuilt("actions/systemFile", 3);
+  const { files } = ctx.state.mission;
+  const known = files.get(system);
+  if (known !== undefined) return known;
+  // eslint-disable-next-line unicorn/no-null -- null: asked, not found (an engine system)
+  let found: { readonly path: string; readonly line: number } | null = null;
+  files.set(system, found);
+  try {
+    const [first] = await ctx.require(linkPlugin).files.find(`system:${system}`);
+    if (first !== undefined) found = { path: first.path, line: first.line };
+  } catch {
+    // The project index is off: no file link for this session.
+  }
+  files.set(system, found);
+  return found;
 }
 
 /**
- * Emits `workspace:open-file { path, line }` and toasts "Open in editor: …".
+ * Looks up the systems not asked yet and re-renders once their files are known.
  *
- * @param _ctx - Domain context of renderView.
- * @param _path - The file.
- * @param _line - The line.
- * @throws {Error} Until build wave 3: "renderView actions/openFile is not built yet".
+ * @param ctx - Domain context of renderView.
+ * @param systems - System names of a range.
+ * @returns When every lookup settled.
+ * @example
+ * ```ts
+ * await lookupFiles(ctx, ["ward.update", "fog.render"]);
+ * ```
  */
-export function openFile(_ctx: RenderViewCtx, _path: string, _line: number): void {
-  notBuilt("actions/openFile", 3);
+export async function lookupFiles(ctx: RenderViewCtx, systems: readonly string[]): Promise<void> {
+  const { files } = ctx.state.mission;
+  const asked = systems.filter(system => !files.has(system));
+  if (asked.length === 0) return;
+  await Promise.all(asked.map(system => systemFile(ctx, system)));
+  notifyMission(ctx.state.mission);
+}
+
+/**
+ * Opens a file in the person's editor: emits `workspace:open-file { path, line }` and toasts "Open in
+ * editor: {path}:{line}".
+ *
+ * @param ctx - Domain context of renderView.
+ * @param path - The file.
+ * @param line - The line.
+ * @example
+ * ```ts
+ * openFile(ctx, "src/systems/ward.ts", 12); // toast "Open in editor: src/systems/ward.ts:12"
+ * ```
+ */
+export function openFile(ctx: RenderViewCtx, path: string, line: number): void {
+  ctx.emit("workspace:open-file", { path, line });
+  ctx.require(workspacePlugin).toast(`Open in editor: ${path}:${line}`);
 }

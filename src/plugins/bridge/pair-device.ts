@@ -116,9 +116,9 @@ function osOf(userAgent: string): string | undefined {
 }
 
 /**
- * What the phone tells the computer in `pair`: the engine and build id of the page, the shell's
- * model (else the Android user agent's), the system from the user agent. A key without a value
- * is left out.
+ * What the phone tells the computer in `pair`: the engine, build id and app id of the page (the
+ * app id with its `.debug` suffix, as the build wrote it), the shell's model (else the Android user
+ * agent's), the system from the user agent. A key without a value is left out.
  *
  * @param build - The page's build (`registry.build()`).
  * @param flags - The page flags.
@@ -133,6 +133,7 @@ export function pairDeviceOf(build: BuildInfo, flags: PageFlags): PairParams["de
   const device: PairDevice = {};
   if (build.engine !== undefined) device.engine = build.engine;
   if (build.id !== undefined) device.build = build.id;
+  if (build.appId !== undefined) device.appId = build.appId;
 
   const userAgent = flags.userAgent ?? "";
   const model = flags.model ?? androidModel(userAgent);

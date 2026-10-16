@@ -47,16 +47,19 @@ export function createConnectState(): ConnectState {
  * @param device - The linked device id.
  * @param serial - Its adb serial.
  * @param page - Its device session's page (the CDP target), null without a session.
+ * @param appId - The linked device's app id, undefined when its pair named none.
  * @returns The record.
  */
 export function createAttachRecord(
   device: string,
   serial: string,
-  page: string | null
+  page: string | null,
+  appId?: string
 ): AttachRecord {
   return {
     device,
     serial,
+    appId,
     page,
     ended: false,
     busy: false,

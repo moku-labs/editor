@@ -121,11 +121,15 @@ The remembered address wins: the person chose it on the device after the build w
    debug builds allow cleartext. The bridge sends no Origin: the WebView sets the native one, which
    the hub allowlists (`deviceOrigins`).
 2. **With credentials**, the open socket runs the link step: `hello { manifest }` first (the
-   manifest carries `build { profile, id, engine }`), a heartbeat, live or paused, log shipping.
+   manifest carries `build { profile, id, engine, appId }`), a heartbeat, live or paused, log
+   shipping.
 3. **Without credentials**, the open socket pairs: phase `pairing`, a four-digit code (from
    `crypto.getRandomValues`, leading zeros kept, the same code across retries until paired or
-   refused), and `editor`/`pair { code, device: { model?, os?, engine?, build? } }` as the first
-   message. `bridge:status` shows `link: { mode: "connecting", address, pairing: { code } }`.
+   refused), and `editor`/`pair { code, device: { model?, os?, engine?, build?, appId? } }` as the
+   first message (`pairDeviceOf`: `appId` is the build's, `__MOKU_GAME_APP__` = the PerfLog
+   header's `app.id`, `.debug` suffix kept; left out on an engine without it, 0.15.0). The editor
+   matches a phone by wire by app id + model with it, so two phones of one model are not
+   ambiguous. `bridge:status` shows `link: { mode: "connecting", address, pairing: { code } }`.
    Over adb under the hub's `pairing: "lan"` the hub confirms at once.
 4. `editor`/`paired { device, token, engine }` stores the device id and token for the address,
    remembers the address as the last one, keeps the computer's engine and runs the link step on

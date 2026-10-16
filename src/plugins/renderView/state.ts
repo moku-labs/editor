@@ -19,7 +19,7 @@ function createMissionState(): MissionState {
   return {
     source: undefined,
     watches: [],
-    poll: { timer: undefined, inFlight: false, eventsAfter: undefined },
+    poll: { timer: undefined, inFlight: false, eventsAfter: undefined, failing: false },
     history: createPerfHistory(),
     series: createMissionSeries(),
     second: undefined,
@@ -31,6 +31,7 @@ function createMissionState(): MissionState {
     selection: undefined,
     selectionVersion: 0,
     detail: { kind: "idle" },
+    detailTimer: undefined,
     hoverMs: undefined,
     rate: { pending: undefined, answer: undefined },
     sectionPending: undefined,
@@ -40,7 +41,9 @@ function createMissionState(): MissionState {
       stopScan: undefined,
       codes: new Map(),
       pending: undefined,
-      error: undefined
+      error: undefined,
+      alert: undefined,
+      alertTimer: undefined
     },
     sceneOpen: false,
     files: new Map(),

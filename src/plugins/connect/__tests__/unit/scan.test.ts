@@ -1,9 +1,10 @@
 /* eslint-disable unicorn/no-null -- null is "no session" on an attach record */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { currentDirectory } from "../../directory";
 import { createAttachRecord } from "../../state";
 import type { AdbResult } from "../../types";
 import { renewScan, scanOnce } from "../../wire/scan";
-import { a26, createCtx, fakeRunner, MISSING, ok, SERIAL } from "../helpers";
+import { a26, a26Device, createCtx, fakeRunner, fixture, MISSING, ok, SERIAL } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // spec 11 C4: the scan loop — adb devices -l every scanEveryMs while a scan
@@ -19,6 +20,24 @@ import { a26, createCtx, fakeRunner, MISSING, ok, SERIAL } from "../helpers";
  */
 function isList(args: readonly string[]): boolean {
   return args[0] === "devices";
+}
+
+/** A second A26 on USB. */
+const TWIN = "R5CX30ZZZZZ";
+
+/**
+ * Two A26s on USB: the first runs the garden (ps-a26.txt), the twin runs no game.
+ *
+ * @param args - The argv.
+ * @returns The answer.
+ */
+function twoA26(args: readonly string[]): AdbResult {
+  if (isList(args)) {
+    return ok(`List of devices attached\n${SERIAL} device usb:1-1\n${TWIN} device usb:1-2\n\n`);
+  }
+  if (args[3] === "getprop") return ok(fixture("getprop-a26.txt"));
+  if (args[3] === "ps" && args[1] === TWIN) return ok("  PID NAME\n  612 surfaceflinger\n");
+  return a26(args);
 }
 
 beforeEach(() => {
@@ -98,6 +117,32 @@ describe("the scan", () => {
     await scanOnce(ctx);
     expect(ctx.state.adb).toEqual({ available: false, reason: "error" });
     expect(ctx.state.wire.size).toBe(4);
+  });
+
+  it("asks ps of two phones of one model only while their linked device names an app, and links the one running it", async () => {
+    // Bug: ps on every phone every 2 s, or two A26s left ambiguous although the app tells them apart.
+    const single = createCtx();
+    single.hub.linked.push(a26Device({ appId: "com.moku.garden.debug" }));
+    await scanOnce(single);
+    expect(single.run.calls().filter(args => args[3] === "ps")).toEqual([]);
+
+    const ctx = createCtx({ run: fakeRunner(twoA26) });
+    ctx.hub.linked.push(a26Device());
+    await scanOnce(ctx);
+    expect(ctx.run.calls().filter(args => args[3] === "ps")).toEqual([]);
+
+    ctx.hub.linked[0] = a26Device({ appId: "com.moku.garden.debug" });
+    await scanOnce(ctx);
+    expect(
+      ctx.run
+        .calls()
+        .filter(args => args[3] === "ps")
+        .map(args => args[1])
+    ).toEqual([SERIAL, TWIN]);
+    expect(currentDirectory(ctx).wire.map(phone => [phone.serial, phone.device])).toEqual([
+      [SERIAL, "d-7f3a"],
+      [TWIN, null]
+    ]);
   });
 
   it("forgets a phone that left and detaches its telemetry", async () => {

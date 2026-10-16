@@ -1,8 +1,14 @@
 import { describe, expectTypeOf, it } from "vitest";
 import type { ServerEvents } from "../../../../config";
 import { createServerPlugin } from "../../../../config";
+import type { DeviceTelemetry } from "../../../connect/protocol";
 import { collectorPlugin } from "../..";
-import type { CollectorConfig, CollectorCtx, CollectorSessionEvent } from "../../types";
+import type {
+  CollectorConfig,
+  CollectorCtx,
+  CollectorHooks,
+  CollectorSessionEvent
+} from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-level checks of the per-plugin event collector:session and the config
@@ -49,6 +55,17 @@ describe("collector:session types", () => {
   it("refuses a session event without its device", () => {
     expectTypeOf(emitWithoutDevice).toBeFunction();
   });
+
+  it("types the collector's connect:telemetry hook with connect's DeviceTelemetry (bug: a hand-copied record shape drifting from connect's)", () => {
+    expectTypeOf<
+      Parameters<CollectorHooks["connect:telemetry"]>[0]
+    >().toEqualTypeOf<DeviceTelemetry>();
+  });
+
+  // eslint-disable-next-line sonarjs/todo-tag -- waits for the engine's 0.15.x types (agreed 2026-10-16)
+  // TODO(engine): the 0.15.x patch (U4) lists `telemetry` and `gap` as collector-written kinds in the
+  // engine's PerfLogLine union (types only). The installed @moku-labs/game 0.15.0 exports neither
+  // line type; once it does, assert PerfTelemetryLine and PerfGapLine assignable to them here.
 
   it("refuses a numeric appId", () => {
     const config: CollectorConfig = {

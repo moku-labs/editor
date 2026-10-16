@@ -1,15 +1,18 @@
 /**
  * @file workspace plugin — onInit (validate config, load prefs, read the OS theme, the density
  * and the hash, built-in keys, Esc layers, palette commands, the `device` and `show` request
- * handlers of link), onStart (window listeners, the manifest, restore, tap, hot reload and engine
- * listeners; no mount, R3) and onStop (every cleanup, the request handlers among them, timers,
- * tap ripples, the scenario listeners, unrender, remove the frame layer and hosts).
+ * handlers of link), onStart (window listeners, the manifest, restore, tap, hot reload, engine and
+ * session-list listeners; no mount, R3) and onStop (every cleanup, the request handlers among
+ * them, timers, tap ripples, the scenario listeners, a pending local preview start, unrender,
+ * remove the frame layer and hosts).
  */
 import { linkPlugin } from "../link";
 import { ERROR_PREFIX } from "../registry/protocol";
 import { removeFrameLayer, syncFrame } from "./frame/frame";
 import { watchRestores } from "./frame/restored";
+import { dropStart } from "./frame/start";
 import { clearTaps, watchTaps } from "./frame/taps";
+import { syncVeil } from "./frame/veil";
 import { stopTicker } from "./handlers";
 import { removeHosts } from "./hosts";
 import { watchHotReload } from "./hot-reload";
@@ -138,8 +141,8 @@ function listen(
 /**
  * onStart: window keydown (capture), resize (shell and its top-bar layout, frame, auto density),
  * capture scroll, the OS theme listener, `link.onManifest` (palette counts, everLive, overlay
- * re-apply; the restore toast), link's taps (ripples) and link's hot reload state (the switch). No
- * shell mount here (R3).
+ * re-apply; the restore toast), link's taps (ripples), link's hot reload state (the switch) and
+ * link's session lists (the veil, the source pill, the notice). No shell mount here (R3).
  *
  * @param ctx - Domain context of workspace.
  */
@@ -211,12 +214,24 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
       state.ui.bump();
     })
   );
+
+  // Sessions: a phone linking or leaving, or the local preview's pause taking hold (the hub sends
+  // the list again when a heartbeat's paused flips), repaints the veil, the source pill and the
+  // notice; activeSource applied the list before this listener runs.
+  trackCleanup(
+    state,
+    link.onSessions(() => {
+      if (state.stopped) return;
+      syncVeil(ctx);
+      state.ui.bump();
+    })
+  );
 }
 
 /**
- * onStop: runs every cleanup, clears timers, forgets the scenario listeners, unrenders the shell,
- * removes the frame layer and the hosts. Late callbacks (a listing that settles after stop among
- * them) see `stopped` and return.
+ * onStop: runs every cleanup, clears timers, forgets the scenario listeners, drops a pending local
+ * preview start without settling it, unrenders the shell, removes the frame layer and the hosts.
+ * Late callbacks (a listing that settles after stop among them) see `stopped` and return.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -228,6 +243,7 @@ export function stopWorkspace(ctx: { readonly state: WorkspaceState }): void {
   clearToasts(state);
   clearTaps(state);
   stopTicker(state);
+  dropStart(state);
   unmountShell(state);
   removeFrameLayer(state);
   removeHosts(state);

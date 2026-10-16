@@ -69,6 +69,7 @@ type BuildFlags = {
   readonly agent?: unknown;
   readonly build?: unknown;
   readonly engine?: unknown;
+  readonly app?: unknown;
 };
 
 /**
@@ -83,6 +84,7 @@ export function stubBuild(flags: BuildFlags): void {
   vi.stubGlobal("__MOKU_GAME_AGENT__", flags.agent);
   vi.stubGlobal("__MOKU_GAME_BUILD__", flags.build);
   vi.stubGlobal("__MOKU_GAME_ENGINE__", flags.engine);
+  vi.stubGlobal("__MOKU_GAME_APP__", flags.app);
 }
 
 /** A started headless game. */

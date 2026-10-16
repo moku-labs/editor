@@ -64,6 +64,25 @@ describe("activeSource.clockOffsetMs", () => {
     expect(api.clockOffsetMs()).toBeNull();
   });
 
+  it("feeds the offset from the active device's heartbeats at the ping midpoint, never another session's", async () => {
+    // Bug: clockOffsetMs null forever for a phone, or the local preview's clock taken for the phone's.
+    const { ctx, link } = createCtx();
+    started = ctx;
+    startActiveSource(ctx);
+    const api = createActiveSourceApi(ctx);
+    link.list([localSession("s-1", false), deviceSession("s-9")], "s-1");
+    await settle();
+    link.publishDevices(directoryOf({ linked: [linkedOf({ latencyMs: 16 })] }));
+
+    link.heartbeat({ session: "s-9", at: 10_000, receivedAt: 10_420 });
+    link.heartbeat({ session: "s-1", at: 90_000, receivedAt: 10_430 });
+    expect(api.clockOffsetMs()).toBeNull();
+    link.heartbeat({ session: "s-9", at: 11_000, receivedAt: 11_420 });
+
+    expect(api.current()).toMatchObject({ kind: "device", session: "s-9" });
+    expect(api.clockOffsetMs()).toBe(-412);
+  });
+
   it("estimates phone − computer from the beat time and the ping midpoint", () => {
     // Sent at phone 10 000, received at computer 10 420 with a 16 ms round trip: sent at 10 412.
     expect(offsetOf(10_000, 10_420, 16)).toBe(-412);

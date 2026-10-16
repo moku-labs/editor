@@ -5,7 +5,8 @@
  * `syncFrame` reads the target rects once and writes one transform and one clip; the clip rounds
  * the screen corners by the preset radius. The docked iframe takes the pointer and the keyboard
  * in the preview and on the Game stage. The overlay holds the one indicator of an expected reload
- * (U9 B6): a spinner on the game, shown while the link is lost to that reload.
+ * (U9 B6): a spinner on the game, shown while the link is lost to that reload; and the paused veil
+ * (W11, `veil.tsx`) while a device is the source.
  */
 import { linkPlugin } from "../../link";
 import { isReloading, resolveDevice } from "../../registry/protocol";
@@ -24,6 +25,7 @@ import type {
 } from "../types";
 import { centreBox, clipInsets, clipPathOf, fitScale } from "./dock";
 import { reloadFrame } from "./reload";
+import { createVeil, syncVeil } from "./veil";
 
 /**
  * The frame box while nothing shows it.
@@ -75,8 +77,8 @@ export function taggedGameUrl(ctx: Pick<WorkspaceCtx, "require" | "state">): str
 }
 
 /**
- * The overlay element above the iframe (device space), created once with the reload spinner;
- * attached into the frame box by the first mount.
+ * The overlay element above the iframe (device space), created once with the reload spinner and
+ * the hidden veil host; attached into the frame box by the first mount.
  *
  * @param state - Workspace state.
  * @returns The element.
@@ -86,7 +88,7 @@ export function ensureOverlay(state: WorkspaceState): HTMLElement {
 
   const overlay = document.createElement("div");
   overlay.dataset.frameOverlay = "";
-  overlay.append(createSpinner(state));
+  overlay.append(createSpinner(state), createVeil());
   state.frame.overlay = overlay;
   return overlay;
 }
@@ -121,10 +123,11 @@ export function syncSpinner(state: WorkspaceState): void {
 /**
  * Creates the frame layer, the frame box, the iframe and attaches the overlay, once, in
  * `document.body` (not in the shell root, so a later mount into another element cannot move it).
+ * The veil starts with the current source.
  *
  * @param ctx - Domain context of workspace.
  */
-export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): void {
+export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require" | "log">): void {
   const { state } = ctx;
   if (state.frame.layer !== undefined) return;
 
@@ -149,6 +152,7 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require">): 
   document.body.append(layer);
   state.frame.layer = layer;
   state.frame.iframe = iframe;
+  syncVeil(ctx);
 }
 
 /**

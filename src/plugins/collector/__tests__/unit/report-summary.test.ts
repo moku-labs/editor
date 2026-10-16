@@ -134,6 +134,7 @@ describe("summarize — screens", () => {
       thermal: [],
       gfx: [],
       lost: 0,
+      telemetry: 0,
       lines: samples.length + 1,
       skipped: { notJson: 0, noVersion: 0, otherVersion: 0, unknownKind: 0, badShape: 0 }
     };

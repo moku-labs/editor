@@ -1,11 +1,13 @@
 /* eslint-disable unicorn/no-null -- null is "none" on the wire */
 /**
  * @file connect plugin — the device directory (spec 11 C4): the pure `buildDirectory` (the phones
- * adb lists with their phase and their match to a linked device, the pairings asking without their
- * codes, the linked devices with their open sessions), the current directory of the state and the
- * hub, and its publish as `editor.devices` — only when it changed, at most every 250 ms.
+ * adb lists with their phase and their match to a linked device — by model, and by app id where a
+ * model is shared — the pairings asking without their codes, the linked devices with their open
+ * sessions), the phones whose apps the scan asks, the current directory of the state and the hub,
+ * and its publish as `editor.devices` — only when it changed, at most every 250 ms.
  */
 import { hubPlugin } from "../hub";
+import { baseAppId } from "../hub/protocol";
 import type { LinkedDevice } from "../hub/types";
 import type { SessionInfo } from "../registry/protocol";
 import { freezeDeep, unref } from "./shared";
@@ -81,6 +83,98 @@ function bySerial(left: WireRecord, right: WireRecord): number {
 }
 
 /**
+ * Online linked adb devices and ready phones, grouped by model.
+ *
+ * @param wire - The phones adb lists.
+ * @param linked - The hub's devices.
+ * @returns The groups.
+ */
+function groupsOf(wire: Iterable<WireRecord>, linked: readonly LinkedDevice[]): ModelGroups {
+  const online = linked.filter(device => device.online && device.link === "adb");
+  const ready = [...wire].filter(record => record.state === "device");
+  return {
+    linked: groupBy(online, device => device.model),
+    phones: groupBy(ready, record => record.facts?.model ?? null)
+  };
+}
+
+/**
+ * Whether the model alone links a phone: exactly one linked device and one ready phone of it.
+ *
+ * @param linked - The model's online linked adb devices.
+ * @param phones - The model's ready phones.
+ * @returns True for one of each.
+ */
+function isPair(linked: readonly LinkedDevice[], phones: readonly WireRecord[]): boolean {
+  return linked.length === 1 && phones.length === 1;
+}
+
+/**
+ * Whether a phone runs a device's app: its last `ps` lists a process with the app id, both
+ * without a trailing `.debug`.
+ *
+ * @param record - The phone.
+ * @param device - The linked device.
+ * @returns False when either side has no app id.
+ */
+function runsApp(record: WireRecord, device: LinkedDevice): boolean {
+  return device.appId !== undefined && record.apps?.has(baseAppId(device.appId)) === true;
+}
+
+/**
+ * The phones of a model whose linked devices all name their app while the model alone links none
+ * (two phones, or two linked devices, of one model): their processes tell them apart (engine E3).
+ * The scan asks `ps` of exactly these.
+ *
+ * @param wire - The phones adb lists.
+ * @param linked - The hub's devices.
+ * @returns The ready phones to ask.
+ * @example
+ * ```ts
+ * phonesToTell([], []); // []
+ * ```
+ */
+export function phonesToTell(
+  wire: Iterable<WireRecord>,
+  linked: readonly LinkedDevice[]
+): WireRecord[] {
+  const groups = groupsOf(wire, linked);
+  return [...groups.phones].flatMap(([model, phones]) => {
+    const devices = groups.linked.get(model) ?? [];
+    const named = devices.length > 0 && devices.every(device => device.appId !== undefined);
+    return named && !isPair(devices, phones) ? phones : [];
+  });
+}
+
+/**
+ * The match by app id of a phone whose model is shared (engine E3): the one linked device whose
+ * app it runs when no other phone of the model runs that app; `"none"` when it runs no linked
+ * device's app; `"ambiguous"` otherwise, and whenever a device names no app or a phone's processes
+ * are unknown (never a guess).
+ *
+ * @param record - The phone.
+ * @param linked - The model's online linked adb devices.
+ * @param phones - The model's ready phones.
+ * @returns The device, "none" or "ambiguous".
+ */
+function appMatchOf(
+  record: WireRecord,
+  linked: readonly LinkedDevice[],
+  phones: readonly WireRecord[]
+): LinkedDevice | "none" | "ambiguous" {
+  const known =
+    linked.every(device => device.appId !== undefined) &&
+    phones.every(phone => phone.apps !== undefined);
+  if (!known) return "ambiguous";
+
+  const runs = linked.filter(device => runsApp(record, device));
+  const [own] = runs;
+  if (own === undefined) return "none";
+  const elsewhere = phones.filter(phone => runsApp(phone, own));
+  return runs.length === 1 && elsewhere.length === 1 ? own : "ambiguous";
+}
+
+/**
  * The phase of a ready phone no linked device matched: ready while device mode is off, then
  * waiting until `answerTimeoutMs` after device mode came on (or after the phone was plugged, when
  * later), then no-agent.
@@ -119,12 +213,14 @@ function phoneOf(record: WireRecord, input: DirectoryInput, groups: ModelGroups)
 
   const linked = model === null ? [] : (groups.linked.get(model) ?? []);
   const phones = model === null ? [] : (groups.phones.get(model) ?? []);
-  const [match] = linked;
-  if (match !== undefined && linked.length === 1 && phones.length === 1) {
-    return { ...base, phase: "linked", device: match.id };
-  }
-  if (match !== undefined) return { ...base, phase: "linked", match: "ambiguous" };
-  return { ...base, phase: readyPhase(record, input) };
+  const [only] = linked;
+  if (only === undefined) return { ...base, phase: readyPhase(record, input) };
+  if (isPair(linked, phones)) return { ...base, phase: "linked", device: only.id };
+
+  const match = appMatchOf(record, linked, phones);
+  if (match === "none") return { ...base, phase: readyPhase(record, input) };
+  if (match === "ambiguous") return { ...base, phase: "linked", match: "ambiguous" };
+  return { ...base, phase: "linked", device: match.id };
 }
 
 /**
@@ -200,8 +296,11 @@ function modeOf(mode: ConnectState["mode"]): DeviceDirectory["mode"] {
 
 /**
  * Builds the device directory. A ready phone is linked when exactly one online adb device and
- * exactly one ready phone have its model (the collector's rule); several of either make every
- * phone of that model `match: "ambiguous"`, linked to no device.
+ * exactly one ready phone have its model (the collector's rule). Several of either: when every
+ * linked device of the model names its app and every phone's processes are known, a phone is
+ * linked to the one device whose app runs on it and on no other phone of the model, and a phone
+ * running none of their apps is not linked; else every phone of that model is
+ * `match: "ambiguous"`, linked to no device.
  *
  * @param input - The state, the hub's devices and sessions, the time.
  * @returns A fresh frozen directory; phones sorted by serial.
@@ -212,12 +311,7 @@ function modeOf(mode: ConnectState["mode"]): DeviceDirectory["mode"] {
  */
 export function buildDirectory(input: DirectoryInput): DeviceDirectory {
   const records = [...input.wire].toSorted(bySerial);
-  const online = input.linked.filter(device => device.online && device.link === "adb");
-  const ready = records.filter(record => record.state === "device");
-  const groups: ModelGroups = {
-    linked: groupBy(online, device => device.model),
-    phones: groupBy(ready, record => record.facts?.model ?? null)
-  };
+  const groups = groupsOf(records, input.linked);
   const { adb } = input;
 
   return freezeDeep({

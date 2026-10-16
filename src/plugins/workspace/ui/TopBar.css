@@ -1,4 +1,4 @@
-/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar, with the computer's engine fingerprint after the session chip from 1100 px (spec 09 W3, ENGINE_TEXT_FROM_PX); under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: the game mark, game name, link pill, Pause and Step as icons, the Hot reload icon toggle (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
+/* workspace · TopBar. B1: one row of controls on the panel surface with a 1 px bottom line, in two layouts the component picks by window width (round 2 R1). Wide, 900 px and up: the full bar, with the computer's engine fingerprint after the session chip from 1100 px (spec 09 W3, ENGINE_TEXT_FROM_PX); under 1180 px the ghost buttons (Pause, Step) drop their visible label, while the Preview, Overlay and Hot reload switches keep theirs; the search box keeps a minimum width and clips its own content, so it never runs over a neighbour. Compact, under 900 px: the game mark, game name, the source pill (its name only), link pill, Pause and Step as icons, the Hot reload icon toggle (round 2b R15) pushed to the end with a 28 px search icon and the ⋯ button; at 560 px and narrower (a third of the screen) the game name hides too. Every control keeps its size; only the game name and the wide search shrink. No @layer wrapper: the sheet joins layer(components) where it is imported (R3, R7). */
 @scope ([data-ui="top-bar"]) to ([popover]) {
   :scope {
     display: flex;
@@ -150,6 +150,15 @@
 
   :scope[data-layout="compact"] [data-game-name] [data-part="version"] {
     display: none;
+  }
+
+  /* The source pill names the source only; how it is reached stays in its title. */
+  :scope[data-layout="compact"] [data-ui="source-pill"] [data-part="via"] {
+    display: none;
+  }
+
+  :scope[data-layout="compact"] [data-ui="source-pill"] > button {
+    max-width: 140px;
   }
 
   /* Wide bar under 1180 px: the ghost buttons become icons (the label stays the accessible name); the switches keep their labels in a tighter box. */

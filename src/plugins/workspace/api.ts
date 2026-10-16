@@ -7,6 +7,7 @@ import { DEVICES } from "../registry/protocol";
 import { setBadge, showWorkspace } from "./actions";
 import { deviceChoiceOf } from "./devices";
 import { createGameFrame } from "./frame/frame";
+import { startLocalPreview } from "./frame/start";
 import { hostOf } from "./hosts";
 import { setHotReload } from "./hot-reload";
 import { addEscapeLayer } from "./keys/escape";
@@ -147,6 +148,8 @@ export function createWorkspaceApi(ctx: WorkspaceCtx): WorkspaceApi {
     },
 
     onPrefs: fn => addPrefsListener(state, fn),
+
+    startLocalPreview: () => startLocalPreview(ctx),
 
     scenarios: () => scenarioView(state),
 

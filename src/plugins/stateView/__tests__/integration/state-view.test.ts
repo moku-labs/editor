@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { SessionInfo, ToolsBoot } from "../../../registry/protocol";
@@ -38,7 +39,7 @@ const SESSION: SessionInfo = {
 };
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, stateViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, stateViewPlugin]
 });
 
 let hub: TestHub;

@@ -20,6 +20,7 @@ import { isObject } from "../capture/shot";
 import { logReadFailure } from "../report";
 import { notify } from "../state";
 import type { CalibrationTarget, GameViewCtx, GameViewState } from "../types";
+import { onDevice } from "./device";
 import { frameOf, rebuildScene } from "./rebuild";
 
 /**
@@ -151,7 +152,8 @@ function keepRead(ctx: GameViewCtx, target: CalibrationTarget, page?: PageRect):
  * drawn rect onto it. Marks the calibration read first, so a burst asks once; a second call
  * while a read is in flight does nothing. A read overtaken by a ui snapshot with another target
  * is discarded and read once more; the second read is kept. While it runs,
- * `calibrationRun.pending` holds it, so `scene()` can wait for the calibrated scene.
+ * `calibrationRun.pending` holds it, so `scene()` can wait for the calibrated scene. Nothing is
+ * read while a phone is the source (G1).
  *
  * @param ctx - Domain context of gameView.
  * @param retries - How many overtaken reads may still be discarded.
@@ -159,7 +161,8 @@ function keepRead(ctx: GameViewCtx, target: CalibrationTarget, page?: PageRect):
  */
 export async function calibrate(ctx: GameViewCtx, retries = 1): Promise<void> {
   const run = ctx.state.calibrationRun;
-  if (ctx.state.sources.ui === undefined || run.reading) return;
+  // A phone as the source is never asked for a rect (G1).
+  if (ctx.state.sources.ui === undefined || run.reading || onDevice(ctx)) return;
 
   const pending = readCalibration(ctx, retries);
   run.pending = pending;

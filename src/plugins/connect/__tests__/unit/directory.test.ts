@@ -31,6 +31,7 @@ function phone(serial: string, model: string, overrides: Partial<WireRecord> = {
     facts: { model, name: "Galaxy A26", os: "Android 15" },
     asked: true,
     readySince: ON_AT - 5000,
+    apps: undefined,
     ...overrides
   };
 }
@@ -54,6 +55,17 @@ function input(overrides: Partial<DirectoryInput> = {}): DirectoryInput {
     answerTimeoutMs: 20_000,
     ...overrides
   };
+}
+
+/**
+ * The `match` of each phone of a directory built from these phones and linked devices.
+ *
+ * @param wire - The phones.
+ * @param linked - The linked devices.
+ * @returns Each phone's match, by serial.
+ */
+function matchesOf(wire: WireRecord[], linked: LinkedDevice[]): (string | undefined)[] {
+  return buildDirectory(input({ wire, linked })).wire.map(device => device.match);
 }
 
 describe("buildDirectory", () => {
@@ -157,6 +169,59 @@ describe("buildDirectory", () => {
       null,
       { available: false, reason: "missing" },
       { on: false, owner: null, listen: null }
+    ]);
+  });
+});
+
+describe("buildDirectory: the app id (spec 11 C4, engine E3)", () => {
+  /** The garden's process names on the phone, without the .debug suffix (as the scan keeps them). */
+  const GARDEN = new Set(["com.moku.garden", "com.android.chrome"]);
+  /** A phone running other apps only. */
+  const OTHER = new Set(["com.android.chrome"]);
+
+  it("tells two phones of one model apart by the app each runs (bug: two A26s, ambiguous, no telemetry)", () => {
+    const wire = [
+      phone(SERIAL, "SM-A266B", { apps: GARDEN }),
+      phone("R5CX30ZZZZZ", "SM-A266B", { apps: OTHER })
+    ];
+    const before = buildDirectory(input({ wire, linked: [a26Device()] }));
+    expect(before.wire.map(device => device.match)).toEqual(["ambiguous", "ambiguous"]);
+
+    const linked = [a26Device({ appId: "com.moku.garden.debug" })];
+    const after = buildDirectory(input({ wire, linked }));
+    expect(after.wire.map(device => [device.phase, device.device, device.match])).toEqual([
+      ["linked", "d-7f3a", undefined],
+      ["waiting", null, undefined]
+    ]);
+  });
+
+  it("links two phones of one model each to the device of its own app", () => {
+    const wire = [
+      phone(SERIAL, "SM-A266B", { apps: GARDEN }),
+      phone("R5CX30ZZZZZ", "SM-A266B", { apps: new Set(["com.moku.pond"]) })
+    ];
+    const linked = [
+      a26Device({ id: "d-2b2b", appId: "com.moku.pond" }),
+      a26Device({ appId: "com.moku.garden.debug" })
+    ];
+    expect(buildDirectory(input({ wire, linked })).wire.map(device => device.device)).toEqual([
+      "d-7f3a",
+      "d-2b2b"
+    ]);
+  });
+
+  it("stays ambiguous when both phones run the app, a phone's processes are unknown, or a device names no app", () => {
+    // Bug: telemetry of the wrong phone, read from a guess.
+    const garden = a26Device({ appId: "com.moku.garden.debug" });
+    const both = [
+      phone(SERIAL, "SM-A266B", { apps: GARDEN }),
+      phone("R5CX30ZZZZZ", "SM-A266B", { apps: GARDEN })
+    ];
+    const unknown = [phone(SERIAL, "SM-A266B", { apps: GARDEN }), phone("R5CX30ZZZZZ", "SM-A266B")];
+    expect(matchesOf(both, [garden])).toEqual(["ambiguous", "ambiguous"]);
+    expect(matchesOf(unknown, [garden])).toEqual(["ambiguous", "ambiguous"]);
+    expect(matchesOf(unknown.slice(0, 1), [garden, a26Device({ id: "d-2b2b" })])).toEqual([
+      "ambiguous"
     ]);
   });
 });

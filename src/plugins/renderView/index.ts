@@ -7,8 +7,8 @@
  * `derive/`, `actions/`, `components/` share one root state. Emits the global `workspace:inspect`
  * and `workspace:open-file`; hooks `workspace:changed`, `link:status`, `link:project`,
  * `workspace:reveal` and activeSource's `activeSource:changed` and `activeSource:connect-requested`.
- * Skeleton of build wave 0 (RV0): the types, the state and the display clock are built; Mission
- * control's files are typed stubs until build waves 3 and 4.
+ * Build wave 3 (RV1–RV4) built the data, the painters, the words and the wiring; Mission control's
+ * components and the paint loop are typed stubs until build wave 4.
  *
  * @see README.md
  */

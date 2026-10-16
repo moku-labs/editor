@@ -45,6 +45,7 @@ export function createLinkState(_ctx: { readonly config: Readonly<Config> }): Li
       deviceTelemetry: new Set()
     },
     sessionsListeners: new Set(),
+    heartbeatListeners: new Set(),
     notified: new Map(),
     handlers: new Map(),
     subs: new Map(),

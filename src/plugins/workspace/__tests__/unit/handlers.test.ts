@@ -18,9 +18,9 @@ afterEach(() => {
 });
 
 describe("createHandlers", () => {
-  it("hooks link:status", () => {
+  it("hooks link:status and activeSource:changed", () => {
     const hooks = createHandlers(createCtx());
-    expect(Object.keys(hooks)).toEqual(["link:status"]);
+    expect(Object.keys(hooks)).toEqual(["link:status", "activeSource:changed"]);
   });
 });
 

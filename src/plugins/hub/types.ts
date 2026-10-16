@@ -387,6 +387,8 @@ export type PairRequest = {
   readonly engine: string | null;
   /** The phone's build id, as it reported it. */
   readonly build: string | null;
+  /** The phone's app id, as it reported it ("com.mokulabs.timber.debug"); absent when it sent none. */
+  readonly appId?: string;
 };
 
 /**
@@ -466,6 +468,8 @@ export type DeviceRecord = {
   address: string;
   engine: string | null;
   build: string | null;
+  /** The app id of the pair; absent when the phone sent none. */
+  appId?: string;
   pairedAt: number;
   /** The live connection, undefined while the phone is away. */
   conn: number | undefined;

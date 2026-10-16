@@ -29,7 +29,7 @@ import type {
 } from "../../perf/protocol";
 import type { Json } from "../../registry/protocol";
 import { createCollectorState } from "../state";
-import type { CollectorConfig, CollectorCtx, CollectorEvents } from "../types";
+import type { CollectorConfig, CollectorCtx, CollectorEvents, PerfTelemetryLine } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared fakes and fixtures of the collector tests: typed log lines, a mock
@@ -534,6 +534,46 @@ export function gfxLine(t: number, overrides: Partial<PerfCollectorLine> = {}): 
     p99: 25,
     hist: { "16": 500, "19": 90, "25": 10 },
     ...overrides
+  };
+}
+
+/**
+ * A telemetry line of the collector: the wired A26, its GPU and surfaceflinger read, the app's
+ * CPU, the memory and the heap not available with their reasons.
+ *
+ * @param t - Page t.
+ * @returns The telemetry line.
+ */
+export function telemetryLine(t: number): PerfTelemetryLine {
+  return {
+    v: 1,
+    kind: "telemetry",
+    t,
+    rx: 1_791_986_090_000,
+    build: BUILD,
+    device: "SM-A266B",
+    serial: "R5CX30ABCDE",
+    wired: true,
+    gpu: {
+      available: true,
+      source: "/sys/kernel/gpu",
+      value: { mhz: 221, busyPct: 63, minMhz: 221, maxMhz: 949 }
+    },
+    cpu: {
+      cores: 8,
+      app: { available: false, source: "none", reason: "not-found" },
+      renderer: { available: false, source: "none", reason: "ambiguous" },
+      surfaceflinger: {
+        available: true,
+        source: "/proc/612/stat",
+        value: { pid: 612, name: "surfaceflinger", pct: 2.1, oneCorePct: 16.8 }
+      }
+    },
+    memory: {
+      app: { available: false, source: "dumpsys meminfo", reason: "warming-up" },
+      renderer: { available: false, source: "dumpsys meminfo", reason: "warming-up" }
+    },
+    heap: { available: false, source: "none", reason: "no-devtools-socket" }
   };
 }
 

@@ -131,6 +131,7 @@ describe("initWorkspace", () => {
     expect(ctx.state.keys.escape.map(entry => entry.layer).toSorted()).toEqual([
       "contextMenu",
       "contextMenu",
+      "contextMenu",
       "palette",
       "registry",
       "stepPopover"

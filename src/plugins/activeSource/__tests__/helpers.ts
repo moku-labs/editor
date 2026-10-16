@@ -9,7 +9,7 @@ import type {
   WireDevice
 } from "../../connect/protocol";
 import type { SessionDevice } from "../../hub/protocol";
-import type { LinkApi } from "../../link/types";
+import type { LinkApi, ReceivedHeartbeat } from "../../link/types";
 import type { ErrorReason, Json, Manifest, RunResult, SessionInfo } from "../../registry/protocol";
 import { errorCode, wireError } from "../../registry/protocol";
 import { createActiveSourceState } from "../state";
@@ -320,12 +320,16 @@ export type FakeLink = {
   readonly sessionListeners: Set<(list: readonly SessionInfo[]) => void>;
   /** onPublished listeners by method. */
   readonly publishedListeners: Map<string, Set<(value: never) => void>>;
+  /** onHeartbeat listeners. */
+  readonly heartbeatListeners: Set<(beat: ReceivedHeartbeat) => void>;
   /** Applies a sessions list (and the own session) and calls the onSessions listeners. */
   list(next: SessionInfo[], own?: string): void;
   /** Holds a devices value and calls its listeners. */
   publishDevices(value: DeviceDirectory): void;
   /** Holds a telemetry record and calls its listeners. */
   publishTelemetry(value: DeviceTelemetry): void;
+  /** Calls the onHeartbeat listeners with a beat, like link on a heartbeat of the chosen session. */
+  heartbeat(beat: ReceivedHeartbeat): void;
   /** The commands runIn received, as `session id`. */
   commands(): string[];
   /** The editor methods callEditor received, as `method`. */
@@ -343,6 +347,7 @@ export type FakeLink = {
 export function createFakeLink(): FakeLink {
   const sessionListeners = new Set<(list: readonly SessionInfo[]) => void>();
   const publishedListeners = new Map<string, Set<(value: never) => void>>();
+  const heartbeatListeners = new Set<(beat: ReceivedHeartbeat) => void>();
 
   const isOpen = (id: string): boolean => fake.sessions.some(session => session.id === id);
   const listenersOf = (method: string): Set<(value: never) => void> => {
@@ -389,6 +394,13 @@ export function createFakeLink(): FakeLink {
       return () => {
         listenersOf(method).delete(entry);
       };
+    },
+    onHeartbeat: (fn: (beat: ReceivedHeartbeat) => void) => {
+      const entry = (beat: ReceivedHeartbeat): void => fn(beat);
+      heartbeatListeners.add(entry);
+      return () => {
+        heartbeatListeners.delete(entry);
+      };
     }
   };
 
@@ -404,6 +416,7 @@ export function createFakeLink(): FakeLink {
     callEditor,
     sessionListeners,
     publishedListeners,
+    heartbeatListeners,
     list(next, own) {
       fake.sessions = next;
       if (own !== undefined) fake.own = own;
@@ -419,6 +432,9 @@ export function createFakeLink(): FakeLink {
     publishTelemetry(value) {
       fake.deviceTelemetry = value;
       for (const listener of listenersOf("deviceTelemetry")) listener(value as never);
+    },
+    heartbeat(beat) {
+      for (const listener of heartbeatListeners) listener(Object.freeze({ ...beat }));
     },
     commands: () => runIn.mock.calls.map(([session, id]) => `${session} ${id}`),
     methods: () => callEditor.mock.calls.map(([method]) => method)

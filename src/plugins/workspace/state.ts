@@ -93,6 +93,7 @@ export function createWorkspaceState(ctx: {
       listed: false,
       listeners: new Set()
     },
+    start: undefined,
     stopped: false
   };
 }

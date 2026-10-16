@@ -265,12 +265,14 @@ export function syncSession(
 }
 
 /**
- * Starts the session watches of game.render and game.assets and the manifest listener that
- * starts game.effects when the manifest lists it and follows the kind of session (once).
+ * Starts the session watches of game.render and game.assets and the one manifest listener that
+ * starts game.effects when the manifest lists it, follows the kind of session and tells the caller
+ * (Mission control restarts its reads with what the new manifest lists) (once).
  *
  * @param ctx - Domain context of renderView.
+ * @param onManifest - Also called on every manifest change.
  */
-export function startTracker(ctx: RenderViewCtx): void {
+export function startTracker(ctx: RenderViewCtx, onManifest?: () => void): void {
   if (ctx.state.tracker.length > 0) return;
 
   const link = ctx.require(linkPlugin);
@@ -280,6 +282,7 @@ export function startTracker(ctx: RenderViewCtx): void {
     link.onManifest(manifest => {
       syncEffects(ctx, link, manifest);
       syncSession(ctx, link, manifest);
+      onManifest?.();
     })
   );
 }

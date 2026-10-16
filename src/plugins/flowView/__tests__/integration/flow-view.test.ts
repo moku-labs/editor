@@ -4,6 +4,7 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type {
@@ -29,7 +30,7 @@ import { createFlowHub, type FlowHub } from "./fake-hub";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, flowViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, flowViewPlugin]
 });
 
 const BOOT: ToolsBoot = {

@@ -1,12 +1,13 @@
 /**
  * @file collector plugin — type definitions: config, the adb seam and its readings, the per-log
- * sessions, the adb loop, state, the per-plugin event `collector:session` and its digest, the api,
- * the hooks and the domain context. The report types of the runtime-free `./report` are re-exported
+ * sessions, the adb loop, state, the per-plugin event `collector:session` and its digest, the
+ * wired telemetry line, the api, the hooks and the domain context. The report types of the runtime-free `./report` are re-exported
  * here, so the server entry's `Collector.*` namespace reaches them without a root export.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require } from "../../config";
+import type { DeviceTelemetry } from "../connect/protocol";
 import type { HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfCause } from "../perf/protocol";
 
@@ -231,6 +232,53 @@ export type LogSession = {
   queued: number;
   /** A write was dropped on a full queue and none was taken since (one warning per streak). */
   queueFull: boolean;
+  /**
+   * The device records this log: true from its first batch (a phone ships a log only while it
+   * records, so a log first seen mid-recording counts), false after a `recorder` event line with
+   * `action: "stop"`, true again after one with `action: "start"`. Wired telemetry is written into
+   * the log only while it is true.
+   */
+  recording: boolean;
+};
+
+/**
+ * The collector's computer-side line of a wired device's telemetry: one per `connect:telemetry`
+ * tick while the device records, written only into the computer file (the phone's own log never
+ * holds it). Editor-owned and additive to PerfLog v1, like `gap`. `serial`, `wired`, `gpu`, `cpu`,
+ * `memory` and `heap` are the DeviceTelemetry fields verbatim: every reading keeps its `source`, or
+ * its `reason` when it is not available, and `heap` holds every CDP sample and inferred GC of the
+ * tick. `t` is the record's computer time on the log's page clock, through the log's offset (the
+ * page clock is anchored once per log by the header's `timeOrigin`, `epochMs = timeOrigin + t`).
+ *
+ * @example
+ * ```ts
+ * const line: PerfTelemetryLine = { v: 1, kind: "telemetry", t: 5917.4, rx: 1791986084000, build: "debug-20261014T160000Z",
+ *   device: "SM-A266B", serial: "R5CX30ABCDE", wired: true,
+ *   gpu: { available: true, source: "/sys/kernel/gpu", value: { mhz: 221, busyPct: 63, minMhz: 221, maxMhz: 949 } },
+ *   cpu: { cores: 8, app: { available: false, source: "none", reason: "not-found" },
+ *     renderer: { available: false, source: "none", reason: "ambiguous" },
+ *     surfaceflinger: { available: true, source: "/proc/612/stat", value: { pid: 612, name: "surfaceflinger", pct: 2.1, oneCorePct: 16.8 } } },
+ *   memory: { app: { available: false, source: "dumpsys meminfo", reason: "warming-up" }, renderer: { available: false, source: "dumpsys meminfo", reason: "warming-up" } },
+ *   heap: { available: false, source: "none", reason: "no-devtools-socket" } };
+ * ```
+ */
+export type PerfTelemetryLine = {
+  readonly v: 1;
+  readonly kind: "telemetry";
+  /** The record's `at` on the log's page clock (`at + offset`, 0.01 ms); `rx` while the log has no offset. */
+  readonly t: number;
+  /** Computer epoch ms when the collector wrote it. */
+  readonly rx: number;
+  /** The log's build. */
+  readonly build: string | null;
+  /** The log's normalized model. */
+  readonly device: string;
+  readonly serial: DeviceTelemetry["serial"];
+  readonly wired: DeviceTelemetry["wired"];
+  readonly gpu: DeviceTelemetry["gpu"];
+  readonly cpu: DeviceTelemetry["cpu"];
+  readonly memory: DeviceTelemetry["memory"];
+  readonly heap: DeviceTelemetry["heap"];
 };
 
 /**
@@ -421,9 +469,13 @@ export type CollectorApi = {
 };
 
 /**
- * The hooks of the collector: the hub's per-plugin event `hub:device`.
+ * The hooks of the collector: the hub's per-plugin event `hub:device` and connect's per-plugin
+ * event `connect:telemetry` (both seen through `depends`).
  */
-export type CollectorHooks = { readonly "hub:device": (event: HubDeviceEvent) => void };
+export type CollectorHooks = {
+  readonly "hub:device": (event: HubDeviceEvent) => void;
+  readonly "connect:telemetry": (record: DeviceTelemetry) => void;
+};
 
 /**
  * Domain context of the collector: the kernel context is assignable to it.

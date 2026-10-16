@@ -154,6 +154,7 @@ function confirmPairing(ctx: HubCtx, conn: AgentConn, request: PairRequest): voi
     address: request.address,
     engine: request.engine,
     build: request.build,
+    ...(request.appId === undefined ? {} : { appId: request.appId }),
     pairedAt: Date.now(),
     conn: conn.conn,
     logs: new Map(),
@@ -335,7 +336,8 @@ export function onPairingMessage(
     // eslint-disable-next-line unicorn/no-null -- null is "not reported" on PairRequest
     engine: params.device.engine ?? null,
     // eslint-disable-next-line unicorn/no-null -- null is "not reported" on PairRequest
-    build: params.device.build ?? null
+    build: params.device.build ?? null,
+    ...(params.device.appId === undefined ? {} : { appId: params.device.appId })
   };
   if (request.link === "adb" && ctx.config.pairing === "lan") confirmPairing(ctx, conn, request);
   else enqueue(ctx, conn.conn, request);

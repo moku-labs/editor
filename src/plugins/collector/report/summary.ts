@@ -636,6 +636,7 @@ export function summarize(log: ParsedLog): LogSummary {
       mode: textOrNull(rate.detail.mode) ?? ""
     })),
     lost: log.lost,
+    telemetry: log.telemetry,
     lines: log.lines,
     skipped: { ...log.skipped }
   };

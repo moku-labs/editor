@@ -2,13 +2,17 @@
  * @file gameView plugin — the scene inputs while Game is shown (R6): watches of game.ui,
  * game.entities and game.projections, one buildScene per animation frame for a burst of values,
  * and the calibration (scene/calibrate) told of every ui snapshot. No timer reads a frame source.
+ * A phone as the source is watched for nothing (G1, scene/device).
  */
 import { linkPlugin } from "../../link";
 import type { Json } from "../../registry/protocol";
+import { workspacePlugin } from "../../workspace";
 import { isObject } from "../capture/shot";
 import { logReadFailure } from "../report";
+import { notify } from "../state";
 import type { GameViewCtx, GameViewState } from "../types";
 import { calibrate, onUiSnapshot } from "./calibrate";
+import { onDevice } from "./device";
 import { frameOf, rebuildScene } from "./rebuild";
 
 /**
@@ -138,14 +142,14 @@ function onSceneValue(
 }
 
 /**
- * Watches the three scene sources while Game is shown (a second call does nothing). The unwatch
- * functions go into `state.watching`.
+ * Watches the three scene sources while Game is shown (a second call does nothing, and nothing is
+ * watched while a phone is the source, G1). The unwatch functions go into `state.watching`.
  *
  * @param ctx - Domain context of gameView.
  */
 export function startSceneWatches(ctx: GameViewCtx): void {
   const { state } = ctx;
-  if (state.watching.length > 0) return;
+  if (state.watching.length > 0 || onDevice(ctx)) return;
 
   const link = ctx.require(linkPlugin);
   const session: WatchSession = {
@@ -176,4 +180,22 @@ export function startSceneWatches(ctx: GameViewCtx): void {
  */
 export function stopSceneWatches(ctx: Pick<GameViewCtx, "state">): void {
   for (const unwatch of ctx.state.watching.splice(0)) unwatch();
+}
+
+/**
+ * Follows the chosen session (G1), from link's manifest listener: it runs on every attach and
+ * loss, before link resubscribes the watches it holds, so no scene watch reaches a phone. A phone
+ * as the source drops the scene watches and turns the picker off; any other session starts them
+ * again while Game is shown.
+ *
+ * @param ctx - Domain context of gameView.
+ */
+export function followSource(ctx: GameViewCtx): void {
+  if (!onDevice(ctx)) {
+    if (ctx.require(workspacePlugin).active() === "game") startSceneWatches(ctx);
+    return;
+  }
+  stopSceneWatches(ctx);
+  ctx.state.picker = { on: false, hover: undefined };
+  notify(ctx.state);
 }

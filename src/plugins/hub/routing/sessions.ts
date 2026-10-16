@@ -302,8 +302,8 @@ export function sessionIdFrom(
 }
 
 /**
- * The phone of a paired device connection, for its session: the record's fields and the device
- * listener's real port. Undefined for a game page and for a pairing socket.
+ * The phone of a paired device connection, for its session: the record's fields (the app id only
+ * when the phone named one) and the device listener's real port. Undefined for a game page and for a pairing socket.
  *
  * @param state - Hub state.
  * @param conn - The agent connection.
@@ -315,8 +315,9 @@ export function sessionDeviceOf(state: HubState, conn: AgentConn): SessionDevice
   const port = state.deviceListen?.port;
   if (record === undefined || port === undefined) return undefined;
 
-  const { model, link, address, engine, build } = record;
-  return { id: record.id, model, link, address, port, engine, build };
+  const { model, link, address, engine, build, appId } = record;
+  const device = { id: record.id, model, link, address, port, engine, build };
+  return appId === undefined ? device : { ...device, appId };
 }
 
 /**

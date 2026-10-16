@@ -1,6 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is "not measured" in the log lines and summaries */
 import { describe, expect, it } from "vitest";
-import { isPerfLog, parsePerfLog } from "../../report";
+import { isPerfLog, parsePerfLog, summarize } from "../../report";
 import {
   eventLine,
   headerLine,
@@ -10,6 +10,7 @@ import {
   rateLine,
   sampleLine,
   spikeLine,
+  telemetryLine,
   thermalLine
 } from "../helpers";
 
@@ -135,6 +136,29 @@ describe("parsePerfLog", () => {
     expect(log.header?.t).toBe(0);
     expect(log.marks.map(mark => mark.label)).toEqual(["boss"]);
     expect(log.thermal).toHaveLength(1);
+  });
+
+  it("counts a telemetry line as read, never as an unknown kind, and keeps it out of every summary table (bug: a wired log reported as 'unknown kinds skipped')", () => {
+    const log = parsePerfLog(
+      jsonl([headerLine(), sampleLine(1000), telemetryLine(1500), telemetryLine(2500)])
+    );
+
+    expect(log.skipped).toEqual({
+      notJson: 0,
+      noVersion: 0,
+      otherVersion: 0,
+      unknownKind: 0,
+      badShape: 0
+    });
+    expect(log.telemetry).toBe(2);
+    expect(log.lines).toBe(4);
+    const summary = summarize(log);
+    expect(summary.telemetry).toBe(2);
+    expect(summary.heat).toEqual([]);
+    expect(summary.system).toEqual([]);
+    expect(summary.screens.map(screen => [screen.path, screen.seconds])).toEqual([
+      ["garden/boss", 1]
+    ]);
   });
 
   it("reads startup and longFrame lines without keeping or skipping them", () => {

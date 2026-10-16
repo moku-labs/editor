@@ -39,9 +39,9 @@ export function deviceIdFrom(
 }
 
 /**
- * The frozen report of a device record: its SessionDevice fields with the device listener's port,
- * when it paired, whether a connection is open now (a `closed` event passes `false`) and the last
- * ping round trip. Never the token or the log indices.
+ * The frozen report of a device record: its SessionDevice fields (the app id only when the phone
+ * named one) with the device listener's port, when it paired, whether a connection is open now (a
+ * `closed` event passes `false`) and the last ping round trip. Never the token or the log indices.
  *
  * @param state - Hub state.
  * @param record - The device record.
@@ -53,7 +53,7 @@ export function linkedDevice(
   record: DeviceRecord,
   online = record.conn !== undefined
 ): LinkedDevice {
-  const { id, model, link, address, engine, build, pairedAt, latencyMs } = record;
+  const { id, model, link, address, engine, build, appId, pairedAt, latencyMs } = record;
   const port = state.deviceListen?.port ?? 0;
 
   return Object.freeze({
@@ -64,6 +64,7 @@ export function linkedDevice(
     port,
     engine,
     build,
+    ...(appId === undefined ? {} : { appId }),
     pairedAt,
     online,
     latencyMs

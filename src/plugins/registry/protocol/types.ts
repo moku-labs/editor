@@ -136,18 +136,24 @@ export type CommandRefusal = "read-only" | "dev-only";
 export type BuildProfile = "dev" | "full" | "read" | "none";
 
 /**
- * The build of a game page: its profile, and the build id and engine fingerprint when the page has
- * them (`__MOKU_GAME_BUILD__`, `__MOKU_GAME_ENGINE__`).
+ * The build of a game page: its profile, and the build id, engine fingerprint and app id when the
+ * page has them (`__MOKU_GAME_BUILD__`, `__MOKU_GAME_ENGINE__`, `__MOKU_GAME_APP__`).
  *
  * @example
  * ```ts
- * const build: BuildInfo = { profile: "read", id: "debug-20261014T153012Z", engine: "0.14.12+9c41e0" };
+ * const build: BuildInfo = { profile: "read", id: "debug-20261016T090000Z", engine: "0.15.1+2b7c11", appId: "com.mokulabs.timber.debug" };
  * ```
  */
 export type BuildInfo = {
   readonly profile: BuildProfile;
   readonly id?: string;
   readonly engine?: string;
+  /**
+   * The app id the build wrote (`__MOKU_GAME_APP__`, the same value as the PerfLog header's
+   * `app.id`): the bundle identifier, with the `.debug` suffix of a native debug install. Absent on
+   * an engine that writes none (0.15.0) and on a page without a native identifier.
+   */
+  readonly appId?: string;
 };
 
 /**

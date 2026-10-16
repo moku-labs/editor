@@ -1,7 +1,8 @@
 /**
  * @file collector/report — `parsePerfLog`: one pass over a `.jsonl` file into the lines the report
- * reads; every other line is counted by reason, never misread. Unknown fields stay untouched.
- * `isPerfLog` tells a moku perf log (v1) from any other file. Pure.
+ * reads; every other line is counted by reason, never misread. The editor's own kinds `gap` and
+ * `telemetry` are read and counted, never skipped. Unknown fields stay untouched. `isPerfLog` tells
+ * a moku perf log (v1) from any other file. Pure.
  */
 import type {
   OverlayWhat,
@@ -30,11 +31,15 @@ type Collected = {
   thermal: PerfThermalLine[];
   gfx: PerfCollectorLine[];
   lost: number;
+  telemetry: number;
   lines: number;
   skipped: { -readonly [K in keyof SkippedLines]: number };
 };
 
-/** The kinds of a v1 log, the editor's `gap` included (11-monitor R11.2). */
+/**
+ * The kinds of a v1 log (11-monitor R11.2), the collector-written `gap` and `telemetry` included
+ * (editor kinds, additive to v1).
+ */
 const KNOWN_KINDS: ReadonlySet<string> = new Set([
   "header",
   "startup",
@@ -45,7 +50,8 @@ const KNOWN_KINDS: ReadonlySet<string> = new Set([
   "mark",
   "thermal",
   "gfx",
-  "gap"
+  "gap",
+  "telemetry"
 ]);
 
 /** What a game overlay did (spec 22 O10.2). */
@@ -335,6 +341,10 @@ function keepLine(line: LineObject, kind: string, into: Collected): boolean {
       into.lost += line.lines;
       return true;
     }
+    case "telemetry": {
+      into.telemetry += 1;
+      return true;
+    }
     default: {
       return true;
     }
@@ -368,7 +378,8 @@ function readRaw(raw: string, into: Collected): void {
  * log cut in the middle of a write) counts `notJson`; no numeric `v` (the game's old log)
  * `noVersion`; another version `otherVersion`; an unknown kind `unknownKind`; a known kind that
  * fails its minimal check `badShape`. `overlay`, `pool-trim` and `warm` event lines go to
- * `frameEvents`, `rate` lines to `rates`; other event lines are read and not kept.
+ * `frameEvents`, `rate` lines to `rates`; other event lines are read and not kept. `telemetry`
+ * lines (the wired device's) are counted in `telemetry` and kept out of every summary.
  *
  * @param text - The file's text.
  * @returns What it read.
@@ -388,6 +399,7 @@ export function parsePerfLog(text: string): ParsedLog {
     thermal: [],
     gfx: [],
     lost: 0,
+    telemetry: 0,
     lines: 0,
     skipped: { notJson: 0, noVersion: 0, otherVersion: 0, unknownKind: 0, badShape: 0 }
   };

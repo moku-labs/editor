@@ -1,10 +1,8 @@
 /**
- * @file renderView view — the keyboard map of Mission control (spec 09 § M16 keys): → steps a
- * frame, Shift+→ jumps a spike, Space toggles live, Esc closes a popover before it clears the
- * selection. Typed stub of build wave 0 (spec 09 § M17, RV0): the signatures are the contract
- * the other Mission control units build against; build wave 3 (RV1) writes the bodies.
+ * @file renderView view — the keyboard map of Mission control (spec 09 § M8 Keyboard): on the
+ * focused timeline or overview → / ← step a frame, Shift + → / ← jump to the next or previous spike
+ * group, Space pauses or goes live, Esc closes a popover first and only then clears the selection.
  */
-import { notBuilt } from "../stub";
 
 /**
  * The parts of a keydown Mission control reads.
@@ -31,14 +29,24 @@ export type MissionKey =
   | { readonly kind: "close-popover" }
   | { readonly kind: "clear-selection" };
 
+/** The direction of each arrow key. */
+const ARROWS: Readonly<Record<string, 1 | -1>> = { ArrowRight: 1, ArrowLeft: -1 };
+
 /**
  * What a key does.
  *
- * @param _event - The keydown.
- * @param _popoverOpen - A popover is open (Esc closes it first).
+ * @param event - The keydown.
+ * @param popoverOpen - A popover is open (Esc closes it first).
  * @returns The action; undefined for a key Mission control does not take.
- * @throws {Error} Until build wave 3: "renderView view/keyOf is not built yet".
+ * @example
+ * ```ts
+ * keyOf({ key: "Escape", shiftKey: false }, true); // { kind: "close-popover" }
+ * ```
  */
-export function keyOf(_event: KeyInput, _popoverOpen: boolean): MissionKey | undefined {
-  return notBuilt("view/keyOf", 3);
+export function keyOf(event: KeyInput, popoverOpen: boolean): MissionKey | undefined {
+  const dir = ARROWS[event.key];
+  if (dir !== undefined) return { kind: event.shiftKey ? "jump" : "step", dir };
+  if (event.key === " " || event.key === "Spacebar") return { kind: "toggle-live" };
+  if (event.key === "Escape") return { kind: popoverOpen ? "close-popover" : "clear-selection" };
+  return undefined;
 }

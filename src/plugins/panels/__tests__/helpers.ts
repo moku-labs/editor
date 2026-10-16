@@ -153,6 +153,7 @@ export function createLinkMock(): LinkMock {
       published: () => undefined,
       onPublished: () => stopNothing,
       onSessions: () => stopNothing,
+      onHeartbeat: () => stopNothing,
       ownSession: () => undefined,
       runIn: vi.fn(() => Promise.resolve(resultOf())),
       callEditor: vi.fn(() => Promise.resolve(null)),

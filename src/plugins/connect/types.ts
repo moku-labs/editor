@@ -336,6 +336,12 @@ export type WireRecord = {
   asked: boolean;
   /** Epoch ms since the phone is listed ready (state `device`); undefined while it is not. */
   readySince: number | undefined;
+  /**
+   * The process names of the phone's last `ps` (A4) without a trailing `.debug` — the apps it
+   * runs. Asked only while its model is shared and every linked device of that model names its
+   * app (spec 11 C4); undefined before that, or after a failed `ps`.
+   */
+  apps: ReadonlySet<string> | undefined;
 };
 
 /**
@@ -380,6 +386,8 @@ export type HeapState = {
 export type AttachRecord = {
   readonly device: string;
   readonly serial: string;
+  /** The linked device's app id ("com.moku.garden.debug"): the probe finds the app's process by it. */
+  readonly appId: string | undefined;
   /** The device session's page without the hash (the CDP target); null without a session. */
   page: string | null;
   /** Set when the attach ended: every async step checks it before it goes on. */

@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { WORKSPACE_IDS } from "../../../panels/shared/workspaces";
 import type { DeviceSpec, HotReload, WorkspaceName } from "../../../registry/protocol";
@@ -27,7 +28,9 @@ import type {
 // Type-level surface of app.workspace and the global workspace events
 // ─────────────────────────────────────────────────────────────────────────────
 
-const framework = createToolsCore(toolsCoreConfig, { plugins: [linkPlugin, workspacePlugin] });
+const framework = createToolsCore(toolsCoreConfig, {
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin]
+});
 
 describe("workspace types", () => {
   it("setScenario takes a scenario name or undefined for the saved player", () => {

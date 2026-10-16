@@ -5,6 +5,7 @@
  * `createMissionSeries` and trimmed to the same 2 minutes on the source clock; `clearSeries` sets
  * every count to 0 without reallocating.
  */
+import type { PerfCause } from "../source/contract";
 
 /**
  * One value over time, oldest first, allocated once: `t` source-clock ms, `v` the value (NaN: a gap,
@@ -109,4 +110,22 @@ export type MissionSeries = {
   readonly load: LoadSeries;
   /** Bumped on every change: the cards key on it. */
   version: number;
+};
+
+/**
+ * A spike group: consecutive frames of one primary cause (spec 09 § M8 item 7), with its rows,
+ * its cause and its worst frame.
+ *
+ * @example
+ * ```ts
+ * const group: SpikeGroup = { from: 4851, to: 4853, cause: "compile", maxMs: 41.3, firstRow: 365, lastRow: 367 };
+ * ```
+ */
+export type SpikeGroup = {
+  readonly from: number;
+  readonly to: number;
+  readonly cause: PerfCause;
+  readonly maxMs: number;
+  readonly firstRow: number;
+  readonly lastRow: number;
 };

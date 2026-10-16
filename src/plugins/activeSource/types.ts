@@ -530,14 +530,17 @@ export type ActiveSourceApi = {
   health(): SourceHealth;
 
   /**
-   * Phone epoch − computer epoch in ms, estimated from the device's heartbeats and the ping round
-   * trip (midpoint), the median of the last 8 beats. Maps computer-time telemetry onto the phone's
-   * clock.
+   * Phone epoch − computer epoch in ms, estimated from the active device's heartbeats
+   * (`link.onHeartbeat`: the beat's `Heartbeat.at` against its arrival here, taken as sent half the
+   * hub's ping round trip earlier), the median of the last 8 beats. Maps computer-time telemetry
+   * onto the phone's clock. A switch to another device starts over.
    *
-   * @returns The offset; 0 for the local preview; null before two beats of a device.
+   * @returns The offset; 0 for the local preview and a page; null before two beats of a device.
    * @example
    * ```ts
-   * app.activeSource.clockOffsetMs(); // -412: the phone's clock is 412 ms behind this computer's
+   * // A beat stamped 10 000 by the phone arrives at 10 420 with a 16 ms ping: sent at 10 412.
+   * const offset = app.activeSource.clockOffsetMs(); // -412: the phone's clock is 412 ms behind this computer's
+   * const onPhone = offset === null ? undefined : record.at + offset; // a CDP heap sample on the phone's axis
    * ```
    */
   clockOffsetMs(): number | null;

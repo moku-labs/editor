@@ -39,12 +39,12 @@ createApp({ pluginConfigs: { gameView: { captureCardMs: 5000 } } });
 
 | Member | Signature | What |
 |---|---|---|
-| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill, and lights the toolbar's Select button. Off clears the hover box. While the workspace preference "Copy on select" is on, a click that picks an element completes the pick (see "Pick for the chat") and a drag of 4 px or more picks an area instead (see "Area pick"). With it off the click only selects the element and a drag picks nothing. |
+| `pick` | `(on?: boolean) => void` | Picker on, off, or toggled. On shows Game, the Element tab and the hint pill, and lights the toolbar's Select button. Off clears the hover box. While the workspace preference "Copy on select" is on, a click that picks an element completes the pick (see "Pick for the chat") and a drag of 4 px or more picks an area instead (see "Area pick"). With it off the click only selects the element and a drag picks nothing. While a phone is the source the picker stays off: Game and the Element tab show, and the tab says to switch to the local preview (G1). |
 | `selected` | `() => ElementRef \| undefined` | The picked element. |
 | `select` | `(ref: ElementRef \| undefined) => void` | Selects without the picker, or clears the selection. Clears the style card. Publishes the selection (see "Selection for MCP"). |
 | `inspect` | `(ref: ElementRef) => void` | `select(ref)`, Element tab, shows Game. The `workspace:inspect` hook calls it. |
-| `scene` | `() => Promise<SceneSnapshot>` | The scene from the watched sources, after a calibration in flight lands. While Game is hidden it reads the three sources once. Rejects with the link's `WireError` when no game is connected. |
-| `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. |
+| `scene` | `() => Promise<SceneSnapshot>` | The scene from the watched sources, after a calibration in flight lands. While Game is hidden it reads the three sources once. Rejects with the link's `WireError` when no game is connected, and with `[moku-editor] Element tools read the local preview.` while a phone is the source: nothing is read from it (G1). |
+| `locate` | `(ref: ElementRef) => Promise<PageRect \| undefined>` | The page rect of one element, from `scene()`. Rejects like `scene()`. |
 | `highlight` | `(ref: ElementRef \| undefined) => void` | The pink box over the game frame. `undefined` clears it. A newer call drops an older one still waiting for the scene. |
 | `manifest` | `() => Promise<TextureCatalogue \| undefined>` | The texture catalogue of the manifest the project index names (`ProjectState.manifest`). Cached until a new session, or a project change that names another manifest or changes it on disk. `undefined` while the index is off or names none. |
 | `capture` | `() => Promise<CaptureFile \| undefined>` | One screenshot through `editor.capture`, written to `<capturesDir>/<yyyy-mm-dd>/<hhmm>-<flow>.jpg`. The extension follows the picture: `editor.capture` answers JPEG by default (D-34), an old game PNG (`.png`). Puts `shot: <path>` on the clipboard. `undefined` when there is no game, no `editor.capture`, or it failed. |
@@ -172,7 +172,7 @@ gameView depends on no view, and no view depends on it (R4, D-13).
 | Phase | What |
 |---|---|
 | `onInit` | Checks `capturesDir`. Registers the Game panel (source `game.position`). Adds the palette items: Select element, Take a screenshot, Record a series…, Overlay in game, Show Element panel, and one `Device: <name>` per device. Binds the keys and the Esc layers. Listens to device changes. Handles the editor-channel request `select` with `link.handle` (MCP `moku_select`). Sync, no I/O. |
-| `onStart` | Starts the scene watches when Game is already active (a restored `#game` hash). Listens to the manifest: a game that connects while the sound is off gets `game.mute { muted: true }` (a hot reload connects a new page too). |
+| `onStart` | Starts the scene watches when Game is already active (a restored `#game` hash). Listens to the manifest, which link calls on every attach and loss before it resubscribes its watches: the scene watches follow the source (dropped while a phone is the source, started again while Game is shown, G1), and a game that connects while the sound is off gets `game.mute { muted: true }` (a hot reload connects a new page too). |
 | `onStop` | Runs the disposers and every unwatch. Clears the timers. Stops a running recording. |
 
 A device change re-calibrates the picker: another preset, orientation or a fold (`folded` is part of the device identity).
@@ -229,6 +229,7 @@ ctx.emit("workspace:inspect", { ref: { kind: "ui", path: "boardScreen/boardSlot"
 - A click whose read fails picks from the scene there is. A click is dropped when the picker went off while it read.
 - A press that moves 4 client px or more drags an area (see "Area pick"). The release picks the area and turns the picker off, like a click pick. With "Copy on select" off the release picks nothing.
 - With "Copy on select" off a click only selects the element (D-70, see "Pick for the chat").
+- On a device session (link's chosen session has `SessionInfo.device`: the source is a phone) nothing of the scene is read (spec 11 § 5.5 G1, spec 09 R4): no `game.ui`, `game.entities` or `game.projections` watch, no calibration, and `scene()` / `locate()` refuse. Serializing a phone's scene tree once a second costs it frames, the stutter the Render strip measures. The watches drop when the phone becomes the source and start again when the local preview is the source while Game is shown. The Element tab and the dimmed Select button read "Element tools read the local preview. Switch the source to Local preview." The game's commands keep running on the phone.
 
 ### Device toolbar and stage
 
@@ -511,3 +512,4 @@ MCP `moku_select` reaches gameView as the editor-channel request `select` (`link
 | No display-tree source. Picker rects are derived from `game.ui`, `game.entities`, `game.projections`. No text style card. | F-G1: display-tree source (type, bounds, texture, style key, entity per display object). |
 | The viewport transform is not exposed. The calibration reads `game.locate` (or `game.rect`) of one keyed node. Live motion (a popup's entrance, a swing) is not modelled: the picker uses the rest pose. Safe areas are guides only: the game sees insets of 0. | F-G2: `game.viewport` source and safe-area emulation; real element bounds (release brief §1). |
 | The Device tab cheat rows are empty on merge-game. | F-C1: merge-game `.dev` cheats. |
+| On a device session (the source is a phone) the Game workspace reads no scene: no scene watch, no calibration, `scene()` refuses, the element tools say to switch to the local preview (G1). The game's commands still run on the phone. | None: by design (spec 09 R4), a scene read costs the phone frames. |

@@ -1,20 +1,23 @@
 /**
- * @file collector plugin — the one `hub:device` handler: device mode listening starts the adb
- * loop; a batch of lines goes synchronously into its log's queue (one file per device log, found
- * or created; a new log closes the files of the device's other logs; at most MAX_LIVE_LOGS live
- * logs per device, the lines of one more are refused); a device that leaves makes its logs away (a
- * reconnect appends to the same file); device mode stopping makes every log done. Ignored after
- * onStop.
+ * @file collector plugin — the hooks: the one `hub:device` handler (device mode listening starts
+ * the adb loop; a batch of lines goes synchronously into its log's queue: one file per device log,
+ * found or created; a new log closes the files of the device's other logs; at most MAX_LIVE_LOGS
+ * live logs per device, the lines of one more are refused; a device that leaves makes its logs away,
+ * a reconnect appends to the same file; device mode stopping makes every log done; ignored after
+ * onStop) and the `connect:telemetry` handler (a wired device's telemetry tick as one `telemetry`
+ * line in its live log while it records).
  */
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path/posix";
+import type { DeviceTelemetry } from "../connect/protocol";
 import { filesPlugin } from "../files";
 import { normalizeModel } from "../hub/protocol";
 import type { DeviceLines, HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfHeaderLine, PerfLogLine } from "../perf/protocol";
 import { startAdbLoop, stopAdbLoop } from "./adb/loop";
 import { fileNameOf } from "./session/name";
-import { closeFile, closeLog, emitQueued, writeLines } from "./session/writer";
+import { telemetryLineOf, telemetryLogOf } from "./session/telemetry";
+import { closeFile, closeLog, emitQueued, enqueue, writeLines } from "./session/writer";
 import { createLogSession } from "./state";
 import type { CollectorCtx, CollectorHooks, LogSession } from "./types";
 
@@ -222,7 +225,24 @@ export function onDevice(ctx: CollectorCtx, event: HubDeviceEvent): void {
 }
 
 /**
- * collector's hooks factory (`hooks: createCollectorHooks`): the hub's per-plugin `hub:device`.
+ * A wired telemetry record of a device: one `telemetry` line through the queue of the device's
+ * newest live log, synchronously like a batch, only while that log records. A device without a
+ * live log (none, away, done, or after onStop) gets none and no file. The digest does not read it.
+ *
+ * @param ctx - Domain context of the collector.
+ * @param record - connect's record of the tick.
+ */
+export function onTelemetry(ctx: CollectorCtx, record: DeviceTelemetry): void {
+  const session = telemetryLogOf(ctx.state.sessions.values(), record.device);
+  if (session === undefined || !session.recording) return;
+
+  const line = telemetryLineOf(record, session, Date.now());
+  void enqueue(ctx, session, `${JSON.stringify(line)}\n`, 1);
+}
+
+/**
+ * collector's hooks factory (`hooks: createCollectorHooks`): the hub's per-plugin `hub:device` and
+ * connect's per-plugin `connect:telemetry`.
  *
  * @param ctx - Domain context of the collector.
  * @returns The hooks.
@@ -231,6 +251,9 @@ export function createCollectorHooks(ctx: CollectorCtx): CollectorHooks {
   return {
     "hub:device": event => {
       onDevice(ctx, event);
+    },
+    "connect:telemetry": record => {
+      onTelemetry(ctx, record);
     }
   };
 }

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Json, Manifest } from "../../../registry/protocol";
 import { commandsHash, notification, toWireValue } from "../../../registry/protocol";
+import { createHubApi } from "../../api";
 import {
   chooseSession,
   isManifest,
@@ -19,6 +20,7 @@ import {
   helloOf,
   MANIFEST,
   pairAdb,
+  pairOf,
   paramsOf
 } from "../helpers";
 
@@ -594,6 +596,17 @@ describe("device sessions (C6)", () => {
           )
         : []
     ).toEqual([device]);
+  });
+
+  it("carry the app id the phone named in its pair, on the session, the device record and devices()", async () => {
+    // Bug: the app id lost between pair and its readers, so two phones of one model stay ambiguous.
+    const harness = await createDeviceHarness();
+    const socket = harness.device({ link: "adb", address: "127.0.0.1" });
+    harness.send(socket, pairOf("4821", { model: "SM-A266B", appId: "com.mokulabs.timber.debug" }));
+    harness.send(socket, helloOf());
+
+    expect(sessionList(harness.ctx.state)[0]?.device?.appId).toBe("com.mokulabs.timber.debug");
+    expect(createHubApi(harness.ctx).devices()[0]?.appId).toBe("com.mokulabs.timber.debug");
   });
 
   it("a game page served by serve() has no device, and a copy of the device does not change the next list", async () => {

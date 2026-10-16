@@ -50,7 +50,8 @@ running? Stop it, or connect from its tools page."), `no_lan` (-32000, the hub's
 `not_owner` (-32007, device mode belongs to `moku-editor perf`), `no_ticket` (-32602).
 
 `watch` answers `wired: false` with `not-wired` (a LAN device), `ios` (an iPhone or iPad),
-`not-linked`, `adb-missing` or `ambiguous` (two phones of one model), and runs no adb then.
+`not-linked`, `adb-missing` or `ambiguous` (two phones of one model that the app id cannot tell
+apart, see "Matching a phone"), and runs no adb then.
 
 ## Published values
 
@@ -77,6 +78,25 @@ Hooks the hub's per-plugin `hub:device`: `listening` → device mode on (owner `
 did not cause it) and the scan loop; `connected` → the directory; `closed` → that device's
 telemetry detached; `stopped` → device mode off, the pairings asking answered false, every attach
 detached.
+
+## Matching a phone
+
+A ready phone adb lists is linked to an online linked adb device of its model:
+
+1. **By model**: exactly one linked device and exactly one ready phone of the model (the
+   collector's rule).
+2. **By app id** (engine E3), when the model is shared (two phones, or two linked devices, of one
+   model) and every linked device of it named its app in its pair (`SessionDevice.appId`, the
+   PerfLog header's `app.id`): the scan asks `ps` (A4) of those phones each round and keeps the
+   names of what runs there. A phone is linked to the one device whose app runs on it and on no
+   other phone of the model (`.debug` stripped on both sides, `baseAppId`); a phone running none of
+   their apps is not linked (its phase is `ready`, `waiting` or `no-agent`).
+3. Otherwise every phone of the model is `match: "ambiguous"`: two phones running the same game, a
+   phone whose `ps` failed, or a linked device of an engine without the app id (0.15.0). Never a
+   guess.
+
+`ps` is asked only for a shared model whose linked devices all name their app; one phone with one
+linked device of its model costs nothing extra.
 
 ## Reading sources
 
@@ -143,10 +163,14 @@ the phone, or the app stops.
   iOS debug build in `@moku-labs/native` 0.3.9.
 - "Discovered" means plugged in over adb, asking to pair, or linked; phones on the Wi-Fi that never
   dialled the editor are not seen. No mDNS, no QR in v1.
-- A phone is matched to its linked device by model alone; two phones of one model are `ambiguous`
-  (no telemetry). The app id (`header.app.id`, engine ask E3) is not on the hub's session yet.
-- The app's pid comes from its WebView devtools socket; a build without WebView debugging has no
-  socket, so app CPU and memory read `not-found` and the heap `no-devtools-socket`.
+- Two phones of one model are told apart only by the app each runs (see "Matching a phone"): two
+  phones running the same game, or a phone of an engine without the app id (0.15.0), stay
+  `ambiguous` (no telemetry). The apps are re-read every scan round (`scanEveryMs`), so a game moved
+  from one phone to the other can match the old phone for up to one round.
+- The app's pid comes from its WebView devtools socket, else from the process named like the
+  linked device's app id (the exact name first, then the one name that matches with `.debug`
+  stripped). A build without WebView debugging and without an app id has neither, so app CPU and
+  memory read `not-found`; the heap reads `no-devtools-socket` without the socket either way.
   surfaceflinger and the GPU still read.
 - A GPU node SELinux hides answers nothing on a current adb (stderr is separate), so it reads
   `not-found`; `no-permission` shows only where adb merges stderr.

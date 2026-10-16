@@ -16,12 +16,20 @@ computer:
   `adb -s <serial> reverse tcp:<port> tcp:<port>` for every ready phone, so a phone plugged in later is
   reached without a restart. The model comes from `adb shell getprop ro.product.model`, normalized
   like the page's header (`normalizeModel` of `hub/protocol`). Every `everyS` seconds, for each adb
-  phone matched to exactly one live adb log: `dumpsys battery` + `dumpsys thermalservice` (a `thermal`
+  phone matched to exactly one live adb log of its model and of the configured app (a log whose app
+  id — the pair's, the header's `app.id` — differs from `appId` once `.debug` is stripped is left
+  out; a log without an app id, from an engine before it, stays in): `dumpsys battery` + `dumpsys thermalservice` (a `thermal`
   line, `source: "collector"`) and `dumpsys gfxinfo <package>` (a `gfx` line from the second reading
   on). Reads only; nothing on the phone changes except the port reverse.
+- **Wired telemetry while the phone records.** For a phone by wire that a tools page watches, connect
+  emits one `DeviceTelemetry` record a second (`connect:telemetry`: GPU, CPU and memory per process,
+  the CDP heap and inferred GCs). The collector writes each as one computer-side `telemetry` line into
+  that device's live log, only while the log records (see "What the computer log holds").
 - **One clock.** Collector lines carry `t` on the phone's page clock (`now + offset`, the offset being
   the max of `t − rx` over the log's device lines) and `rx` on the computer clock, so device and
-  computer lines sort on one timeline.
+  computer lines sort on one timeline. The page clock is anchored once per log by the header's
+  `timeOrigin` (`epochMs = timeOrigin + t`); there is no per-second anchor, so an NTP step on the
+  phone shows only in a new header.
 - **Never silent about loss.** A device gap (lines it lost before sending) becomes one `gap` line
   before the batch; gaps, rejected lines and failed writes are counted as `lost` (one
   `collector:write-failed` warning per failing streak). A batch that only lost lines still emits.
@@ -122,6 +130,7 @@ creates no folder and no file.
 |---|---|---|---|
 | `collector:session` (emits) | per-plugin, visible through `depends: [collectorPlugin]` | `CollectorSessionEvent`: `{ device, file, state, lines, lost, last }` | the first written batch of a log (at once), then at most once a second with a trailing emit carrying the newest counts; after the queue closed the file on `away` and `done` (with the state the log had when it was closed); on `live` again after any close still pending, so a replaced connection reports `away`, then `live` |
 | `hub:device` (hooks) | the hub's per-plugin event | `HubDeviceEvent` | `listening` starts the adb loop; `connected` makes the device's away logs live; `lines` writes a batch; `closed` makes its live logs away; `stopped` stops the adb loop and makes every log done |
+| `connect:telemetry` (hooks) | connect's per-plugin event, visible through `depends: [connectPlugin]` | `DeviceTelemetry` (`connect/protocol`) | each telemetry tick of a watched wired device: one `telemetry` line into that device's newest live log while it records; nothing for a device without a live log (no file is created), after its `recorder` stop line, or after `onStop` |
 
 `collector:session` is not in the global `ServerEvents`. `last` is the `SessionDigest` of the newest
 second: fps and loop fps, the gap p90, the GPU p50, the current rate (the newest `rate` event's `to`,
@@ -132,11 +141,40 @@ skipped by the digest and still written.
 
 A `hub:device` after `onStop` is ignored.
 
+## What the computer log holds
+
+Every line the phone sent, as it sent it, plus `rx`; and the lines the collector writes itself, each
+with `t` on the log's page clock and `rx`:
+
+| Kind | Written when | Shape |
+|---|---|---|
+| `gap` | a batch arrives after lines the device lost | `{ v: 1, kind: "gap", t, build, rx, device, lines }` |
+| `thermal` | an adb poll of the phone (`source: "collector"`) | the engine's `PerfThermalLine` |
+| `gfx` | an adb poll, from the second gfxinfo reading on | the engine's `PerfCollectorLine` |
+| `mark` | `mark(label)` or the mark route (`from: "computer"`) | the engine's `PerfMarkLine` |
+| `telemetry` | a `connect:telemetry` tick while the device records | `PerfTelemetryLine`: `{ v: 1, kind: "telemetry", t, rx, build, device, serial, wired, gpu, cpu, memory, heap }` |
+
+The `telemetry` line is computer-side only (the phone's own log never holds it) and additive to
+PerfLog v1, an editor kind like `gap` (the engine lists both as collector-written kinds, types only).
+`device` is the log's model; `serial`, `wired`, `gpu`, `cpu`, `memory` and `heap` are the
+`DeviceTelemetry` fields verbatim: every reading keeps its `source`, or its `reason` when it is not
+available (never a 0), and `heap` holds every CDP sample and inferred GC of the tick. `t` is the
+record's `at` mapped onto the page clock through the log's offset (the write moment while the log has
+no offset yet). About 1 KiB a second; counted in `lines`, a failed write in `lost`; the live digest
+does not read it.
+
+A log records from its first batch (a phone ships a log only while it records, so a log first seen
+mid-recording counts), stops recording at a `recorder` event line with `action: "stop"` and records
+again at one with `action: "start"`. When a device has two live logs (only around a rotation), the
+telemetry goes to the one that emitted `collector:session` last.
+
 ## Dependencies
 
 - `filesPlugin`: `files.root()` resolves a relative `out`.
 - `hubPlugin`: `addRoutes`, `path()`, `guard`, `token()` for the mark route, and its per-plugin event
   `hub:device`. The hub never calls the collector.
+- `connectPlugin`: for its per-plugin event `connect:telemetry` only; the collector calls no connect
+  API. The server order `files, hub, connect, collector, pages` puts connect before the collector.
 
 ## Lifecycle
 
@@ -158,7 +196,7 @@ could. `report-boundary.test.ts` holds that line.
 
 | Export | What it does |
 |---|---|
-| `parsePerfLog(text)` | One pass over a `.jsonl` file. Skipped and counted: `notJson` (a log cut mid-write), `noVersion` (the game's old log), `otherVersion` (a newer schema), `unknownKind`, `badShape` (a known kind failing its minimal check, e.g. a `frameHist` without 81 slots). `overlay`, `pool-trim` and `warm` event lines go to `frameEvents`, `rate` lines to `rates`; `devtools`, `command`, … are read and not kept. Unknown fields stay. |
+| `parsePerfLog(text)` | One pass over a `.jsonl` file. Skipped and counted: `notJson` (a log cut mid-write), `noVersion` (the game's old log), `otherVersion` (a newer schema), `unknownKind`, `badShape` (a known kind failing its minimal check, e.g. a `frameHist` without 81 slots). `overlay`, `pool-trim` and `warm` event lines go to `frameEvents`, `rate` lines to `rates`; `devtools`, `command`, … are read and not kept. The editor kinds are read, never skipped: `gap` sums into `lost`, `telemetry` is counted in `telemetry` and kept out of every table (no report section in v1; the footer says "{n} telemetry lines (wired device)"). Unknown fields stay. |
 | `isPerfLog(log)` | At least one header or sample. |
 | `bucketUpper(index)`, `histPercentile(hist, share)` | The 81-bucket `frameHist`: upper edges (index 80 is 200 ms and over); nearest-rank percentiles of the merged histogram, `over` for the last bucket. |
 | `gfxPercentile(hist, share)` | The game's percentile of adb gfxinfo's millisecond histogram. |
@@ -176,14 +214,16 @@ are re-exported from `collector/types.ts`.
 ```
 src/plugins/collector/
   index.ts          wiring: depends, events, hooks, onInit, onStop
-  types.ts          config, adb seam, sessions, loop, state, event, api, ctx; report type re-exports
+  types.ts          config, adb seam, sessions, loop, state, event, telemetry line, api, ctx; report type
+                    re-exports
   state.ts          createCollectorState, createLogSession
   init.ts           config checks, the mark route (hub.addRoutes)
   api.ts            createCollectorApi, the computer mark
-  handlers.ts       the hub:device handler
+  handlers.ts       the hub:device and connect:telemetry handlers
   lifecycle.ts      stopCollector (onStop)
   route.ts          the mark route {path}/perf/mark
-  session/          name.ts (file names), clock.ts (offset, page t), digest.ts, writer.ts (queue, gap, lost, emit)
+  session/          name.ts (file names), clock.ts (offset, page t), digest.ts, writer.ts (queue, gap, lost,
+                    recording, emit), telemetry.ts (the log of a record, the telemetry line)
   adb/              run.ts (the process seam), parse.ts (pure parsers), loop.ts (reverse and poll rounds)
   report/           runtime-free: index.ts (barrel), types.ts, parse.ts, hist.ts, summary.ts, compare.ts, text.ts
 ```
@@ -194,11 +234,16 @@ src/plugins/collector/
   stops until device mode turns on again. A LAN phone still logs everything it measures itself; there
   is no `adb reverse` (a USB phone cannot reach the computer), no adb heat line (the shell's own
   `thermal` lines still arrive) and no gfx line.
-- Two live adb logs of the same model (two identical phones) cannot be told apart by model: nothing
-  is polled for that model and `collector:adb-ambiguous` is logged once.
+- Two live adb logs of the same model and the same app (two identical phones running the game)
+  cannot be told apart: nothing is polled for that model and `collector:adb-ambiguous` is logged
+  once. Another app's log of the same model no longer makes the phone ambiguous when both logs carry
+  an app id and `appId` is set.
 - A device's 33rd live log is not recorded (its lines are counted in `refused`, not in a file).
 - A log whose disk write stalls keeps at most 8 MiB waiting; later lines are dropped and counted.
 - A phone string longer than 128 characters is shown cut at 128 (the file keeps it whole).
 - gfxinfo counts 0 frames under WebGPU: gfx lines are a second opinion; the percentiles come from the
   page's own `frameHist`.
-- The phone's own log keeps no computer mark (it would come back as a duplicate line).
+- The phone's own log keeps no computer mark (it would come back as a duplicate line), and no
+  telemetry line.
+- Wired telemetry exists only for an Android phone by wire that a tools page watches (connect's
+  limits); a LAN phone's log has no `telemetry` lines.

@@ -69,6 +69,33 @@ describe("readSessions", () => {
     expect(list).toEqual([sessionOf("s-1", { device }), sessionOf("s-2"), sessionOf("s-3")]);
   });
 
+  it("keeps the app id of a device, and drops only an app id that is not text", () => {
+    // Bug: activeSource and the panels never seeing which app a phone runs.
+    const device = {
+      id: "d-7f3a",
+      model: "SM-A266B",
+      link: "adb",
+      address: "127.0.0.1",
+      port: 47_600,
+      engine: "0.15.1+2b7c11",
+      build: null
+    } as const;
+    const list = readSessions({
+      list: [
+        {
+          ...toObject(sessionOf("s-1")),
+          device: { ...device, appId: "com.mokulabs.timber.debug" }
+        },
+        { ...toObject(sessionOf("s-2")), device: { ...device, appId: 7 } }
+      ]
+    });
+
+    expect(list).toEqual([
+      sessionOf("s-1", { device: { ...device, appId: "com.mokulabs.timber.debug" } }),
+      sessionOf("s-2", { device })
+    ]);
+  });
+
   it("is undefined without a list", () => {
     expect(readSessions({})).toBeUndefined();
     expect(readSessions(undefined)).toBeUndefined();

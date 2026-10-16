@@ -3,10 +3,11 @@
  * @file collector plugin — the adb loop while device mode is on: a reverse round every
  * `reverseEveryMs` (`adb devices`, the model of a new serial, `adb reverse` for every ready phone)
  * and a poll round every `everyS` (heat and system frames of each phone matched to exactly one live
- * adb log), written as collector lines through the log's queue. A round already running when the
- * loop stops finishes and writes nothing. adb missing stops the loop until device mode turns on
- * again.
+ * adb log of the configured app), written as collector lines through the log's queue. A round
+ * already running when the loop stops finishes and writes nothing. adb missing stops the loop until
+ * device mode turns on again.
  */
+import { baseAppId } from "../../hub/protocol";
 import type { PerfCollectorLine, PerfThermalLine } from "../../perf/protocol";
 import { pageTime } from "../session/clock";
 import { readLine } from "../session/digest";
@@ -236,8 +237,23 @@ function only<Item>(items: readonly Item[]): Item | undefined {
 }
 
 /**
- * The phones matched to a log: exactly one phone and one live adb log of a model. Several of
- * either write nothing for that model and log `collector:adb-ambiguous` once.
+ * Whether a log is of the configured app: its app id (the pair's, the header's `app.id`) equals
+ * `appId` once a trailing `.debug` is stripped. A log without an app id (an engine before it) and
+ * a collector without `appId` keep every log.
+ *
+ * @param session - The log.
+ * @param appId - `collector.appId`.
+ * @returns Whether the log may be matched to a phone.
+ */
+function isOwnApp(session: LogSession, appId: string | undefined): boolean {
+  const logApp = session.device.appId;
+  return logApp === undefined || appId === undefined || baseAppId(logApp) === baseAppId(appId);
+}
+
+/**
+ * The phones matched to a log: exactly one phone and one live adb log of the configured app
+ * (`isOwnApp`) of a model. Several of either write nothing for that model and log
+ * `collector:adb-ambiguous` once.
  *
  * @param ctx - Domain context of the collector.
  * @param loop - The loop.
@@ -245,7 +261,10 @@ function only<Item>(items: readonly Item[]): Item | undefined {
  */
 function matchesOf(ctx: CollectorCtx, loop: AdbLoop): [AdbPhone, LogSession][] {
   const live = [...ctx.state.sessions.values()].filter(
-    session => session.state === "live" && session.device.link === "adb"
+    session =>
+      session.state === "live" &&
+      session.device.link === "adb" &&
+      isOwnApp(session, ctx.config.appId)
   );
   const logs = byModel(live, session => session.model);
   const matches: [AdbPhone, LogSession][] = [];

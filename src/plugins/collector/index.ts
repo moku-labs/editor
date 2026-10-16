@@ -1,13 +1,15 @@
 /**
  * Complex tier — device logs on the computer: one JSONL file per phone log (every line stamped
  * with `rx`, a reconnect appends to the same file), adb reverse, heat and system frames while
- * device mode is on, the computer mark route `{path}/perf/mark`, and the runtime-free `report/`.
- * Idle until the hub's `hub:device`. Emits its per-plugin event `collector:session`.
+ * device mode is on, a wired phone's telemetry while it records (connect's `connect:telemetry`),
+ * the computer mark route `{path}/perf/mark`, and the runtime-free `report/`. Idle until the hub's
+ * `hub:device`. Emits its per-plugin event `collector:session`.
  *
  * @see README.md
  */
 import type { RegisterFunction } from "@moku-labs/core";
 import { createServerPlugin } from "../../config";
+import { connectPlugin } from "../connect";
 import { filesPlugin } from "../files";
 import { hubPlugin } from "../hub";
 import { createCollectorApi } from "./api";
@@ -28,7 +30,8 @@ const defaultConfig: CollectorConfig = {
 
 /**
  * Collector plugin — device logs on the computer: one JSONL file per phone log, adb reverse and
- * heat while device mode is on, `collector:session` for live lines. Idle until `hub:device`.
+ * heat while device mode is on, a wired phone's telemetry while it records, `collector:session` for
+ * live lines. Idle until `hub:device`. Depends on connect for its `connect:telemetry` event only.
  *
  * @example
  * ```ts
@@ -36,7 +39,7 @@ const defaultConfig: CollectorConfig = {
  * ```
  */
 export const collectorPlugin = createServerPlugin("collector", {
-  depends: [filesPlugin, hubPlugin],
+  depends: [filesPlugin, hubPlugin, connectPlugin],
   config: defaultConfig,
   events: (register: RegisterFunction) => ({
     "collector:session": register<CollectorSessionEvent>(

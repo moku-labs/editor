@@ -1,15 +1,18 @@
 /**
  * @file connect plugin — the scan (spec 11 C4): while a scan lease holds or device mode is on,
- * `adb devices -l` every `scanEveryMs` (A1) and one getprop (A2) per phone that became ready. adb
+ * `adb devices -l` every `scanEveryMs` (A1), one getprop (A2) per phone that became ready, and `ps`
+ * (A4) of the phones of a shared model whose linked devices name their app (the app id match). adb
  * missing (code 127) stops the loop until the next `connect.scan`; a failing adb is an error and
  * the phones it knew stay. A phone that is no longer listed is forgotten and its telemetry
  * detached. Each round ends with the directory's publish (only on change).
  */
-import { refreshDirectory } from "../directory";
+import { hubPlugin } from "../../hub";
+import { baseAppId } from "../../hub/protocol";
+import { phonesToTell, refreshDirectory } from "../directory";
 import { unref } from "../shared";
 import { detachDevice } from "../telemetry/loop";
 import type { ConnectCtx, ConnectState, ListedDevice } from "../types";
-import { parseDeviceList, parseGetprop } from "./parse";
+import { parseDeviceList, parseGetprop, parsePs } from "./parse";
 import { adb } from "./run";
 
 /**
@@ -50,7 +53,8 @@ function takeListing(ctx: ConnectCtx, listed: readonly ListedDevice[]): void {
         ...device,
         facts: undefined,
         asked: false,
-        readySince: ready ? now : undefined
+        readySince: ready ? now : undefined,
+        apps: undefined
       });
       continue;
     }
@@ -95,7 +99,28 @@ async function askFacts(ctx: ConnectCtx): Promise<void> {
 }
 
 /**
- * One scan round: list the phones, ask the new ones' facts, publish the directory.
+ * Asks `ps` (A4) of each phone whose model needs the app to be told apart (`phonesToTell`), one at
+ * a time, and keeps the names of what runs there without a trailing `.debug`; a failed answer
+ * leaves the apps unknown.
+ *
+ * @param ctx - Domain context of connect.
+ * @returns When every such phone was asked.
+ */
+async function askApps(ctx: ConnectCtx): Promise<void> {
+  const linked = ctx.require(hubPlugin).devices();
+  for (const record of phonesToTell(ctx.state.wire.values(), linked)) {
+    const answer = await adb(ctx, { kind: "processes", serial: record.serial });
+    if (ctx.state.stopped) return;
+    record.apps =
+      answer.code === 0
+        ? new Set(parsePs(answer.text).map(process => baseAppId(process.name)))
+        : undefined;
+  }
+}
+
+/**
+ * One scan round: list the phones, ask the new ones' facts and, where a model is shared, the apps
+ * they run, publish the directory.
  *
  * @param ctx - Domain context of connect.
  * @returns When the round is over.
@@ -112,6 +137,7 @@ async function scanRound(ctx: ConnectCtx): Promise<void> {
     state.adb = { available: true, reason: undefined };
     takeListing(ctx, parseDeviceList(listing.text));
     await askFacts(ctx);
+    await askApps(ctx);
   } else {
     state.adb = { available: false, reason: "error" };
   }

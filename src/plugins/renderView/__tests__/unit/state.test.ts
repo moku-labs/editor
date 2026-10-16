@@ -50,7 +50,7 @@ describe("createRenderViewState", () => {
       mission: {
         source: undefined,
         watches: [],
-        poll: { timer: undefined, inFlight: false, eventsAfter: undefined },
+        poll: { timer: undefined, inFlight: false, eventsAfter: undefined, failing: false },
         history: expect.objectContaining({ capacity: HISTORY_ROWS, count: 0, epoch: null }),
         series: expect.objectContaining({ version: 0 }),
         second: undefined,
@@ -62,6 +62,7 @@ describe("createRenderViewState", () => {
         selection: undefined,
         selectionVersion: 0,
         detail: { kind: "idle" },
+        detailTimer: undefined,
         hoverMs: undefined,
         rate: { pending: undefined, answer: undefined },
         sectionPending: undefined,
@@ -71,7 +72,9 @@ describe("createRenderViewState", () => {
           stopScan: undefined,
           codes: new Map(),
           pending: undefined,
-          error: undefined
+          error: undefined,
+          alert: undefined,
+          alertTimer: undefined
         },
         sceneOpen: false,
         files: new Map(),

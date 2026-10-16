@@ -1,11 +1,13 @@
 /**
  * @file workspace plugin — type definitions: config, workspace ids, preview, device, frame,
  * palette, keys, the api every view gets as `tools.workspace`, the payload of `workspace:ran`,
- * state and the domain context. DeviceSpec and the device preset types come from the protocol (R1).
+ * state and the domain context. DeviceSpec and the device preset types come from the protocol (R1);
+ * the source change workspace hooks is activeSource's.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require, ToolsEvents } from "../../config";
+import type { SourceChange } from "../activeSource/types";
 import type {
   DevicePresetId,
   DeviceSpec,
@@ -893,6 +895,29 @@ export type WorkspaceApi = {
   onPrefs(fn: (prefs: Prefs) => void): () => void;
 
   /**
+   * Starts this page's local preview: mounts the one game frame when it is not mounted yet (the
+   * same mount the first `mount()` does, docked by the current workspace's preview prefs — it does
+   * not change whether the preview is shown), and resolves once the frame's game session is listed
+   * (`link.ownSession()` answers). Two calls in flight share one promise; onStop rejects nothing
+   * (the page is going away) and drops the wait. A page without a game frame is the tools page of
+   * `moku-editor perf`, whose device mode is owned by perf (`editor.devices` `mode.owner` "other").
+   *
+   * @returns When the local preview's session is open; at once when it already is.
+   * @throws {Error} On a page without a game frame (the tools page of `moku-editor perf`), and
+   *   nothing is mounted: `[moku-editor] workspace.startLocalPreview() needs a game frame.\n  This
+   *   page shows a device only; open the tools page of moku-editor <game> to run the game here.`
+   * @throws {Error} When no session appears within 15 s: `[moku-editor] The local preview did not
+   *   start.\n  Check the game's console in the Console workspace; the frame is mounted at <url>.`
+   * @example
+   * ```ts
+   * // renderView's "Start local preview" button on a page whose frame has no session yet.
+   * await app.workspace.startLocalPreview();
+   * app.link.ownSession(); // "s-1"
+   * ```
+   */
+  startLocalPreview(): Promise<void>;
+
+  /**
    * The scenarios of the game folder — every `.ts` file directly in `tests/scenarios/` but tests,
    * declarations and `index.ts`, by file stem, sorted (the engine's rule) — and the chosen one.
    * Empty until the first listing (it runs once the link's socket is open), and for a project
@@ -1014,6 +1039,15 @@ export type PendingReload = {
 };
 
 /**
+ * A `startLocalPreview()` in flight: the shared promise and how onStop drops its wait (the
+ * sessions listener and the 15 s timer) without settling it.
+ */
+export type PendingStart = {
+  readonly promise: Promise<void>;
+  readonly drop: () => void;
+};
+
+/**
  * Where the preview floats in a workspace.
  */
 export type PreviewZone = {
@@ -1087,7 +1121,7 @@ export type WorkspaceState = {
   nextToastId: number;
   palette: { open: boolean; query: string; index: number; items: Map<string, PaletteItem> };
   keys: { bindings: KeyBindingEntry[]; escape: EscEntry[] };
-  popover: "step" | "registry" | "session" | "more" | undefined;
+  popover: "step" | "registry" | "session" | "source" | "more" | undefined;
   /** How to change hot reload, after a refused or failed switch; shown in the switch title. */
   hotReloadNote: string | undefined;
   /** The last `manifest.restored` toasted (frame and bookmark), so each restore toasts once. */
@@ -1106,6 +1140,8 @@ export type WorkspaceState = {
   ticker: ReturnType<typeof setInterval> | undefined;
   /** The dev-only scenario picker (never persisted). */
   scenario: ScenarioState;
+  /** The `startLocalPreview()` in flight (W12); undefined when none waits. */
+  start: PendingStart | undefined;
   /** Set by onStop; late callbacks (reload, toasts, manifest) return early. */
   stopped: boolean;
 };
@@ -1124,8 +1160,10 @@ export type WorkspaceCtx = {
 };
 
 /**
- * The workspace's hooks.
+ * The workspace's hooks: the global `link:status` and activeSource's per-plugin
+ * `activeSource:changed` (visible through `depends`).
  */
 export type WorkspaceHooks = {
   readonly "link:status": (payload: ToolsEvents["link:status"]) => void;
+  readonly "activeSource:changed": (change: SourceChange) => void;
 };

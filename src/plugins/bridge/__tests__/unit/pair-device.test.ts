@@ -24,6 +24,22 @@ describe("pairDeviceOf", () => {
     });
   });
 
+  it("sends the build's app id when the engine wrote one (spec 07 B)", () => {
+    // Bug: the hub never learning the phone's app, so two phones of one model stay ambiguous.
+    expect(
+      pairDeviceOf(
+        { ...BUILD, appId: "com.mokulabs.timber.debug" },
+        { ...PAGE_FLAGS, userAgent: ANDROID }
+      )
+    ).toEqual({
+      engine: "0.14.12+9c41e0",
+      build: "debug-20261014T160000Z",
+      appId: "com.mokulabs.timber.debug",
+      model: "SM-A266B",
+      os: "Android 15"
+    });
+  });
+
   it("leaves out every key it has no value for", () => {
     const device = pairDeviceOf({ profile: "dev" }, PAGE_FLAGS);
 

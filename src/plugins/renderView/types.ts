@@ -229,11 +229,15 @@ export type MissionState = {
   source: ActiveSource | undefined;
   /** Unwatch of every § M2 watch of the active source; empty while Render is hidden. */
   watches: (() => void)[];
-  /** The poll of editor.perf.frames / editor.perf.events (M2 rule 2): its timer, the read in flight, the next events seq. */
+  /**
+   * The poll of editor.perf.frames / editor.perf.events (M2 rule 2): its timer, the read in flight,
+   * the next events seq, and whether the last read failed (one debug log per streak).
+   */
   poll: {
     timer: ReturnType<typeof setInterval> | undefined;
     inFlight: boolean;
     eventsAfter: number | undefined;
+    failing: boolean;
   };
   /** perf's 2-minute history (spec 03 D10), allocated once with createPerfHistory(). */
   readonly history: PerfHistory;
@@ -257,6 +261,8 @@ export type MissionState = {
   selectionVersion: number;
   /** The detail read of the current selection (editor.perf.detail, spec 03 D8). */
   detail: MissionDetail;
+  /** The 150 ms wait before the detail read of a settled selection; undefined when none waits. */
+  detailTimer: ReturnType<typeof setTimeout> | undefined;
   /** Source time under the pointer on any graph; undefined: no hover. Painters read it; it never notifies. */
   hoverMs: number | undefined;
   /** The rate switch: the choice in flight and the last answer. */
@@ -265,13 +271,19 @@ export type MissionState = {
   sectionPending: MonitorSection | "overdraw" | undefined;
   /** The one open popover. */
   popover: "monitoring" | "record" | "connect" | "split" | "memory" | undefined;
-  /** The Connect panel: tab, the scan lease's stop while open, the typed codes per pairing ticket, a pending row, an error. */
+  /**
+   * The Connect panel: tab, the scan lease's stop while open, the typed codes per pairing ticket, a
+   * pending row, an error, and the success alert of a switch to a device (the device's name) with
+   * the timer that closes the panel after it.
+   */
   connect: {
     tab: "wire" | "network";
     stopScan: (() => void) | undefined;
     codes: Map<string, string>;
     pending: string | undefined;
     error: { readonly key: string; readonly message: string } | undefined;
+    alert: string | undefined;
+    alertTimer: ReturnType<typeof setTimeout> | undefined;
   };
   /** "Scene details" is open (collapsed by default; not persisted). */
   sceneOpen: boolean;

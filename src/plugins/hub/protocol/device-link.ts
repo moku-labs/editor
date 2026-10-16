@@ -45,7 +45,7 @@ export const DEVICE_UNPAIRED_REASON = "unpaired";
  *
  * @example
  * ```ts
- * const pair: PairParams = { code: "4821", device: { model: "SM-A266B", os: "Android 15", engine: "0.14.12+9c41e0" } };
+ * const pair: PairParams = { code: "4821", device: { model: "SM-A266B", os: "Android 15", engine: "0.15.1+2b7c11", appId: "com.mokulabs.timber.debug" } };
  * ```
  */
 export type PairParams = {
@@ -60,6 +60,12 @@ export type PairParams = {
     readonly engine?: string;
     /** The phone's `__MOKU_GAME_BUILD__`, e.g. "debug-20261014T160000Z". */
     readonly build?: string;
+    /**
+     * The app id of the build (`__MOKU_GAME_APP__`, the PerfLog header's `app.id`), e.g.
+     * "com.mokulabs.timber.debug": the bundle identifier, with the `.debug` suffix of a native debug
+     * install. Absent on an engine that writes none (0.15.0).
+     */
+    readonly appId?: string;
   };
 };
 
@@ -150,6 +156,11 @@ export type SessionDevice = {
   readonly port: number;
   readonly engine: string | null;
   readonly build: string | null;
+  /**
+   * The app id the phone named in its pair, e.g. "com.mokulabs.timber.debug" (compare with
+   * `baseAppId`); absent when it named none (an engine before the app id).
+   */
+  readonly appId?: string;
 };
 
 /**
@@ -213,9 +224,12 @@ const MAX_IPV4_PART = 255;
 const LOOPBACK_NET = 127;
 
 /** The device fields of a `pair` that are kept when they are strings. */
-const DEVICE_FIELDS = ["model", "os", "engine", "build"] as const;
+const DEVICE_FIELDS = ["model", "os", "engine", "build", "appId"] as const;
 
-/** The longest device field of a `pair` (model, os, engine, build), in characters. */
+/** The suffix of a native debug install's app id (it installs beside the store build). */
+const DEBUG_SUFFIX = ".debug";
+
+/** The longest device field of a `pair` (model, os, engine, build, appId), in characters. */
 const MAX_DEVICE_TEXT = 128;
 
 /**
@@ -364,9 +378,27 @@ export function normalizeModel(raw: unknown): string | null {
 }
 
 /**
+ * The app id without a trailing `.debug`: a native debug install's id
+ * ("com.mokulabs.timber.debug") names the same app as the project's ("com.mokulabs.timber"). The
+ * collector compares a log's app with `collector.appId` through it, connect a phone's processes
+ * with a linked device's app.
+ *
+ * @param appId - An app id (bundle identifier or Android package).
+ * @returns The id without one trailing ".debug".
+ * @example
+ * ```ts
+ * baseAppId("com.mokulabs.timber.debug"); // "com.mokulabs.timber"
+ * baseAppId("com.mokulabs.timber"); // "com.mokulabs.timber"
+ * ```
+ */
+export function baseAppId(appId: string): string {
+  return appId.endsWith(DEBUG_SUFFIX) ? appId.slice(0, -DEBUG_SUFFIX.length) : appId;
+}
+
+/**
  * Checks the params of a `pair` notification: an object whose code is exactly four digits and
- * whose `device` is an object. Of the device, only the string fields model, os, engine and build
- * are kept; one of them over 128 characters or with a control or bidi character (C0, DEL, C1,
+ * whose `device` is an object. Of the device, only the string fields model, os, engine, build and
+ * appId are kept; one of them over 128 characters or with a control or bidi character (C0, DEL, C1,
  * U+202A–U+202E, U+2066–U+2069) makes the pair malformed, so every reader (the terminal's
  * question, the logs, `SessionInfo.device`) gets clean text.
  *

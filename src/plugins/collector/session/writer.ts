@@ -3,11 +3,13 @@
  * order (each batch on the previous), one `appendFile` per batch, `rx` on every device line, a
  * `gap` line for lines the device lost, `lost` for every line that could not be written (one
  * warning per failing streak), at most QUEUE_MAX_BYTES waiting per log (a write beyond it is
- * dropped and counted lost, one warning per streak), and the throttled `collector:session`.
+ * dropped and counted lost, one warning per streak), whether the log records (its `recorder`
+ * start and stop lines), and the throttled `collector:session`.
  */
 import { mkdir, open } from "node:fs/promises";
 import { dirname } from "node:path/posix";
 import type { DeviceLines } from "../../hub/types";
+import type { PerfLogLine } from "../../perf/protocol";
 import type { PerfGapLine } from "../report";
 import type { CollectorCtx, CollectorSessionEvent, LogHandle, LogSession } from "../types";
 import { offsetWith, pageTime } from "./clock";
@@ -283,9 +285,27 @@ function gapLineOf(
 }
 
 /**
+ * Whether a log records after one of its lines: a `recorder` event line with `action: "start"`
+ * turns it on, one with `action: "stop"` off; every other line leaves it as it was. The detail is
+ * read defensively (the hub vouches for `v` and `kind` only).
+ *
+ * @param recording - Whether the log recorded before the line.
+ * @param item - The line.
+ * @returns Whether it records after it.
+ */
+function recordingAfter(recording: boolean, item: PerfLogLine): boolean {
+  if (item.kind !== "event" || item.name !== "recorder") return recording;
+
+  const action = item.detail?.action;
+  if (action === "start") return true;
+  return action === "stop" ? false : recording;
+}
+
+/**
  * Writes a device's batch synchronously into its log's queue: each line moves the page-clock
- * offset, feeds the digest and is written as `{ ...line, rx }`; a gap adds one `gap` line before
- * them; `lost` grows by the gap and the rejected lines (a batch that only lost lines still emits).
+ * offset, feeds the digest, sets whether the log records and is written as `{ ...line, rx }`; a
+ * gap adds one `gap` line before them; `lost` grows by the gap and the rejected lines (a batch that
+ * only lost lines still emits).
  *
  * @param ctx - Domain context of the collector.
  * @param session - The log.
@@ -305,6 +325,7 @@ export function writeLines(
     session.offset = offsetWith(session.offset, item.t, batch.rx);
     if (firstT === undefined && Number.isFinite(item.t)) firstT = item.t;
     readLine(session, item);
+    session.recording = recordingAfter(session.recording, item);
     texts.push(JSON.stringify({ ...item, rx: batch.rx }));
   }
   if (batch.gap > 0) texts.unshift(JSON.stringify(gapLineOf(session, batch, firstT)));

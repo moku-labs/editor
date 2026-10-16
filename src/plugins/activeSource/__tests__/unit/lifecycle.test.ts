@@ -45,6 +45,7 @@ describe("activeSource · onStop", () => {
 
     expect(vi.getTimerCount()).toBe(0);
     expect(link.sessionListeners.size).toBe(0);
+    expect(link.heartbeatListeners.size).toBe(0);
     expect([...link.publishedListeners.values()].every(listeners => listeners.size === 0)).toBe(
       true
     );

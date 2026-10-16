@@ -476,7 +476,8 @@ function textOrNull(object: JsonObject, key: string): string | null | undefined 
 
 /**
  * Reads the device of a device session (`SessionInfo.device`, spec 01 C8): its id, model, link
- * kind, address, port, engine and build. Any field of the wrong type reads as no device.
+ * kind, address, port, engine and build — any of them of the wrong type reads as no device — and
+ * the app id when it is text (an app id of another type drops only itself).
  *
  * @param value - The `device` member of a session.
  * @returns The device, or undefined.
@@ -501,7 +502,9 @@ function readDevice(value: Json | undefined): SessionDevice | undefined {
     return undefined;
   }
   if (model === undefined || engine === undefined || build === undefined) return undefined;
-  return { id, model, link, address, port, engine, build };
+  const device: SessionDevice = { id, model, link, address, port, engine, build };
+  const appId = textOf(object, "appId");
+  return appId === undefined ? device : { ...device, appId };
 }
 
 /**

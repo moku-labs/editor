@@ -128,7 +128,8 @@ command doors only (id, effect, input; not titles, not sources). The hub compute
 when it moves. After the first heartbeat it also has `heartbeat {frame, paused, silent}`: frame
 and paused of the last beat and the hub's silent flag. `at`, `heap` and `lastBeatAt` stay private.
 A device session (a paired phone) has `device`: `SessionDevice` with the device listener's real
-port. Mutating the result does not change the next call.
+port, and `appId` when the phone's pair named its app (`"com.mokulabs.timber.debug"`; an engine
+before the app id, 0.15.0, names none). Mutating the result does not change the next call.
 
 ### `fetch(req, server)`
 
@@ -446,7 +447,8 @@ tools page never gets one of an older run), both listeners stop (at most 500 ms)
 `hub:device { kind: "stopped" }` emitted. A call while device mode is off does nothing. `onStop`
 runs `teardownDevices` only: no emit, no log line (the teardown context has neither).
 
-`devices()` answers `LinkedDevice[]`: `SessionDevice` plus `pairedAt`, `online` and `latencyMs`.
+`devices()` answers `LinkedDevice[]`: `SessionDevice` (with `appId` when the pair named one) plus
+`pairedAt`, `online` and `latencyMs`.
 
 ```ts
 // After a Galaxy A26 paired over adb reverse.
@@ -505,15 +507,15 @@ unchanged: `role=device` there is 400 and a device Origin 403.
 ### Pairing
 
 A pairing socket's first message must be `editor`/`pair`
-`{ code, device: { model?, os?, engine?, build? } }`; anything else closes it 1008 `pair first`.
+`{ code, device: { model?, os?, engine?, build?, appId? } }`; anything else closes it 1008 `pair first`.
 A pairing socket that has no valid `pair` within 5 s (`PAIR_FIRST_MS`) closes 1008 `pair first`
 too; a valid `pair` clears that deadline (then `pairTimeoutMs` governs the wait for the person). The
 code is exactly four digits (`"0421"` keeps its zero): the phone shows it, the person types it in
 the terminal. A code of another length or a second `pair` while one waits is a strike.
 
 The device fields are sanitized in `hub/protocol` (`parsePairParams`), so the terminal's
-question, the log lines and `SessionInfo.device` get clean text: a `model`, `os`, `engine` or
-`build` over 128 characters, or with a control character (C0, DEL, C1) or a bidi embedding,
+question, the log lines and `SessionInfo.device` get clean text: a `model`, `os`, `engine`,
+`build` or `appId` over 128 characters, or with a control character (C0, DEL, C1) or a bidi embedding,
 override or isolate (U+202A–U+202E, U+2066–U+2069), makes the `pair` malformed: a strike, nobody
 is asked. `normalizeModel` drops those characters from a model it is given (adb's output too).
 
@@ -596,6 +598,7 @@ bridge import it as `../hub/protocol`, never the hub plugin.
 | `DeviceLink` | type | the bridge's link state |
 | `normalizeModel(raw)` | function | `" sm a266b "` → `"SM-A266B"`; empty → `null`; at most 64 characters |
 | `parsePairParams(params)` | function | the checked `pair` params, or `undefined` |
+| `baseAppId(appId)` | function | the app id without one trailing `.debug`: `"com.mokulabs.timber.debug"` → `"com.mokulabs.timber"` (connect and the collector compare app ids through it) |
 | `parsePerfLinesParams(params)` | function | the checked `perf.lines` params, or `undefined` |
 | `parseAddress(text)` | function | `{ host, port, text }` of `host:port` or `[ipv6]:port` (trimmed, port 1–65535), or `undefined` |
 | `isLoopback(host)` | function | `true` for 127.0.0.0/8, `localhost`, `::1` |
@@ -655,7 +658,7 @@ Log events (`ctx.log`):
 | global event | `hub:session` | emitted |
 | global event | `files:project` | hooked, published as `editor.project` |
 | per-plugin event | `hub:device` | emitted, declared with `register<HubDeviceEvent>()` |
-| protocol | `./protocol` (`hub/protocol`) | the device-link wire types, the 4401 constants, `normalizeModel`, `parsePairParams`, `parsePerfLinesParams` |
+| protocol | `./protocol` (`hub/protocol`) | the device-link wire types, the 4401 constants, `normalizeModel`, `parsePairParams`, `parsePerfLinesParams`, `baseAppId` |
 | protocol | `../perf/protocol` | type only: `PerfLogLine` of `DeviceLines.items` |
 | protocol | `../registry/protocol` | `SessionInfo`, `commandsHash`, `SelectionInfo`, `PublishParams`, `ProjectFound`, `ProjectState`, `wireError`, `toWireError`, `toWireValue`, `checkInput`, `parseSelectionInfo`, `parseSelectParams`, `parseDeviceParams`, `parseShowParams`, `parseNodeParams`, `EditorRequests`, `RelayedEditorMethod`, `decode`, `encode` |
 

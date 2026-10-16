@@ -343,13 +343,17 @@ function heatLine(heat: HeatSummary): string {
 }
 
 /**
- * The footer: lines read, lines skipped by reason, lines lost on the device.
+ * The footer: lines read, the wired device's telemetry lines, lines skipped by reason, lines lost
+ * on the device.
  *
  * @param summary - The summary.
  * @returns e.g. "1 840 lines · 3 skipped (2 of a newer log version, 1 not JSON) · 12 lost on the device".
  */
 function footerOf(summary: LogSummary): string {
   const parts = [`${groupThousands(summary.lines)} lines`];
+  if (summary.telemetry > 0) {
+    parts.push(`${groupThousands(summary.telemetry)} telemetry lines (wired device)`);
+  }
   const reasons = SKIPPED_WORDS.filter(([key]) => summary.skipped[key] > 0).map(
     ([key, words]) => `${summary.skipped[key]} ${words}`
   );

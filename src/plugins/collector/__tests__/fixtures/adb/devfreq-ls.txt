@@ -1,0 +1,4 @@
+17000010.devfreq_mif
+17000020.devfreq_int
+1e00000.mali
+soc:qcom,cpu-cpu-llcc-bw

@@ -103,6 +103,11 @@ export type ParsedLog = {
   readonly gfx: readonly PerfCollectorLine[];
   /** Σ gap.lines: lines the device lost before sending. */
   readonly lost: number;
+  /**
+   * `telemetry` lines read: the collector's wired-device line, an editor kind like `gap`, counted
+   * and summarized nowhere else (no report section in v1).
+   */
+  readonly telemetry: number;
   /** Non-empty lines read. */
   readonly lines: number;
   readonly skipped: SkippedLines;
@@ -240,6 +245,8 @@ export type LogSummary = {
     readonly mode: string;
   }[];
   readonly lost: number;
+  /** `telemetry` lines read (the wired device's line; the footer's count, no table). */
+  readonly telemetry: number;
   /** Non-empty lines read (the footer's count). */
   readonly lines: number;
   readonly skipped: SkippedLines;

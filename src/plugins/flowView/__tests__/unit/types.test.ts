@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { ToolsEvents } from "../../../../config";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { RunResult } from "../../../registry/protocol";
@@ -21,7 +22,7 @@ import type {
 } from "../../types";
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, flowViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, flowViewPlugin]
 });
 
 type App = ReturnType<typeof framework.createApp>;

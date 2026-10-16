@@ -243,7 +243,8 @@ describe("connect.watch", () => {
       transport: "usb",
       facts: { model: "SM-A266B", name: null, os: null },
       asked: true,
-      readySince: 0
+      readySince: 0,
+      apps: undefined
     });
     await expect(call(twins, "connect.watch", { device: "d-7f3a" })).resolves.toEqual({
       wired: false,

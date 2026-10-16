@@ -55,22 +55,25 @@ function profileOf(): BuildProfile {
 /**
  * The build of this page, from the flags spec 10 sets (10:136-153): dev when `__MOKU_GAME_DEV__`
  * is true, full when `__MOKU_GAME_CONTROL__` is true, read when `__MOKU_GAME_AGENT__` is true, none
- * otherwise (a test without stubs, a release page). `id` and `engine` are present only when their
- * global is a string.
+ * otherwise (a test without stubs, a release page). `id`, `engine` and `appId` are present only
+ * when their global is a string; `appId` is `__MOKU_GAME_APP__`, the value the engine also writes
+ * as the PerfLog header's `app.id` (an engine before it, 0.15.0, sets none).
  *
  * @returns A fresh frozen BuildInfo.
  * @example
  * ```ts
- * readBuildInfo(); // { profile: "read", id: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" }
+ * readBuildInfo(); // { profile: "read", id: "debug-20261016T090000Z", engine: "0.15.1+2b7c11", appId: "com.mokulabs.timber.debug" }
  * ```
  */
 export function readBuildInfo(): BuildInfo {
   const id = stringOf("__MOKU_GAME_BUILD__");
   const engine = stringOf("__MOKU_GAME_ENGINE__");
+  const appId = stringOf("__MOKU_GAME_APP__");
 
   return Object.freeze({
     profile: profileOf(),
     ...(id === undefined ? {} : { id }),
-    ...(engine === undefined ? {} : { engine })
+    ...(engine === undefined ? {} : { engine }),
+    ...(appId === undefined ? {} : { appId })
   });
 }

@@ -1,6 +1,7 @@
 /**
  * @file gameView plugin — the device toolbar (A2): Select (the picker, an icon button lit while
- * it is on, U4), device select grouped by kind (iPhone,
+ * it is on, U4; dimmed with the switch to the local preview while a phone is the source, G1),
+ * device select grouped by kind (iPhone,
  * Android, Foldable, Tablet, Desktop; an estimated preset says so in its title) with W × H, Fold /
  * Unfold for a foldable, Portrait / Landscape, Fit / 100 %, safe-area switch, the Sound switch
  * (`game.mute`, dimmed with a tooltip without it, round 2b R11), the Copy Ref switch (the
@@ -25,6 +26,7 @@ import { takeScreenshot } from "../capture/shot";
 import { GAME_COMMANDS, NO_CAPTURE_TEXT } from "../commands";
 import { setPicker } from "../element/select";
 import { missingCommand } from "../palette";
+import { DEVICE_SOURCE_TEXT, onDevice } from "../scene/device";
 import { SIDE_PANEL, SIDE_TITLE } from "../side";
 import { canMute, NO_MUTE_TEXT, setSound } from "../sound";
 import { foldDevice } from "../stage/fold";
@@ -486,6 +488,8 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
   // A layout effect: a manifest change right after the first render is not lost.
   useLayoutEffect(() => link.onManifest(() => setManifests(count => count + 1)), [link]);
   useTicker(state.series.recording !== undefined, RECORD_TICK_MS);
+  // A phone as the source sends no scene to pick from (G1).
+  const away = onDevice(ctx) && DEVICE_SOURCE_TEXT;
 
   return (
     <div data-game="toolbar" role="toolbar" aria-label="Game device">
@@ -493,8 +497,8 @@ export function DeviceToolbar(props: DeviceToolbarProps): VNode {
         type="button"
         data-part="pick"
         aria-pressed={picking}
-        title="Select element ⇧⌘C"
-        onClick={() => setPicker(ctx)}
+        {...dimmed(away, "Select element ⇧⌘C")}
+        onClick={away === false ? () => setPicker(ctx) : undefined}
       >
         <ToolIcon name="select" />
         <span data-sr-only>Select element</span>

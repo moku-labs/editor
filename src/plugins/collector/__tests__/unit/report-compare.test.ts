@@ -52,6 +52,7 @@ function summaryOf(...screens: ScreenSummary[]): LogSummary {
     marks: [],
     rateSwitches: [],
     lost: 0,
+    telemetry: 0,
     lines: 0,
     skipped: { notJson: 0, noVersion: 0, otherVersion: 0, unknownKind: 0, badShape: 0 }
   };

@@ -65,7 +65,7 @@ A bad value fails `createApp` with a two-line `TypeError`, e.g.
 | `connectDevice(serial)` | device mode on for wires when off, waits up to 20 s (connect's default `answerTimeoutMs`) for the phone's debug game, then `useDevice` (reason `connected`) |
 | `telemetry()`, `onTelemetry(fn)` | the active device's `editor.deviceTelemetry` only |
 | `markers()`, `notice()`, `dismissNotice()`, `reconnect()` | timeline markers, the disconnect notice, Reconnect |
-| `label()`, `health()`, `clockOffsetMs()` | the connection bar's name and link, the latency ring (48 samples, one per directory update of the active device, NaN for a gap, allocated once), the phone − computer clock offset |
+| `label()`, `health()`, `clockOffsetMs()` | the connection bar's name and link, the latency ring (48 samples, one per directory update of the active device, NaN for a gap, allocated once), the phone − computer clock offset (median of the last 8 heartbeats of the active device, each `at − (receivedAt − latency / 2)`; 0 for the local preview and a page, null before two beats) |
 | `openConnect(tab?)` | emits `activeSource:connect-requested` |
 
 ## Events
@@ -80,8 +80,8 @@ global `link:status` (B8).
 
 ## Dependencies
 
-`linkPlugin`: `sessions`, `session`, `ownSession`, `onSessions`, `choose`, `runIn`, `callEditor`,
-`published`, `onPublished`. Server calls only through `link.callEditor("connect.*")` (connect's
+`linkPlugin`: `sessions`, `session`, `ownSession`, `onSessions`, `onHeartbeat`, `choose`, `runIn`,
+`callEditor`, `published`, `onPublished`. Server calls only through `link.callEditor("connect.*")` (connect's
 editor methods: `scan`, `wire`, `network`, `off`, `confirm`, `refuse`, `watch`, `unwatch`) and
 `link.runIn(own, "game.pause" | "game.resume")`. Types: `SessionDevice` (`hub/protocol`),
 `DeviceDirectory`, `DeviceTelemetry`, `ListenInfo` (`connect/protocol`). Tools order:
@@ -90,9 +90,9 @@ editor methods: `scan`, `wire`, `network`, `off`, `confirm`, `refuse`, `watch`, 
 ## Lifecycle
 
 - **onInit:** validates the config.
-- **onStart:** subscribes to `link.onSessions`, `link.onPublished("devices")` and
-  `link.onPublished("deviceTelemetry")`; the first session list's choice becomes the source
-  (reason `adopted`, no marker).
+- **onStart:** subscribes to `link.onSessions`, `link.onPublished("devices")`,
+  `link.onPublished("deviceTelemetry")` and `link.onHeartbeat` (the clock offset); the first
+  session list's choice becomes the source (reason `adopted`, no marker).
 - **onStop:** state-only (no emit, no log): unsubscribes, clears the renew interval and the notice
   timer, cancels `connectDevice` waits, drops the listeners. It does not resume the local preview:
   the page is going away, and its frame with it.
@@ -113,7 +113,7 @@ editor methods: `scan`, `wire`, `network`, `off`, `confirm`, `refuse`, `watch`, 
 | `actions.ts` | connect's editor methods, `connectDevice`, `reconnect` |
 | `leases.ts` | scan and watch leases, the renew interval |
 | `notice.ts` | notice and markers |
-| `health.ts` | latency ring, clock offset estimator |
+| `health.ts` | latency ring, clock offset estimator and its heartbeat feed |
 | `names.ts` | kinds, device names (B9), the label |
 
 ## Limits
@@ -125,10 +125,12 @@ editor methods: `scan`, `wire`, `network`, `off`, `confirm`, `refuse`, `watch`, 
   another reason is never released by `game.resume`, which pops only `devtools`. The hub sends the
   readout only when `paused` flips, so a game whose very first heartbeat said paused reads as
   running until its next flip.
-- **`clockOffsetMs()` has no heartbeat feed yet.** It answers 0 for the local preview and a page,
-  and `null` for a device: link does not expose the device's `Heartbeat.at`. The estimator
-  (`offsetOf`, `noteOffset`, `medianOffset` in `health.ts`) is in place for when link gains that
-  seam.
+- **`clockOffsetMs()` is as good as the heartbeat and the ping.** It is fed by `link.onHeartbeat`
+  with the active device's beats (link passes the chosen session's, which is the device while it is
+  the source) and takes the beat as sent half the hub's ping round trip before it arrived (0 before
+  the first pong). Each beat's transit beyond half the ping (the hub's forwarding, a busy tools tab)
+  reads as the phone's clock being that much further behind; the median of 8 drops a single late
+  beat, not a steady delay. A switch to another device starts the ring over.
 - `connectDevice` waits 20 s, connect's default `answerTimeoutMs`; a server configured otherwise
   is not read.
 - Names: the directory's marketing name when a wired phone matched, else the session's model, else

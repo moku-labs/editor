@@ -6,6 +6,7 @@
  * per attach is in flight: a slow phone skips a tick, never queues one.
  */
 import { hubPlugin } from "../../hub";
+import type { LinkedDevice } from "../../hub/types";
 import { attachCdp, detachCdp } from "../cdp/attach";
 import { sampleHeap } from "../cdp/heap";
 import { currentDirectory } from "../directory";
@@ -74,7 +75,7 @@ async function probeAttach(ctx: ConnectCtx, attach: AttachRecord): Promise<void>
     attach.probe = undefined;
   });
   if (attach.ended) return;
-  attach.probe = resolveProbe(found, socket);
+  attach.probe = resolveProbe(found, socket, attach.appId);
   attach.counters = undefined;
   attach.missing.clear();
 }
@@ -120,16 +121,17 @@ export async function tick(ctx: ConnectCtx, attach: AttachRecord): Promise<void>
  * probe) at once.
  *
  * @param ctx - Domain context of connect.
- * @param device - The device id.
+ * @param linked - The linked device (its id and app id).
  * @param serial - Its adb serial.
  */
-function startAttach(ctx: ConnectCtx, device: string, serial: string): void {
+function startAttach(ctx: ConnectCtx, linked: LinkedDevice, serial: string): void {
+  const device = linked.id;
   const session = ctx
     .require(hubPlugin)
     .sessions()
     .find(item => item.device?.id === device);
   // eslint-disable-next-line unicorn/no-null -- null is "no session" on AttachRecord.page
-  const attach = createAttachRecord(device, serial, session?.page ?? null);
+  const attach = createAttachRecord(device, serial, session?.page ?? null, linked.appId);
   ctx.state.attaches.set(device, attach);
   attach.timers = {
     tick: unref(setInterval(() => void tick(ctx, attach), ctx.config.telemetryEveryMs)),
@@ -190,7 +192,7 @@ export function watchDevice(ctx: ConnectCtx, device: string, conn: number): Watc
   }
 
   renewLease(state, device, conn, Date.now() + ctx.config.leaseMs);
-  if (!state.attaches.has(device)) startAttach(ctx, device, phone.serial);
+  if (!state.attaches.has(device)) startAttach(ctx, linked, phone.serial);
   return { wired: true };
 }
 
