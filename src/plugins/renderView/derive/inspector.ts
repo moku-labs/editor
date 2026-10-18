@@ -291,6 +291,7 @@ function rateRows(
  * @returns The summary.
  */
 function summaryView(mission: MissionState, endMs: number): InspectorView {
+  // The frames of the view and their summary.
   const { history, view } = mission;
   const startMs = endMs - view.span;
   const first = firstVisibleRow(history, startMs);
@@ -300,6 +301,8 @@ function summaryView(mission: MissionState, endMs: number): InspectorView {
     frames > 0
       ? rangeSummary(history, history.frame[first] ?? 0, history.frame[end - 1] ?? 0)
       : undefined;
+
+  // Spikes newest first; GCs from the engine and the side series, newest first.
   const spikes = spikeGroups(history, first, end - 1)
     .toReversed()
     .map(group => spikeRow(history, group));
@@ -307,6 +310,7 @@ function summaryView(mission: MissionState, endMs: number): InspectorView {
   const gcs = [...events.gcs, ...seriesGcsIn(mission, startMs, endMs)]
     .toSorted((a, b) => a.t - b.t)
     .toReversed();
+
   return {
     kind: "summary",
     title: view.live ? `Last ${spanWords(view.span)}` : `${spanWords(view.span)} in view`,

@@ -299,6 +299,8 @@ export type GraphCanvas = {
   nextDpr: number;
   /** The next paint slides (no reduced motion on the page or in the game). */
   motion: boolean;
+  /** The ResizeObserver following the well's size; disconnected when the canvas is dropped. */
+  observer: ResizeObserver | undefined;
 };
 
 /**

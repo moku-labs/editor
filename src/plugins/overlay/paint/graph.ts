@@ -58,14 +58,19 @@ function paintFixed(
   if (fixed === undefined) return;
   // The fixed layer keeps no flags: a painter state of one row, made once.
   state.fixedGraph ??= graph.createState(1);
+
+  // The backing store, only when the size or the dpr changed.
   const { w, h, dpr } = canvas;
-  if (w !== fixed.w || h !== fixed.h || dpr !== fixed.dpr) {
+  const sizeChanged = w !== fixed.w || h !== fixed.h || dpr !== fixed.dpr;
+  if (sizeChanged) {
     fixed.w = w;
     fixed.h = h;
     fixed.dpr = dpr;
     fixed.element.width = Math.round(w * dpr);
     fixed.element.height = Math.round(h * dpr);
   }
+
+  // Paint at the well's size, cleared first.
   const view = state.fixedView;
   view.width = w;
   view.height = h;
@@ -85,6 +90,9 @@ function finiteMs(ms: number | undefined): number | undefined {
   return ms !== undefined && Number.isFinite(ms) ? ms : undefined;
 }
 
+/** The slide's room past the well's right edge, ms (not the open slide's `SLIDE_MS`). */
+const SLIDE_ROOM_MS = SLIDE_TICKS * PAINT_MS;
+
 /**
  * The canvas's extra width of a paint: `SLIDE_TICKS` ticks at the scale where the visible width spans
  * the window less those ticks (so the wider canvas holds exactly the window); none under reduced
@@ -98,14 +106,16 @@ function finiteMs(ms: number | undefined): number | undefined {
  */
 function slideLead(window: PerfWindowView, canvas: GraphCanvas, graph: GraphSeam): number {
   const span = window.endMs - window.startMs;
-  if (!canvas.motion || window.count === 0 || span <= SLIDE_MS) return 0;
+  if (!canvas.motion || window.count === 0 || span <= SLIDE_ROOM_MS) return 0;
   // The visible width spans the window less the slide's room; the room is drawn at that scale.
-  const lead = graph.msToPx(window, canvas.w, false, (SLIDE_MS * span) / (span - SLIDE_MS));
+  const lead = graph.msToPx(
+    window,
+    canvas.w,
+    false,
+    (SLIDE_ROOM_MS * span) / (span - SLIDE_ROOM_MS)
+  );
   return Number.isFinite(lead) ? Math.min(Math.max(lead, 0), canvas.w) : 0;
 }
-
-/** The slide's room past the well's right edge, ms. */
-const SLIDE_MS = SLIDE_TICKS * PAINT_MS;
 
 /**
  * Makes the four visitors of a domain context. Each reads its inputs from the state and writes its
@@ -124,27 +134,27 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     if (state.graph === undefined || state.graph.flagRow.length < window.capacity) {
       state.graph = graph.createState(window.capacity);
     }
-    // The slide: one tick's distance at this scale, painted past the well's right edge.
+    // The slide's room, painted past the well's right edge.
     const lead = slideLead(window, canvas, graph);
     const width = canvas.w + lead;
+
     // Skip a paint that would draw the same: window version, selection, size, dpr (a paused game costs nothing).
     const row = state.selected === undefined ? -1 : rowOfFrame(window, state.selected);
     const painted = state.painted;
-    const same =
-      window.version === painted.version &&
-      row === painted.row &&
-      width === painted.w &&
-      canvas.h === painted.h &&
-      canvas.nextDpr === painted.dpr;
-    if (same) return;
+    const sizeChanged =
+      width !== painted.w || canvas.h !== painted.h || canvas.nextDpr !== canvas.dpr;
+    const samePaint =
+      window.version === painted.version && row === painted.row && width === painted.w;
+    if (samePaint && canvas.h === painted.h && canvas.nextDpr === painted.dpr) return;
 
     // The backing store, only when the painted size or the dpr changed.
-    if (width !== painted.w || canvas.h !== painted.h || canvas.nextDpr !== canvas.dpr) {
+    if (sizeChanged) {
       canvas.dpr = canvas.nextDpr;
       canvas.element.width = Math.round(width * canvas.dpr);
       canvas.element.height = Math.round(canvas.h * canvas.dpr);
       canvas.element.style.setProperty("width", `${width}px`);
     }
+
     // Paint through the reused view object (no allocation per paint) at the dpr transform.
     const view = state.graphView;
     view.width = width;
@@ -153,17 +163,19 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     view.leadPx = lead;
     // The whole window on the wider canvas: the visible width spans it less the slide's room.
     view.nowMs = window.endMs;
-    view.spanMs = window.endMs - window.startMs - (lead > 0 ? SLIDE_MS : 0);
+    view.spanMs = window.endMs - window.startMs - (lead > 0 ? SLIDE_ROOM_MS : 0);
     canvas.g.setTransform(canvas.dpr, 0, 0, canvas.dpr, 0, 0);
     graph.paint(canvas.g, window, view, state.graph);
+
     // Remember what was painted, for the next skip test.
     painted.version = window.version;
     painted.row = row;
     painted.w = width;
     painted.h = canvas.h;
     painted.dpr = canvas.dpr;
-    // The fixed canvas over the well, in the same visit; then slide the fresh plot over the next
-    // tick (compositor only; the next paint resets it). The fixed canvas stays.
+
+    // The fixed canvas over the well, in the same visit; then slide the fresh plot on (compositor
+    // only; the next paint carries on from where it is). The fixed canvas stays.
     paintFixed(state, graph, window, canvas);
     startSlide(state, canvas.element, lead, window.endMs, Date.now());
   };
@@ -261,7 +273,17 @@ export function mountCanvas(
 
   const g = octx.graph.context(element);
   if (g === undefined) return;
-  state.canvas = { element, g, w: size.w, h: size.h, dpr: 0, nextDpr: 1, motion: false };
+  state.canvas?.observer?.disconnect();
+  state.canvas = {
+    element,
+    g,
+    w: size.w,
+    h: size.h,
+    dpr: 0,
+    nextDpr: 1,
+    motion: false,
+    observer: undefined
+  };
   state.graph = undefined;
   state.painted.version = -1;
   observeCanvas(state, element);
@@ -332,11 +354,8 @@ function observeCanvas(state: OverlayState, element: HTMLCanvasElement): void {
     canvas.h = box.height;
   });
   observer.observe(element.parentElement ?? element);
-  canvasObservers.set(state, observer);
+  if (state.canvas !== undefined) state.canvas.observer = observer;
 }
-
-/** The observer of each state's canvas, disconnected with the canvas. */
-const canvasObservers = new WeakMap<OverlayState, ResizeObserver>();
 
 /**
  * Drops both canvases and their painter states (the record, another tab, the pill, hidden).
@@ -344,8 +363,7 @@ const canvasObservers = new WeakMap<OverlayState, ResizeObserver>();
  * @param state - Overlay state.
  */
 export function dropCanvas(state: OverlayState): void {
-  canvasObservers.get(state)?.disconnect();
-  canvasObservers.delete(state);
+  state.canvas?.observer?.disconnect();
   state.canvas = undefined;
   state.graph = undefined;
   state.painted.version = -1;

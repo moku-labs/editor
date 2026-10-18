@@ -386,7 +386,7 @@ export function texturesCard(
     return { value: DASH, unit: "MB", lines: [], inSelection: undefined, share: null };
   }
   const share = assets.budgetMb > 0 ? assets.textureMb / assets.budgetMb : 0;
-  const pct = `${Math.round(share * 100)} % of budget`;
+  const pct = `${Math.round(share * PERCENT)} % of budget`;
   const lines: Line[] = [
     input.count === undefined ? [pct] : [strong(String(input.count)), ` textures, ${pct}`]
   ];
@@ -396,10 +396,8 @@ export function texturesCard(
   if (times !== undefined) {
     const before = valueAt(input.textures, times.from);
     const after = valueAt(input.textures, times.to);
-    inSelection =
-      before === after || Number.isNaN(before)
-        ? "unchanged"
-        : `${oneDecimal(before)} → ${oneDecimal(after)} MB`;
+    const unchanged = before === after || Number.isNaN(before);
+    inSelection = unchanged ? "unchanged" : `${oneDecimal(before)} → ${oneDecimal(after)} MB`;
   }
   return {
     value: oneDecimal(assets.textureMb),
@@ -460,6 +458,9 @@ function chainInSelection(input: CardsInput): string | undefined {
   if (chain?.gpuMs === null || chain === undefined) return undefined;
   return `${chain.view ?? chain.kinds.join(" → ")} ${oneDecimal(chain.gpuMs)} ms over ${summary.frames} frames`;
 }
+
+/** A share as a percent. */
+const PERCENT = 100;
 
 /**
  * The typical number of passes of a drawn frame in view: the median count over the frames that ran
@@ -669,6 +670,17 @@ function frameReadout(
 }
 
 /**
+ * Whether a card's readout comes from a 1 Hz side series (textures, memory, device load), not from
+ * the frame rows.
+ *
+ * @param kind - The card.
+ * @returns True for a series-backed card.
+ */
+function isSeriesBacked(kind: ReadoutKind): boolean {
+  return kind === "textures" || kind === "memory" || kind === "cpu" || kind === "gpuLoad";
+}
+
+/**
  * A card's cursor chip at the hovered frame: "f4851 16.2 ms" (Frame time), "f4851 60 fps", "f4851
  * 212" (Draw calls), "f4851 41.3 MB" (Memory), …; each card reads its own measure, from the history
  * or from its side series at the frame's time.
@@ -690,8 +702,7 @@ export function readoutOf(
   const { history } = mission;
   const row = rowOfFrame(history, frame);
   if (row < 0) return undefined;
-  const series = kind === "textures" || kind === "memory" || kind === "cpu" || kind === "gpuLoad";
-  const words = series
+  const words = isSeriesBacked(kind)
     ? seriesReadout(kind, mission, history.t[row] ?? 0)
     : frameReadout(kind, history, row, frame);
   return words === undefined ? undefined : `f${frame} ${words}`;

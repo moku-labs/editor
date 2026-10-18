@@ -285,8 +285,8 @@ export function isLeak(baselines: readonly Baseline[], objects: ObjectSeries): b
   const span = (baselines.at(-1)?.t ?? 0) - (baselines[0]?.t ?? 0);
   const slope = slopePerMinute(baselines) ?? 0;
   const sure = slope - LEAK_ERRORS * slopeErrorPerMinute(baselines);
-  if (baselines.length >= LEAK_POINTS && span >= LEAK_SPAN_MS && sure >= LEAK_MB_PER_MIN)
-    return true;
+  const enoughBaselines = baselines.length >= LEAK_POINTS && span >= LEAK_SPAN_MS;
+  if (enoughBaselines && sure >= LEAK_MB_PER_MIN) return true;
   return growingCounters(objects).length > 0;
 }
 
@@ -401,6 +401,9 @@ export function memorySourceLine(
   return "Not available: not measured on this device";
 }
 
+/** Under this span, ms, the baseline line names seconds; from it, minutes. */
+const SECONDS_SPAN_MS = 90_000;
+
 /**
  * The words of the time the baselines span: "{n} s" under 90 s, else "{m} min" to one decimal.
  *
@@ -408,7 +411,7 @@ export function memorySourceLine(
  * @returns The words.
  */
 function baselineSpanWords(ms: number): string {
-  return ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${oneDecimal(ms / 60_000)} min`;
+  return ms < SECONDS_SPAN_MS ? `${Math.round(ms / 1000)} s` : `${oneDecimal(ms / MINUTE_MS)} min`;
 }
 
 /**
@@ -621,26 +624,58 @@ export function heapRangeLine(
  * ```
  */
 export function gcsInRangeText(input: MemoryInput, from: number, to: number): string {
-  const source = memorySource(input);
-  let count = 0;
-  let freed = 0;
-  if (source === "cdp") {
-    const { gcs } = input.series;
-    for (let index = 0; index < gcs.count; index += 1) {
-      const t = gcs.t[index] ?? 0;
-      if (t < from || t > to) continue;
-      count += 1;
-      freed += gcs.v[index] ?? 0;
-    }
-  } else {
-    const { history } = input;
-    for (let index = 0; index < history.eventCount; index += 1) {
-      const event = history.events[index];
-      if (event?.kind !== "gc" || event.t < from || event.t > to) continue;
-      count += 1;
-      freed += event.freedMb;
-    }
-  }
+  const { count, freed } =
+    memorySource(input) === "cdp"
+      ? seriesGcsIn(input.series.gcs, from, to)
+      : historyGcsIn(input.history, from, to);
   if (count === 0) return "No GC";
   return `${count} GC${count === 1 ? "" : "s"}, freed ${oneDecimal(freed)} MB`;
+}
+
+/**
+ * The GCs of a GC series in a time range and the MB they freed.
+ *
+ * @param gcs - The GC series.
+ * @param from - The range's start.
+ * @param to - Its end.
+ * @returns The count and the MB.
+ */
+function seriesGcsIn(
+  gcs: MemoryInput["series"]["gcs"],
+  from: number,
+  to: number
+): { count: number; freed: number } {
+  let count = 0;
+  let freed = 0;
+  for (let index = 0; index < gcs.count; index += 1) {
+    const t = gcs.t[index] ?? 0;
+    if (t < from || t > to) continue;
+    count += 1;
+    freed += gcs.v[index] ?? 0;
+  }
+  return { count, freed };
+}
+
+/**
+ * The GC events of the history in a time range and the MB they freed.
+ *
+ * @param history - The history.
+ * @param from - The range's start.
+ * @param to - Its end.
+ * @returns The count and the MB.
+ */
+function historyGcsIn(
+  history: MemoryInput["history"],
+  from: number,
+  to: number
+): { count: number; freed: number } {
+  let count = 0;
+  let freed = 0;
+  for (let index = 0; index < history.eventCount; index += 1) {
+    const event = history.events[index];
+    if (event?.kind !== "gc" || event.t < from || event.t > to) continue;
+    count += 1;
+    freed += event.freedMb;
+  }
+  return { count, freed };
 }

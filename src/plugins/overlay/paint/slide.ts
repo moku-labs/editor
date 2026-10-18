@@ -1,9 +1,9 @@
 /**
  * @file overlay plugin — the graph's compositor slide (spec 08 Delta 2026-10-15 and 2026-10-18;
  * decision "Smooth graph scroll by a compositor slide, paint stays <= 4 Hz"): the canvas is painted
- * two ticks wider than its well, and after each paint one linear CSS transition slides it on a
- * display time that runs at real time across paints (each paint starts where the last slide is
- * now). No per-frame JavaScript. Reduced motion (the page's or the game's) slides nothing.
+ * three ticks wider than its well (the room), and after each paint one linear CSS transition of two
+ * ticks slides it on a display time that runs at real time across paints (each paint starts where
+ * the last slide is now, two ticks behind the newest data). No per-frame JavaScript. Reduced motion (the page's or the game's) slides nothing.
  */
 import type { OverlayRegistry, OverlayState } from "../types";
 import { PAINT_MS } from "../types";
@@ -57,9 +57,9 @@ export function slideAllowed(
 }
 
 /**
- * The ticks of data a paint keeps past the well's right edge: the slide's room. The right edge
- * shows the data `SLIDE_RUN_TICKS` ticks behind the newest, so one slide never runs out of data, and
- * one more tick is kept for a late or skipped paint.
+ * The ticks of data a paint keeps past the well's right edge: the slide's room, three. The right
+ * edge aims two ticks (`SLIDE_RUN_TICKS`) behind the newest data, so one two-tick slide never runs
+ * out of data; the third tick is kept for a late or skipped paint.
  */
 export const SLIDE_TICKS = 3;
 
@@ -133,7 +133,8 @@ export function startSlide(
   const target = endMs - durMs;
   // Carry on from what shows now; a first paint, or one too far off, starts on the target.
   const shown = edgeNow(state, now);
-  const from = Number.isFinite(shown) && shown >= zeroMs && shown <= endMs ? shown : target;
+  const onCanvas = Number.isFinite(shown) && shown >= zeroMs && shown <= endMs;
+  const from = onCanvas ? shown : target;
   const speed = 1 + Math.min(TRIM, Math.max(-TRIM, (target - from) / TRIM_SPAN_MS));
   const to = Math.min(endMs, from + speed * durMs);
   slide.px = lead;

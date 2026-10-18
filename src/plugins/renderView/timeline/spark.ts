@@ -248,10 +248,13 @@ export function fillFromFrames(
   measure: FrameMeasure,
   view: { readonly startMs: number; readonly span: number }
 ): void {
+  // Reset the columns and lay them on the view's time.
   columns.v.fill(Number.NaN);
   columns.rested.fill(1);
   columns.marks.fill(SPARK_MARK.none);
   layColumns(columns, view.startMs, view.span);
+
+  // Fold each row into its column, keeping the worst value.
   const end = rowFrom(history, view.startMs + view.span);
   for (let row = firstVisibleRow(history, columns.startMs); row < end; row += 1) {
     const index = columnOf(columns, history.t[row] ?? 0);
@@ -264,6 +267,8 @@ export function fillFromFrames(
     const worse = measure === "fps" ? value < held : value > held;
     if (Number.isNaN(held) || worse) columns.v[index] = value;
   }
+
+  // A column without a value did not rest: it has no data.
   for (let index = 0; index < SPARK_COLUMNS; index += 1) {
     if (Number.isNaN(columns.v[index] ?? Number.NaN)) columns.rested[index] = 0;
   }
@@ -309,10 +314,13 @@ export function fillPassGpu(
   history: PerfHistory,
   view: { readonly startMs: number; readonly span: number }
 ): void {
+  // Reset the columns and lay them on the view's time.
   columns.v.fill(Number.NaN);
   columns.rested.fill(0);
   columns.marks.fill(SPARK_MARK.none);
   layColumns(columns, view.startMs, view.span);
+
+  // Sum each frame's passes and keep the column's largest sum (the last frame flushed after).
   const first = history.frame[firstVisibleRow(history, columns.startMs)] ?? 0;
   const last = history.frame[rowFrom(history, view.startMs + view.span) - 1] ?? -1;
   let frame = -1;
@@ -412,6 +420,30 @@ function yOfValue(layout: TimelineLayout, style: SparkStyle, value: number): num
 }
 
 /**
+ * Closes a run of columns down to the baseline (from its last column back to its first); nothing
+ * when no run is open.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param columns - The laid-out columns.
+ * @param first - The run's first column; −1 for none.
+ * @param last - Its last column.
+ */
+function closeRun(
+  g: PaintContext,
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  first: number,
+  last: number
+): void {
+  if (first < 0) return;
+  const bottom = plotBottom(layout);
+  g.lineTo(columnX(layout, columns, last, VIEW.startMs, VIEW.span), bottom);
+  g.lineTo(columnX(layout, columns, first, VIEW.startMs, VIEW.span), bottom);
+  g.closePath();
+}
+
+/**
  * The path of the columns: a line through each column's middle, broken at a gap; with `close`, each
  * run closed down to the baseline and filled.
  *
@@ -428,19 +460,15 @@ function columnPath(
   style: SparkStyle,
   close: boolean
 ): void {
-  const bottom = plotBottom(layout);
   const { startMs, span } = VIEW;
   let runStart = -1;
   g.beginPath();
   for (let index = 0; index <= SPARK_COLUMNS; index += 1) {
     const value = index < SPARK_COLUMNS ? (columns.v[index] ?? Number.NaN) : Number.NaN;
     const x = columnX(layout, columns, index, startMs, span);
+    // A gap ends the run: closed down to the baseline when filling.
     if (Number.isNaN(value)) {
-      if (close && runStart >= 0) {
-        g.lineTo(columnX(layout, columns, index - 1, startMs, span), bottom);
-        g.lineTo(columnX(layout, columns, runStart, startMs, span), bottom);
-        g.closePath();
-      }
+      if (close) closeRun(g, layout, columns, runStart, index - 1);
       runStart = -1;
       continue;
     }
@@ -520,6 +548,16 @@ function paintMarks(
 /** The view of the sparkline being painted (reused): its start and span, ms. */
 const VIEW = { startMs: 0, span: 1 };
 
+/** The alphas of a sparkline: resting columns, the reference line, the selection, the area, the cursor. */
+const REST_ALPHA = 0.2;
+const REFERENCE_ALPHA = 0.7;
+const SELECTION_ALPHA = 0.14;
+const AREA_ALPHA = 0.12;
+const CURSOR_ALPHA = 0.55;
+
+/** The width of a sparkline's line, px. */
+const LINE_WIDTH = 1.5;
+
 /** The x range of the selection (reused). */
 const SELECTED = { left: 0, right: 0 };
 
@@ -562,11 +600,6 @@ function selectedSpan(
  * @param marks.history - The history (the selection's rows).
  * @param marks.selection - The selection; undefined for none.
  * @param marks.hoverMs - The source time under the pointer; undefined for none.
- * @example
- * ```ts
- * fillFromFrames(columns, history, "worst", { startMs, span });
- * paintSpark(g, layout, columns, { min: 0, max: 36, reference: 16.7, colour: "src" }, scene, mission);
- * ```
  */
 export function paintSpark(
   g: PaintContext,
@@ -580,61 +613,165 @@ export function paintSpark(
     readonly hoverMs: number | undefined;
   }
 ): void {
-  const { palette } = scene;
-  const bottom = plotBottom(layout);
   VIEW.startMs = scene.endMs - scene.span;
   VIEW.span = scene.span;
-  const step = (columns.stepMs / scene.span) * layout.plot.w;
-  g.globalAlpha = 1;
-  g.setLineDash(DASH.none);
-  g.strokeStyle = palette.line2;
-  g.lineWidth = 1;
-  hline(g, bottom + 0.5, 0, layout.plot.w);
-  // The first and last columns reach past the plot: everything below is clipped to it.
+  paintBaseline(g, layout, scene);
+
+  // The first and last columns reach past the plot: everything up to the cursor is clipped to it.
   g.save();
   g.beginPath();
   g.rect(0, 0, layout.plot.w, layout.height);
   g.clip();
-  g.globalAlpha = 0.2;
-  g.fillStyle = palette.edge;
+  paintRestedColumns(g, layout, columns, scene);
+  paintReference(g, layout, style, scene);
+  if (hasSelectedSpan(marks.history, layout, marks.selection, scene))
+    paintSelectionBand(g, layout, scene);
+  paintAreaAndLine(g, layout, columns, style, scene);
+  paintTrend(g, layout, style, scene);
+  paintMarks(g, layout, columns, scene);
+  g.restore();
+
+  if (marks.hoverMs !== undefined) paintCursor(g, layout, marks.hoverMs, scene);
+}
+
+/**
+ * The sparkline's baseline, 1 px in line-2.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param scene - The palette.
+ */
+function paintBaseline(g: PaintContext, layout: TimelineLayout, scene: PaintScene): void {
+  g.globalAlpha = 1;
+  g.setLineDash(DASH.none);
+  g.strokeStyle = scene.palette.line2;
+  g.lineWidth = 1;
+  hline(g, plotBottom(layout) + 0.5, 0, layout.plot.w);
+}
+
+/**
+ * The columns that only rested, in the edge colour at 20 %, each one column wide at its time.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param columns - The laid-out columns.
+ * @param scene - The view and the palette.
+ */
+function paintRestedColumns(
+  g: PaintContext,
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  scene: PaintScene
+): void {
+  const step = (columns.stepMs / scene.span) * layout.plot.w;
+  g.globalAlpha = REST_ALPHA;
+  g.fillStyle = scene.palette.edge;
   for (let index = 0; index < SPARK_COLUMNS; index += 1) {
     if (columns.rested[index] !== 1) continue;
     const left = columnX(layout, columns, index, VIEW.startMs, VIEW.span) - step / 2;
     g.fillRect(left, layout.plot.y, step, layout.plot.h);
   }
   g.globalAlpha = 1;
-  if (!Number.isNaN(style.reference)) {
-    g.globalAlpha = 0.7;
-    g.strokeStyle = palette.muted;
-    g.setLineDash(DASH.reference);
-    hline(g, yOfValue(layout, style, style.reference), 0, layout.plot.w);
-    g.setLineDash(DASH.none);
-    g.globalAlpha = 1;
-  }
-  if (
-    marks.selection !== undefined &&
-    selectedSpan(marks.history, layout, marks.selection, scene)
-  ) {
-    g.globalAlpha = 0.14;
-    g.fillStyle = palette.accent;
-    g.fillRect(SELECTED.left, 0, Math.max(1, SELECTED.right - SELECTED.left), layout.height);
-    g.globalAlpha = 1;
-  }
-  const colour = palette[style.colour];
-  g.globalAlpha = 0.12;
+}
+
+/**
+ * The reference line, dashed `[3, 3]` in the muted ink at 70 %; none when the style has none.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param style - The scale and the reference.
+ * @param scene - The palette.
+ */
+function paintReference(
+  g: PaintContext,
+  layout: TimelineLayout,
+  style: SparkStyle,
+  scene: PaintScene
+): void {
+  if (Number.isNaN(style.reference)) return;
+  g.globalAlpha = REFERENCE_ALPHA;
+  g.strokeStyle = scene.palette.muted;
+  g.setLineDash(DASH.reference);
+  hline(g, yOfValue(layout, style, style.reference), 0, layout.plot.w);
+  g.setLineDash(DASH.none);
+  g.globalAlpha = 1;
+}
+
+/**
+ * Whether a selection is set and some of it is held (its x range then in SELECTED).
+ *
+ * @param history - The history.
+ * @param layout - The geometry.
+ * @param selection - The selection; undefined for none.
+ * @param scene - The view.
+ * @returns True when the band is drawn.
+ */
+function hasSelectedSpan(
+  history: PerfHistory,
+  layout: TimelineLayout,
+  selection: FrameRange | undefined,
+  scene: PaintScene
+): boolean {
+  return selection !== undefined && selectedSpan(history, layout, selection, scene);
+}
+
+/**
+ * The selection band over SELECTED's x range, the accent at 14 %, at least 1 px wide.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param scene - The palette.
+ */
+function paintSelectionBand(g: PaintContext, layout: TimelineLayout, scene: PaintScene): void {
+  g.globalAlpha = SELECTION_ALPHA;
+  g.fillStyle = scene.palette.accent;
+  g.fillRect(SELECTED.left, 0, Math.max(1, SELECTED.right - SELECTED.left), layout.height);
+  g.globalAlpha = 1;
+}
+
+/**
+ * The area under the columns (the tint at 12 %) and their line (1.5 px).
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param columns - The laid-out columns.
+ * @param style - The scale and the colour.
+ * @param scene - The palette.
+ */
+function paintAreaAndLine(
+  g: PaintContext,
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  style: SparkStyle,
+  scene: PaintScene
+): void {
+  const colour = scene.palette[style.colour];
+  g.globalAlpha = AREA_ALPHA;
   g.fillStyle = colour;
   columnPath(g, layout, columns, style, true);
   g.globalAlpha = 1;
   g.strokeStyle = colour;
-  g.lineWidth = 1.5;
+  g.lineWidth = LINE_WIDTH;
   columnPath(g, layout, columns, style, false);
-  paintTrend(g, layout, style, scene);
-  paintMarks(g, layout, columns, scene);
-  g.restore();
-  if (marks.hoverMs === undefined) return;
-  const x = xOf(layout, marks.hoverMs, scene.endMs - scene.span, scene.span);
-  g.globalAlpha = 0.55;
-  g.strokeStyle = palette.ink;
+}
+
+/**
+ * The shared cursor at a source time, the ink at 55 %, across the whole canvas.
+ *
+ * @param g - The context.
+ * @param layout - The geometry.
+ * @param hoverMs - The source time under the pointer.
+ * @param scene - The view and the palette.
+ */
+function paintCursor(
+  g: PaintContext,
+  layout: TimelineLayout,
+  hoverMs: number,
+  scene: PaintScene
+): void {
+  const x = xOf(layout, hoverMs, scene.endMs - scene.span, scene.span);
+  g.globalAlpha = CURSOR_ALPHA;
+  g.strokeStyle = scene.palette.ink;
   g.lineWidth = 1;
   g.beginPath();
   g.moveTo(x, 0);
@@ -751,10 +888,6 @@ const ALL: SeriesColumn[] = [];
  * @param layout - The canvas's geometry.
  * @param load - The load series.
  * @param scene - The view and the palette.
- * @example
- * ```ts
- * paintCpuSteps(g, sparkLayout(440, 46, 2), mission.series.load, scene);
- * ```
  */
 export function paintCpuSteps(
   g: PaintContext,
@@ -802,10 +935,6 @@ const MHZ_SCALE = { min: 0, max: 1 };
  * @param range - The clock's range (telemetry's `minMhz`, `maxMhz`); null ends for the series' own.
  * @param range.minMhz - The lowest clock.
  * @param range.maxMhz - The highest clock.
- * @example
- * ```ts
- * paintGpuSteps(g, layout, mission.series.load, scene, { minMhz: 221, maxMhz: 949 });
- * ```
  */
 export function paintGpuSteps(
   g: PaintContext,

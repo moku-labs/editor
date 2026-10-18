@@ -1381,7 +1381,7 @@ function plotWidth(width: number, layout: Layout): number {
  * @returns CSS px.
  * @example
  * ```ts
- * msToPx(window, 273, false, 250); // 9.9 for a 6 s window on the phone card
+ * msToPx(window, 273, false, 250); // 9.8 for a 6 s window on the phone card
  * ```
  */
 export function msToPx(window: PerfWindowView, width: number, wide: boolean, ms: number): number {

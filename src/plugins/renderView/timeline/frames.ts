@@ -4,7 +4,10 @@
  * (one per frame, or 2 px columns of each column's worst frame when rows outnumber pixels), the
  * budget step line, then the marks (`marks.ts`), the selection, the source-switch marker and the
  * cursor. Rows newer than the view's end are not drawn yet (the playout delay); rows older than the
- * view are skipped by a binary search. Allocation-free: strings come from the label caches.
+ * view are skipped by a binary search. Allocation-free: strings come from the label caches, and the
+ * module's scratch objects (ROWS, RUN, BOX, GC_FRAMES) are reset by every paint — safe because a
+ * paint runs synchronously to its end on one thread; a concurrent painter would move them into
+ * `PaintScene`.
  */
 import { restFpsAt } from "../derive/header";
 import { firstVisibleRow, rowFrom } from "../series/rows";
@@ -29,6 +32,11 @@ const PX_PER_ROW = 1.6;
 /** The width of a column of the worst frame, px, and the bar drawn in it. */
 const COLUMN_PX = 2;
 const COLUMN_BAR = 1.6;
+
+/** No column yet, no worst row yet, and the column of the step past the last row (flushes it). */
+const NO_COLUMN = -1;
+const NO_ROW = -1;
+const PAST_END = -2;
 
 /** A budget above this, ms, is a rest budget: dashed and muted. */
 const REST_BUDGET_MS = 20;
@@ -422,19 +430,23 @@ function paintColumnBars(
 ): void {
   const start = scene.endMs - scene.span;
   const columnMs = (COLUMN_PX * scene.span) / layout.plot.w;
-  let column = -1;
-  let worst = -1;
+  let column = NO_COLUMN;
+  let worst = NO_ROW;
   BOX.w = COLUMN_BAR;
+  // One pass past the last row: the step after it flushes the last column.
   for (let row = ROWS.first; row <= ROWS.end; row += 1) {
-    const here = row < ROWS.end ? Math.floor((history.t[row] ?? 0) / columnMs) : -2;
-    if (here !== column && worst >= 0) {
+    const here = row < ROWS.end ? Math.floor((history.t[row] ?? 0) / columnMs) : PAST_END;
+    // A new column: paint the worst frame of the one just left.
+    if (here !== column && worst !== NO_ROW) {
       BOX.x = xOf(layout, column * columnMs, start, scene.span);
       paintBar(g, layout, history, worst, scene);
-      worst = -1;
+      worst = NO_ROW;
     }
     if (row === ROWS.end) break;
+
+    // Keep the column's worst frame.
     column = here;
-    if (worst < 0 || (history.ms[row] ?? 0) > (history.ms[worst] ?? 0)) worst = row;
+    if (worst === NO_ROW || (history.ms[row] ?? 0) > (history.ms[worst] ?? 0)) worst = row;
   }
 }
 
@@ -497,11 +509,6 @@ function paintBudget(
  * @param layout - The canvas's geometry (`framesLayout`).
  * @param mission - Mission control's state (history, series, recorder, selection, hover).
  * @param scene - The view's end and span, the palette, the sections, the caches.
- * @example
- * ```ts
- * scene.endMs = viewEnd(mission.view, liveEnd(mission.clock, now, reduced)) ?? 0;
- * paintFrames(g, framesLayout(960, 262, 2), mission, scene);
- * ```
  */
 export function paintFrames(
   g: PaintContext,
@@ -509,20 +516,25 @@ export function paintFrames(
   mission: MissionState,
   scene: PaintScene
 ): void {
+  // The rows in view, the scale's top and the GCs they hold.
   const { history } = mission;
   const start = scene.endMs - scene.span;
   ROWS.first = firstVisibleRow(history, start);
   ROWS.end = rowFrom(history, scene.endMs);
   ROWS.yMax = yMaxOf(newestAwakeBudget(history, ROWS.first, ROWS.end));
   scene.hits.count = 0;
+  collectGcFrames(history, start, scene.endMs);
+
+  // The ground, the grid, the axis and the resting runs.
   g.globalAlpha = 1;
   g.setLineDash(DASH.none);
   g.fillStyle = scene.palette.canvas;
   g.fillRect(0, 0, layout.width, layout.height);
-  collectGcFrames(history, start, scene.endMs);
   paintGrid(g, layout, scene, ROWS.yMax);
   paintAxis(g, layout, scene);
   paintRuns(g, layout, mission, scene);
+
+  // The bars (one per frame, or columns of the worst frame when rows outnumber pixels), then the marks.
   const rows = ROWS.end - ROWS.first;
   if (rows > layout.plot.w / PX_PER_ROW) paintColumnBars(g, layout, history, scene);
   else paintRowBars(g, layout, history, scene);

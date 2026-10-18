@@ -68,7 +68,7 @@ describe("viewStats", () => {
     // A wired phone's GCs (CDP, inferred) count too; one the engine also reported counts once.
     // Bug on the A26: "0 GC" while the heap sawed and the Memory card drew its GC diamonds.
     const gcs = createMissionSeries().gcs;
-    pushSample(gcs, 10_100, 4.2);
+    pushSample(gcs, 10_060, 4.2); // the engine's GC at 10 050, seen over CDP too: counted once
     pushSample(gcs, 10_600, 3.1);
     expect(viewStats(history, 10_000, 11_000, gcs).gcs).toBe(2);
     expect(viewStats(history, 50_000, 56_000)).toEqual({
