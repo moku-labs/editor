@@ -1,6 +1,7 @@
 /* eslint-disable unicorn/no-null -- null is the header's "no value" */
 import { describe, expect, it } from "vitest";
 import { spikeGroupAt, spikeGroups } from "../../series/groups";
+import { createMissionSeries, pushSample } from "../../series/series";
 import { viewStats } from "../../series/stats";
 import { REST } from "../../source/contract";
 import { bitsOf, historyOf, line, rowsOf, withEvents } from "../mission-fixtures";
@@ -64,6 +65,12 @@ describe("viewStats", () => {
     ]);
 
     expect(viewStats(history, 10_000, 11_000).gcs).toBe(1);
+    // A wired phone's GCs (CDP, inferred) count too; one the engine also reported counts once.
+    // Bug on the A26: "0 GC" while the heap sawed and the Memory card drew its GC diamonds.
+    const gcs = createMissionSeries().gcs;
+    pushSample(gcs, 10_100, 4.2);
+    pushSample(gcs, 10_600, 3.1);
+    expect(viewStats(history, 10_000, 11_000, gcs).gcs).toBe(2);
     expect(viewStats(history, 50_000, 56_000)).toEqual({
       frames: 0,
       spikes: 0,

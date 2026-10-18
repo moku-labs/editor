@@ -8,6 +8,7 @@
  */
 import { spikeGroups } from "../series/groups";
 import { firstVisibleRow, rowAtTime, rowFrom, rowOfFrame } from "../series/rows";
+import { engineGcNear } from "../series/stats";
 import type { ObjectSeries, SeriesColumn, SpikeGroup } from "../series/types";
 import type {
   PerfCause,
@@ -216,6 +217,31 @@ function eventsIn(history: PerfHistory, from: number, to: number): RangeEvents {
 }
 
 /**
+ * The GCs of the side series in a time range that no engine event names (a wired phone's, seen
+ * over CDP or inferred from a heap drop), as GC events between frames.
+ *
+ * @param mission - Mission control's state.
+ * @param from - The range's start.
+ * @param to - Its end.
+ * @returns The GCs, oldest first.
+ */
+function seriesGcsIn(
+  mission: MissionState,
+  from: number,
+  to: number
+): { readonly frame: null; readonly t: number; readonly freedMb: number }[] {
+  const { gcs } = mission.series;
+  const found: { readonly frame: null; readonly t: number; readonly freedMb: number }[] = [];
+  for (let index = 0; index < gcs.count; index += 1) {
+    const t = gcs.t[index] ?? 0;
+    if (t < from || t > to || engineGcNear(mission.history, t)) continue;
+    // eslint-disable-next-line unicorn/no-null -- null: a GC between frames
+    found.push({ frame: null, t, freedMb: gcs.v[index] ?? 0 });
+  }
+  return found;
+}
+
+/**
  * The GC rows of GC events.
  *
  * @param history - The history.
@@ -278,7 +304,9 @@ function summaryView(mission: MissionState, endMs: number): InspectorView {
     .toReversed()
     .map(group => spikeRow(history, group));
   const events = eventsIn(history, startMs, endMs);
-  const gcs = events.gcs.toReversed();
+  const gcs = [...events.gcs, ...seriesGcsIn(mission, startMs, endMs)]
+    .toSorted((a, b) => a.t - b.t)
+    .toReversed();
   return {
     kind: "summary",
     title: view.live ? `Last ${spanWords(view.span)}` : `${spanWords(view.span)} in view`,

@@ -462,6 +462,47 @@ function chainInSelection(input: CardsInput): string | undefined {
 }
 
 /**
+ * The typical number of passes of a drawn frame in view: the median count over the frames that ran
+ * any pass, from the history's pass rows.
+ *
+ * @param history - The history.
+ * @param rows - The rows in view.
+ * @returns The count; null when no frame in view ran a pass.
+ */
+function typicalPasses(history: PerfHistory, rows: ViewRows): number | null {
+  const first = history.frame[rows.first] ?? 0;
+  const last = history.frame[rows.end - 1] ?? -1;
+  const counts: number[] = [];
+  let frame = -1;
+  for (let pass = 0; pass < history.passCount; pass += 1) {
+    const passFrame = history.passFrame[pass] ?? 0;
+    if (passFrame < first || passFrame > last) continue;
+    if (passFrame === frame) counts[counts.length - 1] = (counts.at(-1) ?? 0) + 1;
+    else counts.push(1);
+    frame = passFrame;
+  }
+  counts.sort((a, b) => a - b);
+  // eslint-disable-next-line unicorn/no-null -- null: no pass in view
+  return counts[counts.length >> 1] ?? null;
+}
+
+/**
+ * The passes a frame the card shows: the newest second's heaviest frame's, or, when that second drew
+ * no frame (an idle game), the typical drawn frame's in view; never 0 beside a GPU time.
+ *
+ * @param history - The history.
+ * @param rows - The rows in view.
+ * @param passes - The newest passes summary.
+ * @returns The words: a count, or "—".
+ */
+function passesValue(history: PerfHistory, rows: ViewRows, passes: PerfPassesSummary): string {
+  const heaviest = passes.heaviest?.passes.length ?? 0;
+  if (heaviest > 0) return String(heaviest);
+  const typical = typicalPasses(history, rows);
+  return typical === null ? DASH : String(typical);
+}
+
+/**
  * The GPU passes card: passes a frame, the view's typical frame GPU (p50) with the clock beside it
  * on a wired phone (DVFS), the issues, the top chains; a tile GPU shows shares, never ms per pass.
  *
@@ -493,7 +534,7 @@ export function gpuPassesCard(
   if (input.issues > 0)
     tags.push({ text: `${input.issues} issue${input.issues === 1 ? "" : "s"}`, tone: "warn" });
   return {
-    value: String(passes.heaviest?.passes.length ?? 0),
+    value: passesValue(history, viewRows(input), passes),
     unit: "passes a frame",
     extra: { value: gpu === null ? DASH : oneDecimal(gpu), unit: "ms typical" },
     tags,

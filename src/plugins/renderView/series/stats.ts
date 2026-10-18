@@ -8,6 +8,7 @@ import { HISTORY_ROWS, nearestRank, REST, sortHead } from "../source/contract";
 import type { MissionView } from "../types";
 import { spikeGroups } from "./groups";
 import { firstVisibleRow, rowFrom } from "./rows";
+import type { GcColumn } from "./types";
 
 /** The ms of the awake frames of a view, sorted for the p90: one array for every call. */
 const SCRATCH = new Float64Array(HISTORY_ROWS);
@@ -100,19 +101,50 @@ function restIn(
   return tenths(total);
 }
 
+/** A GC of the series this close to an engine's GC event, ms, is that one, not another. */
+const SAME_GC_MS = 250;
+
 /**
- * The GC events whose time lies in the view.
+ * Whether the history holds an engine GC event near a time.
+ *
+ * @param history - The history.
+ * @param t - Source-clock ms.
+ * @returns True within SAME_GC_MS.
+ */
+export function engineGcNear(history: PerfHistory, t: number): boolean {
+  for (let index = 0; index < history.eventCount; index += 1) {
+    const event = history.events[index];
+    if (event?.kind === "gc" && Math.abs(event.t - t) <= SAME_GC_MS) return true;
+  }
+  return false;
+}
+
+/**
+ * The GCs whose time lies in the view: the engine's GC events, and the GCs of the side series that
+ * no engine event names (a wired phone's, seen over CDP or inferred from a heap drop: the engine on
+ * a device reports none).
  *
  * @param history - The history.
  * @param startMs - The view's start.
  * @param endMs - The view's end.
+ * @param gcs - The GC series; none on a page without one.
  * @returns The count.
  */
-function gcsIn(history: PerfHistory, startMs: number, endMs: number): number {
+function gcsIn(
+  history: PerfHistory,
+  startMs: number,
+  endMs: number,
+  gcs: GcColumn | undefined
+): number {
   let count = 0;
   for (let index = 0; index < history.eventCount; index += 1) {
     const event = history.events[index];
     if (event?.kind === "gc" && event.t >= startMs && event.t <= endMs) count += 1;
+  }
+  if (gcs === undefined) return count;
+  for (let index = 0; index < gcs.count; index += 1) {
+    const t = gcs.t[index] ?? 0;
+    if (t >= startMs && t <= endMs && !engineGcNear(history, t)) count += 1;
   }
   return count;
 }
@@ -125,16 +157,18 @@ function gcsIn(history: PerfHistory, startMs: number, endMs: number): number {
  * @param history - The history.
  * @param startMs - The view's start, source clock.
  * @param endMs - The view's end, source clock.
+ * @param gcs - The GC series (a wired phone's); none counts the engine's events only.
  * @returns The numbers.
  * @example
  * ```ts
- * viewStats(history, 74_000, 80_000); // { frames: 720, spikes: 3, worstMs: 41.3, p90Ms: 17.6, restMs: 0, gcs: 2 }
+ * viewStats(history, 74_000, 80_000, series.gcs); // { frames: 720, spikes: 3, worstMs: 41.3, p90Ms: 17.6, restMs: 0, gcs: 2 }
  * ```
  */
 export function viewStats(
   history: PerfHistory,
   startMs: number,
-  endMs: number
+  endMs: number,
+  gcs?: GcColumn
 ): MissionView["stats"] {
   const first = firstVisibleRow(history, startMs);
   const end = rowFrom(history, endMs);
@@ -148,6 +182,6 @@ export function viewStats(
     worstMs: groups.length === 0 ? null : worst,
     p90Ms: awakeP90(history, first, end),
     restMs: restIn(history, first, end, startMs, endMs),
-    gcs: gcsIn(history, startMs, endMs)
+    gcs: gcsIn(history, startMs, endMs, gcs)
   };
 }

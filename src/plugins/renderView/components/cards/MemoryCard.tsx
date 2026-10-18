@@ -98,7 +98,7 @@ export function MemoryCard(props: MemoryCardProps): JSX.Element {
   const measured = memory.source !== "none";
   const span = spanWords(mission.view.span);
   const ios = /iPhone|iPad|iPod/u.test(mission.second?.device?.userAgent ?? "");
-  const baseline = baselineLine(memoryBaselines(input), span);
+  const baseline = baselineLine(memoryBaselines(input));
   const range = heapRangeLine(mission.series.heap, window.startMs, window.endMs, span);
   const process = processLine(memory.processMb);
   const breakdown = breakdownOf(mission.telemetry, Date.now()).length > 0;

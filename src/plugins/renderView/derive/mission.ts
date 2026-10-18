@@ -78,7 +78,12 @@ export function missionView(
   const { second, view } = mission;
   const measured = memoryMeasured(mission);
   const sections = sectionsView(second?.monitor, second?.caps, measured);
-  const stats = viewStats(mission.history, input.endMs - view.span, input.endMs);
+  const stats = viewStats(
+    mission.history,
+    input.endMs - view.span,
+    input.endMs,
+    mission.series.gcs
+  );
   const gcsShown = measured && sections?.memory !== "off";
   return {
     source,

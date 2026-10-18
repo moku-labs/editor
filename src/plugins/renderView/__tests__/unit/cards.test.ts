@@ -159,6 +159,33 @@ describe("cards", () => {
     expect(card.lines[0]).toEqual(["fogLayer ", { strong: "9 ms" }, " in the GPU spikes"]);
   });
 
+  it("passes a frame comes from the frames in view when the newest second drew none (never '0' beside a GPU time)", () => {
+    // Bug on the A26: "0 passes a frame" next to "4.2 ms typical": the newest passes summary was
+    // of an idle second with no heaviest frame, while the view's frames each ran one canvas pass.
+    const rows = rowsOf(1, 120, { t0: 10_000, each: () => ({ gpuMs: 4.2 }) });
+    const passes = rows.map((_row, row) => ({ row, index: 0, gpuMs: 4.2 }));
+    const history = historyOf(rows, { passes });
+    const idle = { ...SUMMARY, heaviest: null };
+    const card = gpuPassesCard({
+      ...INPUT,
+      history,
+      endMs: 12_000,
+      passes: idle,
+      telemetry: undefined,
+      issues: 0
+    });
+    expect(card.value).toBe("1");
+    const none = gpuPassesCard({
+      ...INPUT,
+      history: historyOf(rows),
+      endMs: 12_000,
+      passes: idle,
+      telemetry: undefined,
+      issues: 0
+    });
+    expect(none.value).toBe("—");
+  });
+
   it("tile GPU shows '≈ 52 %', never ms per pass", () => {
     // Bug: a ranked decimal per pass on a Mali, where pass time is a share of the frame.
     const card = gpuPassesCard({

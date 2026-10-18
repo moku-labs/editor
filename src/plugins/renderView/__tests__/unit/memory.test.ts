@@ -252,12 +252,33 @@ describe("baselines and Leak?", () => {
         { t: 120_000, mb: 31 }
       ])
     ).toBeCloseTo(1.8, 6);
-    expect(baselineLine(at(1.8), "2 min")).toEqual([
+    expect(baselineLine(at(1.8))).toEqual([
       "Baseline after GC ",
       { strong: "30 → 31.8 MB" },
-      " in 2 min, ",
+      " in 60 s, ",
       { strong: "+1.8 MB/min" }
     ]);
+  });
+
+  it("a heap that saws at random is steady, not Leak?; the baseline line's arrow agrees with its slope", () => {
+    // Bug on the A26: a garbage-heavy but steady game (PSS falling) read "Leak?" because a few
+    // scattered baselines gave a slope over 0.5 MB/min, and "25.9 → 27.9 MB, −0.8 MB/min" printed
+    // two scattered endpoints beside the fitted slope.
+    const objects = createMissionSeries().objects;
+    const noisy = [25.9, 23.1, 27.4, 24, 26.8, 23.5, 27.9].map((mb, index) => ({
+      t: index * 20_000,
+      mb
+    }));
+    expect(slopePerMinute(noisy) ?? 0).toBeGreaterThan(0.5);
+    expect(isLeak(noisy, objects)).toBe(false);
+    const line = baselineLine(noisy) ?? [];
+    const [from, to] = String((line[1] as { strong: string }).strong)
+      .replace(" MB", "")
+      .split(" → ")
+      .map(Number);
+    const rising = String((line[3] as { strong: string }).strong).startsWith("+");
+    expect((to ?? 0) > (from ?? 0)).toBe(rising);
+    expect(line[2]).toBe(" in 2 min, ");
   });
 
   it("a growing object counter alone raises Leak?; a counter that falls once is not growing", () => {

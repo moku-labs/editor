@@ -245,8 +245,33 @@ function growingCounters(objects: ObjectSeries): string[] {
 }
 
 /**
- * Leak?: at least 3 baselines spanning at least 60 s with a slope of at least LEAK_MB_PER_MIN, or a
- * growing object counter.
+ * The standard error of the least-squares slope of points, per minute: how far the slope may be off
+ * when the points scatter around their line (a GC's baseline on a 1 Hz heap reading lands anywhere
+ * on the sawtooth).
+ *
+ * @param points - Times (ms) and values, at least three.
+ * @returns MB per minute; 0 for points exactly on a line, Infinity for fewer than three.
+ */
+function slopeErrorPerMinute(points: readonly Baseline[]): number {
+  const trend = trendOf(points);
+  if (trend === undefined || points.length < 3) return Number.POSITIVE_INFINITY;
+  let residuals = 0;
+  let variance = 0;
+  for (const point of points) {
+    const fitted = trend.mb + trend.perMs * (point.t - trend.t);
+    residuals += (point.mb - fitted) ** 2;
+    variance += (point.t - trend.t) ** 2;
+  }
+  return Math.sqrt(residuals / (points.length - 2) / variance) * MINUTE_MS;
+}
+
+/** Leak? needs the slope this many standard errors above its threshold. */
+const LEAK_ERRORS = 2;
+
+/**
+ * Leak?: at least 3 baselines spanning at least 60 s whose slope stays at least LEAK_MB_PER_MIN after
+ * two standard errors are taken off it (so a heap that saws up and down at random, a garbage-heavy
+ * but steady game, is not called a leak), or a growing object counter.
  *
  * @param baselines - The heap's baselines.
  * @param objects - The object counters.
@@ -259,7 +284,8 @@ function growingCounters(objects: ObjectSeries): string[] {
 export function isLeak(baselines: readonly Baseline[], objects: ObjectSeries): boolean {
   const span = (baselines.at(-1)?.t ?? 0) - (baselines[0]?.t ?? 0);
   const slope = slopePerMinute(baselines) ?? 0;
-  if (baselines.length >= LEAK_POINTS && span >= LEAK_SPAN_MS && slope >= LEAK_MB_PER_MIN)
+  const sure = slope - LEAK_ERRORS * slopeErrorPerMinute(baselines);
+  if (baselines.length >= LEAK_POINTS && span >= LEAK_SPAN_MS && sure >= LEAK_MB_PER_MIN)
     return true;
   return growingCounters(objects).length > 0;
 }
@@ -376,26 +402,41 @@ export function memorySourceLine(
 }
 
 /**
- * The baseline line: "Baseline after GC **{a} → {b} MB** in {span}, **+{slope} MB/min**".
+ * The words of the time the baselines span: "{n} s" under 90 s, else "{m} min" to one decimal.
+ *
+ * @param ms - The span, ms.
+ * @returns The words.
+ */
+function baselineSpanWords(ms: number): string {
+  return ms < 90_000 ? `${Math.round(ms / 1000)} s` : `${oneDecimal(ms / 60_000)} min`;
+}
+
+/**
+ * The baseline line: "Baseline after GC **{a} → {b} MB** in {span}, **+{slope} MB/min**", from the
+ * baselines' own fitted line: {a} and {b} are its values at the first and last baseline and {span}
+ * the time between them, so the arrow and the slope never disagree (they did when two scattered
+ * endpoints were printed beside the fitted slope and the view's span).
  *
  * @param baselines - The baselines.
- * @param span - The span's words ("2 min").
  * @returns The line; undefined with fewer than two baselines.
  * @example
  * ```ts
- * baselineLine(baselines, "2 min"); // ["Baseline after GC ", { strong: "27.4 → 31 MB" }, " in 2 min, ", { strong: "+1.8 MB/min" }]
+ * baselineLine(baselines); // ["Baseline after GC ", { strong: "27.4 → 31 MB" }, " in 2 min, ", { strong: "+1.8 MB/min" }]
  * ```
  */
-export function baselineLine(baselines: readonly Baseline[], span: string): Line | undefined {
+export function baselineLine(baselines: readonly Baseline[]): Line | undefined {
   const first = baselines[0];
   const last = baselines.at(-1);
-  const slope = slopePerMinute(baselines);
-  if (first === undefined || last === undefined || slope === null) return undefined;
+  const trend = trendOf(baselines);
+  if (first === undefined || last === undefined || trend === undefined) return undefined;
+  const from = trend.mb + trend.perMs * (first.t - trend.t);
+  const to = trend.mb + trend.perMs * (last.t - trend.t);
+  const slope = trend.perMs * MINUTE_MS;
   const sign = slope >= 0 ? "+" : "−";
   return [
     "Baseline after GC ",
-    strong(`${oneDecimal(first.mb)} → ${oneDecimal(last.mb)} MB`),
-    ` in ${span}, `,
+    strong(`${oneDecimal(from)} → ${oneDecimal(to)} MB`),
+    ` in ${baselineSpanWords(last.t - first.t)}, `,
     strong(`${sign}${oneDecimal(Math.abs(slope))} MB/min`)
   ];
 }
