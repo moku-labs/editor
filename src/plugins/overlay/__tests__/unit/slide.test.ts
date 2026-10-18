@@ -154,13 +154,23 @@ describe("the graph slide", () => {
     started(octx);
     openOverlay(octx);
     const w = octx.state.canvas?.w ?? 0;
-    const six = msToPx(octx.perf.window, w, false, SLIDE_TICKS * PAINT_MS);
-    expect(canvas().style.getPropertyValue("width")).toBe(`${w + six}px`);
+    const room = SLIDE_TICKS * PAINT_MS;
+    // The canvas holds exactly the window: its plot width plus the room, at the painter's scale
+    // (the visible width over the window less the room), spans the whole window (bug on the A26:
+    // the room was drawn past the oldest data, a blank strip at the left).
+    const covered = () => {
+      const span = octx.perf.window.endMs - octx.perf.window.startMs;
+      const plot = msToPx(octx.perf.window, w, false, span);
+      const lead = Number.parseFloat(canvas().style.getPropertyValue("width")) - w;
+      expect(octx.state.graphView.spanMs).toBeCloseTo(span - room, 6);
+      return ((plot + lead) * octx.state.graphView.spanMs) / plot;
+    };
+    expect(covered()).toBeCloseTo(octx.perf.window.endMs - octx.perf.window.startMs, 0);
+    const six = octx.state.graphView.leadPx;
     octx.perf.window = { ...octx.perf.window, endMs: 3000, version: octx.perf.window.version + 1 };
     vi.advanceTimersByTime(PAINT_MS);
-    const three = msToPx(octx.perf.window, w, false, SLIDE_TICKS * PAINT_MS);
-    expect(three).toBeGreaterThan(six);
-    expect(canvas().style.getPropertyValue("width")).toBe(`${w + three}px`);
+    expect(octx.state.graphView.leadPx).toBeGreaterThan(six);
+    expect(covered()).toBeCloseTo(octx.perf.window.endMs - octx.perf.window.startMs, 0);
   });
 });
 

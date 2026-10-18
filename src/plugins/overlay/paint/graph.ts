@@ -86,7 +86,8 @@ function finiteMs(ms: number | undefined): number | undefined {
 }
 
 /**
- * The canvas's extra width of a paint: `SLIDE_TICKS` ticks at the window's scale; none under reduced
+ * The canvas's extra width of a paint: `SLIDE_TICKS` ticks at the scale where the visible width spans
+ * the window less those ticks (so the wider canvas holds exactly the window); none under reduced
  * motion, for an empty window or one without a time span, and never more than the well's width
  * (review W3: an empty window's scale made a 59 000 px canvas).
  *
@@ -96,10 +97,15 @@ function finiteMs(ms: number | undefined): number | undefined {
  * @returns CSS px, 0 to the well's width.
  */
 function slideLead(window: PerfWindowView, canvas: GraphCanvas, graph: GraphSeam): number {
-  if (!canvas.motion || window.count === 0 || window.endMs <= window.startMs) return 0;
-  const lead = graph.msToPx(window, canvas.w, false, SLIDE_TICKS * PAINT_MS);
+  const span = window.endMs - window.startMs;
+  if (!canvas.motion || window.count === 0 || span <= SLIDE_MS) return 0;
+  // The visible width spans the window less the slide's room; the room is drawn at that scale.
+  const lead = graph.msToPx(window, canvas.w, false, (SLIDE_MS * span) / (span - SLIDE_MS));
   return Number.isFinite(lead) ? Math.min(Math.max(lead, 0), canvas.w) : 0;
 }
+
+/** The slide's room past the well's right edge, ms. */
+const SLIDE_MS = SLIDE_TICKS * PAINT_MS;
 
 /**
  * Makes the four visitors of a domain context. Each reads its inputs from the state and writes its
@@ -145,6 +151,9 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     view.height = canvas.h;
     view.selected = row;
     view.leadPx = lead;
+    // The whole window on the wider canvas: the visible width spans it less the slide's room.
+    view.nowMs = window.endMs;
+    view.spanMs = window.endMs - window.startMs - (lead > 0 ? SLIDE_MS : 0);
     canvas.g.setTransform(canvas.dpr, 0, 0, canvas.dpr, 0, 0);
     graph.paint(canvas.g, window, view, state.graph);
     // Remember what was painted, for the next skip test.

@@ -39,7 +39,16 @@ export function createOverlayState(ctx: { readonly config: Readonly<Config> }): 
     isolate: undefined,
     canvas: undefined,
     graph: undefined,
-    graphView: { width: 0, height: 0, wide: false, selected: -1, leadPx: 0, layer: "plot" },
+    graphView: {
+      width: 0,
+      height: 0,
+      wide: false,
+      selected: -1,
+      leadPx: 0,
+      nowMs: 0,
+      spanMs: 1,
+      layer: "plot"
+    },
     fixed: undefined,
     fixedGraph: undefined,
     fixedView: { width: 0, height: 0, wide: false, selected: -1, layer: "fixed" },

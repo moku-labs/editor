@@ -437,6 +437,13 @@ export type OverlayState = {
     wide: boolean;
     selected: number;
     leadPx: number;
+    /** The plot's right edge: the window's newest data (Delta 2026-10-18). */
+    nowMs: number;
+    /**
+     * The time the visible width spans: the window's span less the slide's room, so the canvas,
+     * painted that much wider, holds the whole window and its left edge never shows a blank strip.
+     */
+    spanMs: number;
     readonly layer: "plot";
   };
   /** The fixed canvas while the graph shows (it does not slide). */
