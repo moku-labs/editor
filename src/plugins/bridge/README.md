@@ -302,7 +302,7 @@ tool `editor_clock`.
 
 ## API
 
-`app.bridge` is `BridgeApi`: `{ status(): LinkStatus; session(): string | undefined }`. Both methods read state only.
+`app.bridge` is `BridgeApi`: `status`, `session` and `link` read state only; `connect` switches the computer address.
 
 | Member | Signature | Result |
 |---|---|---|
@@ -406,6 +406,7 @@ Log events:
 |---|---|---|
 | `bridge:connected` | info | Socket open. `{ url }` is the hello origin and path, or `ws://<address>{path}/ws` in device mode. |
 | `bridge:no-computer` | info, then debug | Device mode, the first failure of a streak before the page ever linked. `{ address, retryInMs }`. |
+| `bridge:try-address` | debug | Device mode, a dial that never opened moved the next one to the next candidate. `{ address }`. |
 | `bridge:paired` | info | The computer confirmed this phone. `{ address }`. |
 | `bridge:unpaired` | info | A 4401 `unpaired` close: the credentials are dropped. `{ address }`. |
 | `bridge:pairing-refused` | warn | The person refused the pairing. `{ address }`. |

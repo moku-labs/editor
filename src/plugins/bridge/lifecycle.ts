@@ -256,6 +256,7 @@ function resolveStart(deps: BridgeDeps): void {
     return;
   }
 
+  // Decide mode and address from the flags, config and remembered links.
   const resolved = resolveMode({
     config,
     flags,

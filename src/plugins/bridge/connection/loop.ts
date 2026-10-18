@@ -196,6 +196,18 @@ function onDeviceClose(
 }
 
 /**
+ * Device mode: moves the next dial to the next candidate and publishes the new address.
+ *
+ * @param deps - The domain deps.
+ */
+function rotateAddress(deps: BridgeDeps): void {
+  if (deps.state.phase === "stopped") return;
+  const before = deps.state.address;
+  rotateCandidate(deps);
+  if (deps.state.address !== before) setStatus(deps, deps.state.status);
+}
+
+/**
  * Socket close: a failure with retry, named after the close code and the hub's reason (1008
  * `hello first`, 1001 `editor stopping`, 1012 `editor restarting`; a rejected upgrade shows as
  * 1006 in browsers). The bin's restart (1012) is logged at info, not warn. In device mode 4401
@@ -222,17 +234,6 @@ export function onClose(
   // A device dial that never opened (no computer at this address): the next retry tries the next
   // candidate (Delta 2026-10-18), after the loss was published and logged for this one.
   if (!opened) rotateAddress(deps);
-}
-
-/**
- * Device mode: moves the next dial to the next candidate and publishes the new address.
- *
- * @param deps - The domain deps.
- */
-function rotateAddress(deps: BridgeDeps): void {
-  const before = deps.state.address;
-  rotateCandidate(deps);
-  if (deps.state.address !== before) setStatus(deps, deps.state.status);
 }
 
 /**

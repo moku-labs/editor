@@ -169,15 +169,20 @@ const MAX_CANDIDATES = MAX_REMEMBERED + 2;
  * ```
  */
 export function candidatesOf(first: string, remembered: RememberedLinks): string[] {
+  // Order: the first address, the wire unless it is one already, then the remembered newest first.
   const newestFirst = Object.keys(remembered.links).toReversed();
   const host = parseAddress(first)?.host;
   const wired = host !== undefined && isLoopback(host);
   const all = wired ? [first, ...newestFirst] : [first, DEFAULT_DEVICE_ADDRESS, ...newestFirst];
+
+  // Normalize each address and keep the first of every duplicate.
   const seen: string[] = [];
   for (const address of all) {
     const text = normalized(address);
     if (text !== undefined && !seen.includes(text)) seen.push(text);
   }
+
+  // Cap at MAX_CANDIDATES, the oldest remembered dropped.
   return seen.slice(0, MAX_CANDIDATES);
 }
 
