@@ -338,6 +338,13 @@ export type BridgeState = {
   mode: BridgeMode;
   /** Device mode: the `host:port` dialled (normalized); undefined in page mode. */
   address: string | undefined;
+  /**
+   * Device mode: the addresses tried in turn while none answers (Delta 2026-10-18): the address it
+   * last linked at or was given, the wire (`DEFAULT_DEVICE_ADDRESS`), the other remembered ones.
+   */
+  candidates: string[];
+  /** Device mode: the index in `candidates` dialled now. */
+  candidate: number;
   /** Device mode: the code shown while pairing; kept across retries until paired or refused. */
   pairing: { readonly code: string } | undefined;
   /** Device mode: the next attempt goes without credentials (set by a 4401 `unpaired` close). */

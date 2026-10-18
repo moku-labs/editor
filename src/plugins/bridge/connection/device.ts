@@ -5,7 +5,7 @@
  * Tokens and device ids are never logged: log lines name the address only.
  */
 import type { PairParams } from "../../hub/protocol";
-import { parseAddress } from "../../hub/protocol";
+import { isLoopback, parseAddress } from "../../hub/protocol";
 import type { Json } from "../../registry/protocol";
 import { notification, toWireValue } from "../../registry/protocol";
 import { memberOf } from "../dispatch/params";
@@ -22,9 +22,9 @@ import type {
   RememberedLink,
   RememberedLinks
 } from "../types";
-import { DEFAULT_DEVICE_ADDRESS } from "../types";
+import { DEFAULT_DEVICE_ADDRESS, MAX_REMEMBERED } from "../types";
 import { onLinked } from "./link";
-import { forgetLink, rememberLink, writeRemembered } from "./pairing-store";
+import { forgetLink, rememberLast, rememberLink, writeRemembered } from "./pairing-store";
 
 /**
  * What decides the mode at start.
@@ -149,6 +149,78 @@ export function resolveMode(input: ModeInput): ResolvedMode {
   }
   // 4. A page the dev server served.
   return { mode: "page", address: undefined };
+}
+
+/** The most candidates: the first address, the wire and every remembered address. */
+const MAX_CANDIDATES = MAX_REMEMBERED + 2;
+
+/**
+ * The addresses a device tries in turn while none answers (Delta 2026-10-18): the first one (where
+ * it last linked, or the address it was given), the wire (`DEFAULT_DEVICE_ADDRESS`, `adb reverse`)
+ * unless the first is a loopback address already (that is a wire), then the other remembered
+ * addresses, newest first; each once, at most MAX_CANDIDATES (the oldest remembered dropped).
+ *
+ * @param first - The address to try first (normalized).
+ * @param remembered - The remembered links.
+ * @returns The candidates, the first one first.
+ * @example
+ * ```ts
+ * candidatesOf("192.168.2.223:47600", { v: 1, last: undefined, links: {} }); // ["192.168.2.223:47600", "127.0.0.1:47600"]
+ * ```
+ */
+export function candidatesOf(first: string, remembered: RememberedLinks): string[] {
+  const newestFirst = Object.keys(remembered.links).toReversed();
+  const host = parseAddress(first)?.host;
+  const wired = host !== undefined && isLoopback(host);
+  const all = wired ? [first, ...newestFirst] : [first, DEFAULT_DEVICE_ADDRESS, ...newestFirst];
+  const seen: string[] = [];
+  for (const address of all) {
+    const text = normalized(address);
+    if (text !== undefined && !seen.includes(text)) seen.push(text);
+  }
+  return seen.slice(0, MAX_CANDIDATES);
+}
+
+/**
+ * Device mode: the candidates start at an address (the start, `connect(address)`, a link).
+ *
+ * @param state - The bridge state.
+ * @param address - The address to try first.
+ */
+export function startCandidatesAt(state: BridgeState, address: string): void {
+  state.candidates = candidatesOf(address, state.remembered);
+  state.candidate = 0;
+}
+
+/**
+ * Device mode, a dial that never opened: the next candidate becomes the address (wrapping round).
+ * The pairing code is kept (the phone shows it); `pairNext` is cleared, because it named the address
+ * a 4401 dropped, and the next candidate dials with its own remembered credentials.
+ *
+ * @param deps - The domain deps.
+ */
+export function rotateCandidate(deps: BridgeDeps): void {
+  const { state } = deps;
+  if (state.mode !== "device" || state.candidates.length < 2) return;
+  state.candidate = (state.candidate + 1) % state.candidates.length;
+  state.address = state.candidates[state.candidate];
+  state.pairNext = false;
+  deps.log.debug("bridge:try-address", { address: state.address });
+}
+
+/**
+ * Device mode, the computer answered with a session: the address is remembered as the last one
+ * (the next launch starts there) and the candidates start at it.
+ *
+ * @param deps - The domain deps.
+ */
+export function adoptLinkedAddress(deps: BridgeDeps): void {
+  const { state } = deps;
+  const { address } = state;
+  if (state.mode !== "device" || address === undefined) return;
+  state.remembered = rememberLast(state.remembered, address);
+  writeRemembered(deps);
+  startCandidatesAt(state, address);
 }
 
 /**

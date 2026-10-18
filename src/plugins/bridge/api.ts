@@ -3,8 +3,9 @@
  * device link, and connect (switch to another computer in device mode).
  */
 import { parseAddress } from "../hub/protocol";
+import { startCandidatesAt } from "./connection/device";
 import { redial } from "./connection/loop";
-import { writeRemembered } from "./connection/pairing-store";
+import { rememberLast, writeRemembered } from "./connection/pairing-store";
 import { depsOf } from "./lifecycle";
 import { currentStatus, linkOf } from "./status";
 import type { BridgeApi, BridgeCtx, BridgeDeps } from "./types";
@@ -39,8 +40,9 @@ export function dial(deps: BridgeDeps, address: string): void {
   state.mode = "device";
   state.address = target;
   state.pairNext = false;
-  state.remembered = { ...state.remembered, last: target };
+  state.remembered = rememberLast(state.remembered, target);
   writeRemembered(deps);
+  startCandidatesAt(state, target);
   if (state.phase !== "idle") redial(deps);
 }
 

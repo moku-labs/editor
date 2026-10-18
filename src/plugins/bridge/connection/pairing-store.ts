@@ -155,6 +155,22 @@ export function rememberLink(
 }
 
 /**
+ * The links with an address as the last one (chosen on the device, or linked at), the credentials
+ * unchanged.
+ *
+ * @param remembered - The links before.
+ * @param address - The normalized address.
+ * @returns New links.
+ * @example
+ * ```ts
+ * rememberLast({ v: 1, last: "192.168.1.5:47600", links: {} }, "127.0.0.1:47600").last; // "127.0.0.1:47600"
+ * ```
+ */
+export function rememberLast(remembered: RememberedLinks, address: string): RememberedLinks {
+  return { ...remembered, last: address };
+}
+
+/**
  * The links without an address's credentials (the hub closed them 4401 `unpaired`).
  *
  * @param remembered - The links before.

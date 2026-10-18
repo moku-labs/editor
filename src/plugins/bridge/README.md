@@ -154,6 +154,15 @@ session (4401 on each reconnect) cannot cycle the phone faster than the backoff.
 nothing remembered. A store that throws (storage off) keeps the links in memory for the page's life
 (`bridge:storage-failed` at debug). The links stay after stop.
 
+**Wire or network, whichever answers.** While the address it dials does not answer (a socket that never
+opened, or a constructor that threw), the phone tries the next candidate on the next retry: the address it
+last linked at (or was given), then the wire `127.0.0.1:47600` (`adb reverse`; left out when the first address
+is a loopback one already), then its other remembered computers, newest first. The backoff runs on across
+candidates, the first failure is still the only info line (`bridge:try-address` at debug for each turn), a
+socket that opened (pairing, 4401) never rotates, and the pairing code is kept. The address a session opens
+on becomes `last`, so the next launch starts there. So a phone paired on the network links by cable again
+without the Link tab.
+
 ### Log shipping
 
 Device mode only, only while open: the recorder's oldest unacknowledged run

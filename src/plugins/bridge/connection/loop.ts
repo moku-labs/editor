@@ -18,7 +18,7 @@ import type { BridgeDeps, SocketLike } from "../types";
 import { DEFAULT_DEVICE_ADDRESS, PAIRING_REFUSED } from "../types";
 import { deviceSocketUrl } from "./address";
 import { nextDelay } from "./backoff";
-import { credentialsOf, onUnpaired, startPairing } from "./device";
+import { credentialsOf, onUnpaired, rotateCandidate, startPairing } from "./device";
 import { fetchHello, helloOrigin, resolveHelloUrl, socketUrl } from "./hello";
 import { linkLabel, onLinked, sendBeat } from "./link";
 import { hasNetwork, hasSocket } from "./socket";
@@ -206,16 +206,33 @@ function onDeviceClose(
  * @param code - The close code.
  * @param reason - The close reason, possibly empty.
  * @param credentialed - The socket carried a device id and token (device mode).
+ * @param opened - The socket opened before it closed; a device dial that never opened rotates to
+ *   the next candidate (Delta 2026-10-18).
  */
 export function onClose(
   deps: BridgeDeps,
   code: number,
   reason: string,
-  credentialed = false
+  credentialed = false,
+  opened = true
 ): void {
   if (deps.state.mode === "device" && onDeviceClose(deps, code, reason, credentialed)) return;
   const base = `socket closed (${String(code)})`;
   fail(deps, reason === "" ? base : `${base}: ${reason}`, true, code === SERVICE_RESTART);
+  // A device dial that never opened (no computer at this address): the next retry tries the next
+  // candidate (Delta 2026-10-18), after the loss was published and logged for this one.
+  if (!opened) rotateAddress(deps);
+}
+
+/**
+ * Device mode: moves the next dial to the next candidate and publishes the new address.
+ *
+ * @param deps - The domain deps.
+ */
+function rotateAddress(deps: BridgeDeps): void {
+  const before = deps.state.address;
+  rotateCandidate(deps);
+  if (deps.state.address !== before) setStatus(deps, deps.state.status);
 }
 
 /**
@@ -229,8 +246,10 @@ export function onClose(
  */
 function listen(deps: BridgeDeps, socket: SocketLike, credentialed: boolean): void {
   const label = linkLabel(deps);
+  let opened = false;
   socket.addEventListener("open", () => {
     if (deps.state.socket !== socket) return;
+    opened = true;
     if (credentialed) onLinked(deps);
     else startPairing(deps);
   });
@@ -240,7 +259,7 @@ function listen(deps: BridgeDeps, socket: SocketLike, credentialed: boolean): vo
     handleText(deps, event.data);
   });
   socket.addEventListener("close", event => {
-    if (deps.state.socket === socket) onClose(deps, event.code, event.reason, credentialed);
+    if (deps.state.socket === socket) onClose(deps, event.code, event.reason, credentialed, opened);
   });
   socket.addEventListener("error", () => {
     deps.log.debug("bridge:socket-error", { url: label });
@@ -266,6 +285,7 @@ function openSocket(
     socket = deps.net.openSocket(url.href, origin);
   } catch {
     fail(deps, "socket failed", true);
+    if (deps.state.mode === "device") rotateAddress(deps);
     return;
   }
   deps.state.socket = socket;

@@ -29,6 +29,8 @@ export function createBridgeState(_ctx: { readonly config: Readonly<BridgeConfig
     dial: 0,
     mode: "page",
     address: undefined,
+    candidates: [],
+    candidate: 0,
     pairing: undefined,
     pairNext: false,
     editorEngine: undefined,

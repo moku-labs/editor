@@ -12,7 +12,7 @@ import { encode, notification } from "../registry/protocol";
 import { restoreCheckpoint, takeStoredCheckpoint, watchReload } from "./checkpoint/checkpoint";
 import { defaultReload } from "./checkpoint/hot";
 import { clockEntry } from "./clock";
-import { resolveMode } from "./connection/device";
+import { resolveMode, startCandidatesAt } from "./connection/device";
 import { connectInBackground, onBeat } from "./connection/loop";
 import { readRemembered } from "./connection/pairing-store";
 import { defaultNet } from "./connection/socket";
@@ -250,7 +250,11 @@ function resolveStart(deps: BridgeDeps): void {
   if (flags.editor !== undefined && parseAddress(flags.editor) === undefined) {
     deps.log.warn("bridge:bad-address", { address: flags.editor });
   }
-  if (state.mode === "device") return;
+  // A connect() before start chose device mode: its address goes first, with the remembered ones.
+  if (state.mode === "device") {
+    if (state.address !== undefined) startCandidatesAt(state, state.address);
+    return;
+  }
 
   const resolved = resolveMode({
     config,
@@ -260,6 +264,7 @@ function resolveStart(deps: BridgeDeps): void {
   });
   state.mode = resolved.mode;
   state.address = resolved.address;
+  if (resolved.address !== undefined) startCandidatesAt(state, resolved.address);
 }
 
 /**

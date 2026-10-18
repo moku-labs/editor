@@ -23,7 +23,7 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
-import { onPaired } from "../connection/device";
+import { adoptLinkedAddress, onPaired } from "../connection/device";
 import { onAck } from "../lines";
 import { currentStatus, setStatus } from "../status";
 import type { BridgeDeps } from "../types";
@@ -203,6 +203,7 @@ function onReached(deps: BridgeDeps): void {
   state.everLinked = true;
   state.attempt = 0;
   state.failureLogged = false;
+  adoptLinkedAddress(deps);
 }
 
 /**
