@@ -49,6 +49,28 @@ describe("spark columns", () => {
     expect(columns.rested[10]).toBe(0);
   });
 
+  it("a scroll keeps each column's frames: the same time holds the same value after the view moved", () => {
+    // Bug: columns cut from the moving view start regroup the frames at every paint, so the
+    // sparklines wobble while they scroll (the cards on the A26).
+    const { mission } = createRenderViewState({ config: CONFIG });
+    appendFrames(
+      mission.history,
+      wireOf(rowsOf(1, 720, { t0: 10_000, each: index => ({ ms: 8 + ((index * 7) % 11) }) }))
+    );
+    const before = createSparkColumns();
+    const after = createSparkColumns();
+    const shift = 6000 / 159 / 3;
+
+    fillFromFrames(before, mission.history, "worst", { startMs: 12_000, span: 6000 });
+    fillFromFrames(after, mission.history, "worst", { startMs: 12_000 + shift, span: 6000 });
+
+    const valueAt = (columns: typeof before, t: number) =>
+      columns.v[Math.floor((t - columns.startMs) / columns.stepMs)];
+    for (let t = 12_500; t < 17_500; t += 100) {
+      expect(valueAt(after, t)).toBe(valueAt(before, t));
+    }
+  });
+
   it("the FPS columns of a real engine's rest read the rest rate, 30, not the loop's 60", () => {
     // Bug: the FPS card drawn flat at 60 through a rest: rateMs stays the loop's 16.67 ms while the
     // engine rests at a 33.3 ms budget.
@@ -136,7 +158,9 @@ describe("marks on the cards' axis", () => {
 
   it("paints each mark as a diamond at top + 4 (teal, hollow and dashed when inferred; pick-blue for a compile) and the trend dashed [4, 3] in warn across the view", () => {
     // Bug: the Memory card without its baseline trend, or its marks off the shared axis.
+    const { mission } = createRenderViewState({ config: CONFIG });
     const columns = createSparkColumns();
+    fillFromSeries(columns, mission.series.heap, 10_000, 6000);
     columns.v.fill(30);
     columns.marks[20] = SPARK_MARK.gc;
     columns.marks[80] = SPARK_MARK.inferredGc;
@@ -160,11 +184,14 @@ describe("marks on the cards' axis", () => {
       }
     );
 
-    expect(
-      of("moveTo")
-        .filter(call => call.args[1] === 7 - 3.5)
-        .map(call => call.args[0])
-    ).toEqual([20.5, 80.5, 140.5]);
+    const diamonds = of("moveTo")
+      .filter(call => call.args[1] === 7 - 3.5)
+      .map(call => call.args[0] ?? 0);
+    // Each at its column's middle: column 0 starts at the view's start here (10 000 ms is whole).
+    expect(diamonds).toHaveLength(3);
+    for (const [index, column] of [20, 80, 140].entries()) {
+      expect(diamonds[index]).toBeCloseTo(((column + 0.5) * 160) / 159, 9);
+    }
     expect(of("fill").filter(call => call.fillStyle === "teal")).toHaveLength(1);
     expect(
       of("stroke").filter(call => call.strokeStyle === "teal" && call.dash.join(",") === "2,2")

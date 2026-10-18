@@ -1,9 +1,9 @@
 /**
- * @file overlay plugin — the graph's compositor slide (spec 08 Delta 2026-10-15; decision "Smooth
- * graph scroll by a compositor slide, paint stays <= 4 Hz"): after each paint the canvas, painted one
- * tick wider than its well, is put back at 0 and slid one tick to the left by a single linear CSS
- * transition over `PAINT_MS`. No per-frame JavaScript; the next paint resets it. Reduced motion
- * (the page's or the game's) slides nothing.
+ * @file overlay plugin — the graph's compositor slide (spec 08 Delta 2026-10-15 and 2026-10-18;
+ * decision "Smooth graph scroll by a compositor slide, paint stays <= 4 Hz"): the canvas is painted
+ * two ticks wider than its well, and after each paint one linear CSS transition slides it on a
+ * display time that runs at real time across paints (each paint starts where the last slide is
+ * now). No per-frame JavaScript. Reduced motion (the page's or the game's) slides nothing.
  */
 import type { OverlayRegistry, OverlayState } from "../types";
 import { PAINT_MS } from "../types";
@@ -57,27 +57,88 @@ export function slideAllowed(
 }
 
 /**
- * Starts the slide of a fresh paint: back to `translateX(0)` without a transition, the reset
- * forced (a style read, no layout), then one `PAINT_MS` linear transition to `-lead` px. A lead of 0
+ * The ticks of data a paint keeps past the well's right edge: the slide's room, so a late or
+ * skipped paint still has data to slide into.
+ */
+export const SLIDE_TICKS = 2;
+
+/** The largest change of the slide's speed toward its target: 20 % faster or slower. */
+const TRIM = 0.2;
+
+/** The distance to its target, ms, at which the speed's change is at its largest. */
+const TRIM_SPAN_MS = 4 * PAINT_MS;
+
+/**
+ * Where the well's right edge is on the data's time now: the last slide's start moved toward its
+ * end by the time gone, NaN before a slide.
+ *
+ * @param state - Overlay state.
+ * @param now - Date.now().
+ * @returns Page-clock ms of the data, or NaN.
+ */
+function edgeNow(state: OverlayState, now: number): number {
+  const { px, at, durMs, edgeMs, toEdgeMs } = state.slide;
+  if (px === 0 || durMs <= 0) return Number.NaN;
+  const done = Math.min(1, Math.max(0, (now - at) / durMs));
+  return edgeMs + (toEdgeMs - edgeMs) * done;
+}
+
+/**
+ * Starts the slide of a fresh paint (Delta 2026-10-18). The canvas is painted `lead` px wider than
+ * its well, its plot reaching the window's newest data (`endMs`); the well shows one stretch of it,
+ * picked by translateX. The slide keeps the well's right edge on a display time that runs at real
+ * time across paints: the new canvas starts at the time the last slide shows now (so a paint never
+ * jumps the graph back or forth when the data's end stepped unevenly), then runs for two ticks,
+ * a little faster or slower toward one tick behind the newest data, and never past it. A lead of 0
  * (reduced motion, no scale yet) only resets.
  *
  * @param state - Overlay state.
  * @param element - The canvas.
- * @param lead - The slide distance, CSS px.
+ * @param lead - The canvas's extra width, CSS px (`SLIDE_TICKS` ticks at the window's scale).
+ * @param endMs - The window's newest data, page-clock ms.
+ * @param now - Date.now().
  */
-export function startSlide(state: OverlayState, element: HTMLElement, lead: number): void {
+export function startSlide(
+  state: OverlayState,
+  element: HTMLElement,
+  lead: number,
+  endMs: number,
+  now: number
+): void {
   const style = element.style;
-  // Reset to the paint's own position, with no transition.
+  const slide = state.slide;
   style.setProperty("transition", "none");
-  style.setProperty("transform", "translateX(0px)");
-  state.slide.px = lead;
-  state.slide.at = Date.now();
-  if (lead === 0) return;
+  if (lead === 0) {
+    style.setProperty("transform", "translateX(0px)");
+    slide.px = 0;
+    slide.at = now;
+    return;
+  }
 
-  // Apply the reset before the transition starts, then slide one tick to the left.
+  // The data's time at the well's right edge with the canvas at 0, and the scale.
+  const leadMs = SLIDE_TICKS * PAINT_MS;
+  const pxPerMs = lead / leadMs;
+  const zeroMs = endMs - leadMs;
+  const target = endMs - PAINT_MS;
+  // Carry on from what shows now; a first paint, or one too far off, starts on the target.
+  const shown = edgeNow(state, now);
+  const from = Number.isFinite(shown) && shown >= zeroMs && shown <= endMs ? shown : target;
+  const durMs = leadMs;
+  const speed = 1 + Math.min(TRIM, Math.max(-TRIM, (target - from) / TRIM_SPAN_MS));
+  const to = Math.min(endMs, from + speed * durMs);
+  slide.px = lead;
+  slide.at = now;
+  slide.durMs = durMs;
+  slide.edgeMs = from;
+  slide.toEdgeMs = to;
+  slide.fromX = -(from - zeroMs) * pxPerMs;
+  slide.toX = -(to - zeroMs) * pxPerMs;
+
+  // Apply the start before the transition begins, then slide linearly to the end.
+  style.setProperty("transform", `translateX(${slide.fromX}px)`);
   element.ownerDocument.defaultView?.getComputedStyle(element).getPropertyValue("transform");
-  style.setProperty("transition", `transform ${PAINT_MS}ms linear`);
-  style.setProperty("transform", `translateX(${-lead}px)`);
+  style.setProperty("transition", `transform ${durMs}ms linear`);
+  style.setProperty("transform", `translateX(${slide.toX}px)`);
 }
 
 /**
@@ -110,7 +171,8 @@ export function plotXOf(state: OverlayState, x: number, now: number): number {
  * @returns CSS px (0 without a slide).
  */
 export function slideOffset(state: OverlayState, now: number): number {
-  const { px, at } = state.slide;
-  if (px === 0) return 0;
-  return Math.min(1, Math.max(0, (now - at) / PAINT_MS)) * px;
+  const { px, at, durMs, fromX, toX } = state.slide;
+  if (px === 0 || durMs <= 0) return 0;
+  const done = Math.min(1, Math.max(0, (now - at) / durMs));
+  return -(fromX + (toX - fromX) * done);
 }

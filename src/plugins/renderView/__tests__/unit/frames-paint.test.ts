@@ -104,6 +104,39 @@ describe("paintFrames", () => {
     expect(of("fillRect").some(call => call.fillStyle === "warn")).toBe(true);
   });
 
+  it("columns follow the data's time: a scroll shifts every column and keeps each one's worst frame", () => {
+    // Bug: columns cut from the moving left edge: a sub-column scroll regroups the frames, so
+    // columns jump in 2 px steps and their heights flicker (the 30 s / 2 min artifacts on the A26).
+    const rows = rowsOf(1, 7200, {
+      t0: 10_000,
+      each: index => ({ ms: 8 + ((index * 7) % 11), jsMs: 4 + ((index * 7) % 11) })
+    });
+    const mission = missionOf(rows);
+    const end = 10_000 + 6000 * 16.67;
+    const columnMs = (2 * 120_000) / LAYOUT.plot.w;
+    const shift = columnMs / 3;
+    const first = recorder();
+    const second = recorder();
+
+    paintFrames(first.g, LAYOUT, mission, sceneAt(end, 120_000));
+    paintFrames(second.g, LAYOUT, mission, sceneAt(end + shift, 120_000));
+
+    const bars = (calls: ReturnType<typeof first.of>) =>
+      calls
+        .filter(call => call.fillStyle === "phase3")
+        .map(call => ({ x: call.args[0] ?? 0, h: call.args[3] ?? 0 }));
+    const before = bars(first.of("fillRect"));
+    const after = bars(second.of("fillRect"));
+    const px = (shift / 120_000) * LAYOUT.plot.w;
+    // The same columns (one may leave at the left), each moved left by the scroll, same height.
+    const moved = after.slice(-100);
+    const source = before.slice(-100);
+    expect(moved.map(bar => bar.h)).toEqual(source.map(bar => bar.h));
+    for (const [index, bar] of moved.entries()) {
+      expect(bar.x).toBeCloseTo((source[index]?.x ?? 0) - px, 6);
+    }
+  });
+
   it("the GC lane says 'not measured on this device' without a memory source, 'off' when switched off", () => {
     // Bug: an empty lane read as "no GC happened" on an iPhone.
     const mission = missionOf(rowsOf(1, 10));

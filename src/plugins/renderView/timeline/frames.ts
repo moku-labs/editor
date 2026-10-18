@@ -404,7 +404,10 @@ function paintRowBars(
 }
 
 /**
- * 2 px columns, each holding its worst frame (so a spike is never averaged away).
+ * 2 px columns, each holding its worst frame (so a spike is never averaged away). A column is a
+ * slice of the data's time (2 px worth of ms, counted from time 0), not of the canvas: a scroll
+ * moves every column with its frames and keeps its worst one, instead of regrouping them at each
+ * paint (columns jumping in 2 px steps, heights flickering).
  *
  * @param g - The context.
  * @param layout - The geometry.
@@ -418,16 +421,14 @@ function paintColumnBars(
   scene: PaintScene
 ): void {
   const start = scene.endMs - scene.span;
+  const columnMs = (COLUMN_PX * scene.span) / layout.plot.w;
   let column = -1;
   let worst = -1;
   BOX.w = COLUMN_BAR;
   for (let row = ROWS.first; row <= ROWS.end; row += 1) {
-    const here =
-      row < ROWS.end
-        ? Math.floor(xOf(layout, history.t[row] ?? 0, start, scene.span) / COLUMN_PX)
-        : -2;
+    const here = row < ROWS.end ? Math.floor((history.t[row] ?? 0) / columnMs) : -2;
     if (here !== column && worst >= 0) {
-      BOX.x = column * COLUMN_PX;
+      BOX.x = xOf(layout, column * columnMs, start, scene.span);
       paintBar(g, layout, history, worst, scene);
       worst = -1;
     }

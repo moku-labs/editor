@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { msToPx } from "../../../perf/graph";
 import { openOverlay, setTab } from "../../modes";
+import { SLIDE_TICKS, slideOffset } from "../../paint/slide";
 import { overlayCss } from "../../styles";
 import { PAINT_MS } from "../../types";
 import { createOctx, part, started, stopped, type TestOctx, windowOf } from "../helpers";
@@ -61,32 +62,44 @@ function changeWindow(): void {
 }
 
 describe("the graph slide", () => {
-  it("a paint starts exactly one transition of PAINT_MS linear to −SLIDE_PX, painted SLIDE_PX wider", () => {
+  it("a first paint, painted two ticks wider, starts one tick behind the newest data and slides two ticks linearly up to it", () => {
+    // Bug: the newest rows shown before they exist (a blank right edge), or no room to slide into.
     card(10);
     const w = octx.state.canvas?.w ?? 0;
-    expect(canvas().style.getPropertyValue("transition")).toBe(`transform ${PAINT_MS}ms linear`);
+    expect(canvas().style.getPropertyValue("transition")).toBe(
+      `transform ${SLIDE_TICKS * PAINT_MS}ms linear`
+    );
+    expect(octx.state.slide).toMatchObject({ fromX: -5, toX: -10 });
     expect(canvas().style.getPropertyValue("transform")).toBe("translateX(-10px)");
     expect(canvas().style.getPropertyValue("width")).toBe(`${w + 10}px`);
     expect(octx.graph.paints.at(-1)).toMatchObject({ width: w + 10, lead: 10 });
   });
 
-  it("the next paint resets it (no transition back to 0, then one new slide)", () => {
+  it("the next paint carries on from where the graph is: no jump back to 0 (bug on the A26: the strip jumped every tick)", () => {
     card(10);
-    const calls: string[] = [];
-    const style = canvas().style;
-    const setProperty = style.setProperty.bind(style);
-    vi.spyOn(style, "setProperty").mockImplementation((name, value, priority) => {
-      if (name === "transform" || name === "transition") calls.push(`${name}: ${value}`);
-      setProperty(name, value, priority);
-    });
-    changeWindow();
-    vi.advanceTimersByTime(PAINT_MS);
-    expect(calls).toEqual([
-      "transition: none",
-      "transform: translateX(0px)",
-      `transition: transform ${PAINT_MS}ms linear`,
-      "transform: translateX(-10px)"
-    ]);
+    vi.advanceTimersByTime(PAINT_MS - 1);
+    const { edgeMs, toEdgeMs } = octx.state.slide;
+    // Where the right edge is at the tick (PAINT_MS after the first paint).
+    const timeBefore = edgeMs + ((toEdgeMs - edgeMs) * PAINT_MS) / (SLIDE_TICKS * PAINT_MS);
+    // The data's end stepped unevenly: 40 ms more than one tick.
+    octx.perf.window = {
+      ...octx.perf.window,
+      endMs: octx.perf.window.endMs + PAINT_MS + 40,
+      version: octx.perf.window.version + 1
+    };
+    vi.advanceTimersByTime(1);
+    // The same data time at the right edge just before and just after the paint.
+    expect(octx.state.slide.edgeMs).toBeCloseTo(timeBefore, 6);
+    // Never past the newest data.
+    expect(octx.state.slide.toEdgeMs).toBeLessThanOrEqual(octx.perf.window.endMs);
+  });
+
+  it("a paint that comes late still finds the graph moving (the slide lasts two ticks)", () => {
+    card(10);
+    const at = slideOffset(octx.state, Date.now());
+    vi.advanceTimersByTime(PAINT_MS + PAINT_MS / 2);
+    expect(slideOffset(octx.state, Date.now())).toBeGreaterThan(at);
+    expect(slideOffset(octx.state, Date.now())).toBeLessThan(10);
   });
 
   it("no extra paint between ticks: no animation frame, one timer, one paint a tick", () => {
@@ -127,7 +140,8 @@ describe("the graph slide", () => {
     octx.graph.hitRow = 4;
     vi.advanceTimersByTime(PAINT_MS / 2);
     canvas().dispatchEvent(new MouseEvent("click", { clientX: 100, clientY: 70 }));
-    expect(octx.graph.hits.at(-1)).toBeCloseTo(105);
+    // From −5 px toward −10 px over two ticks: a quarter of the way.
+    expect(octx.graph.hits.at(-1)).toBeCloseTo(106.25);
     expect(octx.state.selected).toBe(4807);
     vi.advanceTimersByTime(PAINT_MS * 2);
     canvas().dispatchEvent(new MouseEvent("click", { clientX: 100, clientY: 70 }));
@@ -140,13 +154,13 @@ describe("the graph slide", () => {
     started(octx);
     openOverlay(octx);
     const w = octx.state.canvas?.w ?? 0;
-    const six = Math.round(msToPx(octx.perf.window, w, false, PAINT_MS));
-    expect(canvas().style.getPropertyValue("transform")).toBe(`translateX(-${six}px)`);
+    const six = msToPx(octx.perf.window, w, false, SLIDE_TICKS * PAINT_MS);
+    expect(canvas().style.getPropertyValue("width")).toBe(`${w + six}px`);
     octx.perf.window = { ...octx.perf.window, endMs: 3000, version: octx.perf.window.version + 1 };
     vi.advanceTimersByTime(PAINT_MS);
-    const three = Math.round(msToPx(octx.perf.window, w, false, PAINT_MS));
+    const three = msToPx(octx.perf.window, w, false, SLIDE_TICKS * PAINT_MS);
     expect(three).toBeGreaterThan(six);
-    expect(canvas().style.getPropertyValue("transform")).toBe(`translateX(-${three}px)`);
+    expect(canvas().style.getPropertyValue("width")).toBe(`${w + three}px`);
   });
 });
 
@@ -228,8 +242,8 @@ describe("the fixed canvas (tape, readout, now, caption, legend: it does not sli
     still.px1 = w - 36;
     octx.graph.hitRow = 4;
     vi.advanceTimersByTime(PAINT_MS / 2);
-    // Left of the tape: the plot, half a slide (5 px) further right.
-    canvas().dispatchEvent(new MouseEvent("click", { clientX: w - 36 - 5, clientY: 70 }));
+    // Left of the tape: the plot, as far further right as it slid (−5 px toward −10 px, a quarter).
+    canvas().dispatchEvent(new MouseEvent("click", { clientX: w - 36 - 6.25, clientY: 70 }));
     expect(octx.graph.hits.at(-1)).toBeCloseTo(w - 36);
     // On the tape: 5 px into it is 5 px past the plot's right edge, however far the plot slid.
     vi.advanceTimersByTime(PAINT_MS / 2);

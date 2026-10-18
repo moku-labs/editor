@@ -316,9 +316,20 @@ export type FixedCanvas = {
 };
 
 /**
- * The slide of the last paint: its distance (0: none) and when it started (Date.now()).
+ * The slide of the last paint (Delta 2026-10-18): one linear transition of the plot canvas from
+ * `fromX` to `toX` (translateX, CSS px) over `durMs` from `at` (Date.now()), showing the data's time
+ * `edgeMs` at the well's right edge at its start and `toEdgeMs` at its end. `px` is 0 when the paint
+ * slides nothing.
  */
-export type Slide = { px: number; at: number };
+export type Slide = {
+  px: number;
+  at: number;
+  fromX: number;
+  toX: number;
+  durMs: number;
+  edgeMs: number;
+  toEdgeMs: number;
+};
 
 /**
  * The 2D context the overlay paints on: the painter's structural context plus the dpr transform.

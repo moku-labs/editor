@@ -64,6 +64,13 @@ export type SparkColumns = {
   readonly v: Float32Array;
   readonly rested: Uint8Array;
   readonly marks: Uint8Array;
+  /**
+   * The start of column 0, source-clock ms: a whole number of columns from time 0, so a column
+   * keeps its frames while the view scrolls (set by every fill).
+   */
+  startMs: number;
+  /** One column's time, ms: the view's span over `SPARK_COLUMNS − 1` (set by every fill). */
+  stepMs: number;
 };
 
 /**
@@ -108,23 +115,59 @@ export function createSparkColumns(): SparkColumns {
   return {
     v: new Float32Array(SPARK_COLUMNS).fill(Number.NaN),
     rested: new Uint8Array(SPARK_COLUMNS),
-    marks: new Uint8Array(SPARK_COLUMNS)
+    marks: new Uint8Array(SPARK_COLUMNS),
+    startMs: 0,
+    stepMs: 1
   };
 }
 
 /**
- * The column of a time in a view.
+ * Lays the columns on the data's time for a view: one column is the span over 159, and column 0
+ * starts at the last whole column at or before the view's start. The 160 columns then cover the
+ * view, and a scroll moves them with their frames instead of regrouping the frames at every paint
+ * (a sparkline wobbling while it scrolls).
  *
- * @param t - Source-clock ms.
+ * @param columns - The card's columns.
  * @param startMs - The view's start.
  * @param span - The view's span.
- * @returns 0..159; outside the view clamped.
  */
-function columnOf(t: number, startMs: number, span: number): number {
+function layColumns(columns: SparkColumns, startMs: number, span: number): void {
+  columns.stepMs = span / (SPARK_COLUMNS - 1);
+  columns.startMs = Math.floor(startMs / columns.stepMs) * columns.stepMs;
+}
+
+/**
+ * The column of a time.
+ *
+ * @param columns - The laid-out columns.
+ * @param t - Source-clock ms.
+ * @returns 0..159; outside the columns clamped.
+ */
+function columnOf(columns: SparkColumns, t: number): number {
   return Math.min(
     SPARK_COLUMNS - 1,
-    Math.max(0, Math.floor(((t - startMs) / span) * SPARK_COLUMNS))
+    Math.max(0, Math.floor((t - columns.startMs) / columns.stepMs))
   );
+}
+
+/**
+ * The x of a column's middle in a view.
+ *
+ * @param layout - The geometry.
+ * @param columns - The laid-out columns.
+ * @param index - The column.
+ * @param startMs - The view's start.
+ * @param span - The view's span.
+ * @returns CSS px (the first and last columns may lie partly outside the plot).
+ */
+function columnX(
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  index: number,
+  startMs: number,
+  span: number
+): number {
+  return xOf(layout, columns.startMs + (index + 0.5) * columns.stepMs, startMs, span);
 }
 
 /**
@@ -149,10 +192,11 @@ export function fillFromSeries(
 ): void {
   columns.rested.fill(0);
   columns.marks.fill(SPARK_MARK.none);
+  layColumns(columns, startMs, span);
   let sample = 0;
   for (let index = 0; index < SPARK_COLUMNS; index += 1) {
-    const from = startMs + (index / SPARK_COLUMNS) * span;
-    const to = from + span / SPARK_COLUMNS;
+    const from = columns.startMs + index * columns.stepMs;
+    const to = from + columns.stepMs;
     while (sample + 1 < column.count && (column.t[sample + 1] ?? 0) <= to) sample += 1;
     const t = column.t[sample] ?? Number.NaN;
     const held = sample < column.count && t <= to && t >= from - HOLD_MS;
@@ -207,9 +251,10 @@ export function fillFromFrames(
   columns.v.fill(Number.NaN);
   columns.rested.fill(1);
   columns.marks.fill(SPARK_MARK.none);
+  layColumns(columns, view.startMs, view.span);
   const end = rowFrom(history, view.startMs + view.span);
-  for (let row = firstVisibleRow(history, view.startMs); row < end; row += 1) {
-    const index = columnOf(history.t[row] ?? 0, view.startMs, view.span);
+  for (let row = firstVisibleRow(history, columns.startMs); row < end; row += 1) {
+    const index = columnOf(columns, history.t[row] ?? 0);
     const rest = history.rest[row];
     const resting = rest === REST.idle || rest === REST.break;
     if (!resting) columns.rested[index] = 0;
@@ -231,20 +276,16 @@ export function fillFromFrames(
  * @param history - The history.
  * @param frame - The frame.
  * @param sum - Its summed pass GPU ms.
- * @param view - The view's start and span.
- * @param view.startMs - Its start.
- * @param view.span - Its span.
  */
 function keepPassSum(
   columns: SparkColumns,
   history: PerfHistory,
   frame: number,
-  sum: number,
-  view: { readonly startMs: number; readonly span: number }
+  sum: number
 ): void {
   const row = rowOfFrame(history, frame);
   if (row < 0 || sum <= 0) return;
-  const index = columnOf(history.t[row] ?? 0, view.startMs, view.span);
+  const index = columnOf(columns, history.t[row] ?? 0);
   const held = columns.v[index] ?? Number.NaN;
   if (Number.isNaN(held) || sum > held) columns.v[index] = sum;
 }
@@ -271,7 +312,8 @@ export function fillPassGpu(
   columns.v.fill(Number.NaN);
   columns.rested.fill(0);
   columns.marks.fill(SPARK_MARK.none);
-  const first = history.frame[firstVisibleRow(history, view.startMs)] ?? 0;
+  layColumns(columns, view.startMs, view.span);
+  const first = history.frame[firstVisibleRow(history, columns.startMs)] ?? 0;
   const last = history.frame[rowFrom(history, view.startMs + view.span) - 1] ?? -1;
   let frame = -1;
   let sum = 0;
@@ -279,14 +321,14 @@ export function fillPassGpu(
     const passFrame = history.passFrame[pass] ?? 0;
     if (passFrame < first || passFrame > last) continue;
     if (passFrame !== frame) {
-      keepPassSum(columns, history, frame, sum, view);
+      keepPassSum(columns, history, frame, sum);
       frame = passFrame;
       sum = 0;
     }
     const gpu = history.passGpuMs[pass] ?? Number.NaN;
     if (Number.isFinite(gpu)) sum += gpu;
   }
-  keepPassSum(columns, history, frame, sum, view);
+  keepPassSum(columns, history, frame, sum);
 }
 
 /**
@@ -316,12 +358,12 @@ export function markGcs(
   for (let index = 0; index < history.eventCount; index += 1) {
     const event = history.events[index];
     if (event?.kind !== "gc" || event.t < view.startMs || event.t > end) continue;
-    columns.marks[columnOf(event.t, view.startMs, view.span)] = SPARK_MARK.gc;
+    columns.marks[columnOf(columns, event.t)] = SPARK_MARK.gc;
   }
   for (let index = 0; index < gcs.count; index += 1) {
     const t = gcs.t[index] ?? 0;
     if (t < view.startMs || t > end) continue;
-    const column = columnOf(t, view.startMs, view.span);
+    const column = columnOf(columns, t);
     if (columns.marks[column] === SPARK_MARK.gc) continue;
     columns.marks[column] = gcs.inferred[index] === 1 ? SPARK_MARK.inferredGc : SPARK_MARK.gc;
   }
@@ -351,7 +393,7 @@ export function markCompiles(
   for (let index = 0; index < history.eventCount; index += 1) {
     const event = history.events[index];
     if (event?.kind !== "shader" || event.boot || event.t < view.startMs || event.t > end) continue;
-    columns.marks[columnOf(event.t, view.startMs, view.span)] = SPARK_MARK.compile;
+    columns.marks[columnOf(columns, event.t)] = SPARK_MARK.compile;
   }
 }
 
@@ -386,17 +428,17 @@ function columnPath(
   style: SparkStyle,
   close: boolean
 ): void {
-  const step = layout.plot.w / SPARK_COLUMNS;
   const bottom = plotBottom(layout);
+  const { startMs, span } = VIEW;
   let runStart = -1;
   g.beginPath();
   for (let index = 0; index <= SPARK_COLUMNS; index += 1) {
     const value = index < SPARK_COLUMNS ? (columns.v[index] ?? Number.NaN) : Number.NaN;
-    const x = (index + 0.5) * step;
+    const x = columnX(layout, columns, index, startMs, span);
     if (Number.isNaN(value)) {
       if (close && runStart >= 0) {
-        g.lineTo((index - 0.5) * step, bottom);
-        g.lineTo((runStart + 0.5) * step, bottom);
+        g.lineTo(columnX(layout, columns, index - 1, startMs, span), bottom);
+        g.lineTo(columnX(layout, columns, runStart, startMs, span), bottom);
         g.closePath();
       }
       runStart = -1;
@@ -459,7 +501,6 @@ function paintMarks(
   scene: PaintScene
 ): void {
   const { palette } = scene;
-  const step = layout.plot.w / SPARK_COLUMNS;
   const y = layout.plot.y + MARK_Y;
   g.globalAlpha = 1;
   g.lineWidth = 1;
@@ -471,10 +512,13 @@ function paintMarks(
     g.fillStyle = colour;
     g.strokeStyle = colour;
     g.setLineDash(hollow ? DASH.leader : DASH.none);
-    diamond(g, (index + 0.5) * step, y, MARK_R, hollow);
+    diamond(g, columnX(layout, columns, index, VIEW.startMs, VIEW.span), y, MARK_R, hollow);
   }
   g.setLineDash(DASH.none);
 }
+
+/** The view of the sparkline being painted (reused): its start and span, ms. */
+const VIEW = { startMs: 0, span: 1 };
 
 /** The x range of the selection (reused). */
 const SELECTED = { left: 0, right: 0 };
@@ -538,16 +582,25 @@ export function paintSpark(
 ): void {
   const { palette } = scene;
   const bottom = plotBottom(layout);
-  const step = layout.plot.w / SPARK_COLUMNS;
+  VIEW.startMs = scene.endMs - scene.span;
+  VIEW.span = scene.span;
+  const step = (columns.stepMs / scene.span) * layout.plot.w;
   g.globalAlpha = 1;
   g.setLineDash(DASH.none);
   g.strokeStyle = palette.line2;
   g.lineWidth = 1;
   hline(g, bottom + 0.5, 0, layout.plot.w);
+  // The first and last columns reach past the plot: everything below is clipped to it.
+  g.save();
+  g.beginPath();
+  g.rect(0, 0, layout.plot.w, layout.height);
+  g.clip();
   g.globalAlpha = 0.2;
   g.fillStyle = palette.edge;
   for (let index = 0; index < SPARK_COLUMNS; index += 1) {
-    if (columns.rested[index] === 1) g.fillRect(index * step, layout.plot.y, step, layout.plot.h);
+    if (columns.rested[index] !== 1) continue;
+    const left = columnX(layout, columns, index, VIEW.startMs, VIEW.span) - step / 2;
+    g.fillRect(left, layout.plot.y, step, layout.plot.h);
   }
   g.globalAlpha = 1;
   if (!Number.isNaN(style.reference)) {
@@ -577,6 +630,7 @@ export function paintSpark(
   columnPath(g, layout, columns, style, false);
   paintTrend(g, layout, style, scene);
   paintMarks(g, layout, columns, scene);
+  g.restore();
   if (marks.hoverMs === undefined) return;
   const x = xOf(layout, marks.hoverMs, scene.endMs - scene.span, scene.span);
   g.globalAlpha = 0.55;

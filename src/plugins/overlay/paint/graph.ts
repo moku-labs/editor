@@ -9,7 +9,7 @@ import type { PerfWindowView } from "../../perf/protocol";
 import { meanGpu, rowOfFrame, spikeOrdinal, stepSpike } from "../../perf/protocol";
 import type { GraphCanvas, GraphSeam, OverlayCtx, OverlayState, Visitors } from "../types";
 import { PAINT_MS } from "../types";
-import { slideAllowed, startSlide } from "./slide";
+import { SLIDE_TICKS, slideAllowed, startSlide } from "./slide";
 
 /** The largest device pixel ratio the backing store follows. */
 const MAX_DPR = 3;
@@ -86,7 +86,7 @@ function finiteMs(ms: number | undefined): number | undefined {
 }
 
 /**
- * The slide of a paint: one tick's distance at the window's scale, rounded; none under reduced
+ * The canvas's extra width of a paint: `SLIDE_TICKS` ticks at the window's scale; none under reduced
  * motion, for an empty window or one without a time span, and never more than the well's width
  * (review W3: an empty window's scale made a 59 000 px canvas).
  *
@@ -97,7 +97,7 @@ function finiteMs(ms: number | undefined): number | undefined {
  */
 function slideLead(window: PerfWindowView, canvas: GraphCanvas, graph: GraphSeam): number {
   if (!canvas.motion || window.count === 0 || window.endMs <= window.startMs) return 0;
-  const lead = Math.round(graph.msToPx(window, canvas.w, false, PAINT_MS));
+  const lead = graph.msToPx(window, canvas.w, false, SLIDE_TICKS * PAINT_MS);
   return Number.isFinite(lead) ? Math.min(Math.max(lead, 0), canvas.w) : 0;
 }
 
@@ -156,7 +156,7 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
     // The fixed canvas over the well, in the same visit; then slide the fresh plot over the next
     // tick (compositor only; the next paint resets it). The fixed canvas stays.
     paintFixed(state, graph, window, canvas);
-    startSlide(state, canvas.element, lead);
+    startSlide(state, canvas.element, lead, window.endMs, Date.now());
   };
 
   const nav = (window: PerfWindowView): void => {

@@ -43,7 +43,7 @@ export function createOverlayState(ctx: { readonly config: Readonly<Config> }): 
     fixed: undefined,
     fixedGraph: undefined,
     fixedView: { width: 0, height: 0, wide: false, selected: -1, layer: "fixed" },
-    slide: { px: 0, at: 0 },
+    slide: { px: 0, at: 0, fromX: 0, toX: 0, durMs: 0, edgeMs: Number.NaN, toEdgeMs: Number.NaN },
     motionQuery: undefined,
     painted: { version: -1, row: -1, w: 0, h: 0, dpr: 0 },
     facts: {
