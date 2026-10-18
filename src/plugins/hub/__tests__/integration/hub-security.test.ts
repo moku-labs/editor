@@ -2,17 +2,19 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServerCore, serverCoreConfig } from "../../../../config";
 import { filesPlugin } from "../../../files";
 import { notification, request, toWireValue } from "../../../registry/protocol";
 import { hubPlugin } from "../..";
-import type { HubSocketData } from "../../types";
+import type { EditorMethod, HubSocketData, PairConfirm } from "../../types";
 import type { Client } from "./clients";
 import {
   AGENT_MANIFEST,
   connectAgent,
   connectClient,
+  connectDevice,
+  isNote,
   isResponseTo,
   rawStatus,
   shutdown,
@@ -406,3 +408,139 @@ describe("guard and frames (H37–H39)", () => {
     expect(JSON.stringify(response)).not.toContain("stack");
   });
 });
+
+/**
+ * Whether this machine can bind the IPv6 loopback (a CI container may have none).
+ *
+ * @returns True when [::1] binds.
+ */
+function hasIpv6Loopback(): boolean {
+  try {
+    const probe = Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response("probe") });
+    probe.stop(true).catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe.skipIf(!hasIpv6Loopback())(
+  "the LAN listener (C9) on [::1], standing in for the LAN address (skipped on a machine without an IPv6 loopback)",
+  () => {
+    /**
+     * Starts device mode with the LAN listener on [::1] beside 127.0.0.1, both on the same port.
+     *
+     * @param confirm - The pairing callback.
+     * @returns The running app, its port and the hub token.
+     */
+    async function serveLan(confirm: PairConfirm) {
+      const app = framework.createApp({
+        pluginConfigs: {
+          files: { root: base, project: false },
+          hub: { devicePort: 0, deviceLan: true, lanAddress: "::1" }
+        }
+      });
+      await app.start();
+      const listen = await app.hub.listenDevices({ confirm });
+      lanApps.push(app);
+      return { app, port: listen.port, lan: listen.lan, token: app.hub.token() };
+    }
+
+    const lanApps: { stop(): Promise<void> }[] = [];
+
+    afterEach(async () => {
+      for (const app of lanApps.splice(0)) await app.stop();
+    });
+
+    it("refuses a tools upgrade on the LAN listener with 403, hub token or not", async () => {
+      const { port, token } = await serveLan(async () => false);
+      const lanHost = `[::1]:${port}`;
+
+      expect(
+        await upgradeStatus(port, {
+          address: "[::1]",
+          host: lanHost,
+          origin: `http://${lanHost}`,
+          token
+        })
+      ).toBe(403);
+      expect(
+        await upgradeStatus(port, { address: "[::1]", host: lanHost, origin: undefined })
+      ).toBe(403);
+    });
+
+    it("refuses a device upgrade with the adb listener's Host on the LAN listener (DNS rebinding)", async () => {
+      const { port } = await serveLan(async () => false);
+      const device = {
+        address: "[::1]",
+        kind: "agent",
+        role: "device",
+        origin: "tauri://localhost"
+      };
+
+      expect(await upgradeStatus(port, { ...device, host: `127.0.0.1:${port}` })).toBe(403);
+      expect(await upgradeStatus(port, { ...device, host: `[::1]:${port}` })).toBe(101);
+      expect(
+        await upgradeStatus(port, { address: "[::1]", host: `[::1]:${port}`, path: "/__editor/" })
+      ).toBe(404);
+    });
+
+    it("reaches no editor method from the LAN listener that listenLan adds: a tools upgrade is 403, a phone's connect.network is -32007 (bug: a phone calling connect.network)", async () => {
+      const network = vi.fn<EditorMethod>(async () => ({ lan: "[::1]" }));
+      const app = framework.createApp({
+        pluginConfigs: {
+          files: { root: base, project: false },
+          hub: { devicePort: 0, lanAddress: "::1" }
+        }
+      });
+      app.hub.addEditorMethods({ "connect.network": network });
+      await app.start();
+      lanApps.push(app);
+      const { port } = await app.hub.listenDevices({ confirm: async () => true });
+      const listen = await app.hub.listenLan();
+      const lanHost = `[::1]:${port}`;
+      expect(listen.lan).toBe(lanHost);
+
+      expect(
+        await upgradeStatus(port, {
+          address: "[::1]",
+          host: lanHost,
+          origin: `http://${lanHost}`,
+          token: app.hub.token()
+        })
+      ).toBe(403);
+
+      const phone = keep(await connectDevice(lanHost));
+      phone.send(notification("editor", "pair", { code: "4821", device: { model: "Pixel 8" } }));
+      await phone.next(isNote("editor", "paired"));
+      phone.send(notification("game", "hello", { manifest: toWireValue(AGENT_MANIFEST) }));
+      await phone.next(isNote("editor", "session"));
+      phone.send(request(1, "editor", "connect.network"));
+
+      expect(await phone.next(isResponseTo(1))).toMatchObject({
+        error: { code: -32_007, data: { reason: "unauthorized" } }
+      });
+      expect(network).not.toHaveBeenCalled();
+    });
+
+    it("pairs a LAN phone only after the person confirms", async () => {
+      const answer = Promise.withResolvers<boolean>();
+      const confirm = vi.fn<PairConfirm>(() => answer.promise);
+      const { lan } = await serveLan(confirm);
+      const phone = keep(await connectDevice(String(lan)));
+
+      phone.send(notification("editor", "pair", { code: "4821", device: { model: "Pixel 8" } }));
+      await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+      expect(confirm.mock.calls[0]?.[0]).toMatchObject({
+        code: "4821",
+        model: "PIXEL-8",
+        link: "lan",
+        address: "::1"
+      });
+      expect(phone.messages.filter(isNote("editor", "paired"))).toEqual([]);
+
+      answer.resolve(true);
+      await phone.next(isNote("editor", "paired"));
+    });
+  }
+);

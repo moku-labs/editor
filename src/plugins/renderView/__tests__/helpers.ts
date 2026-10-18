@@ -4,6 +4,14 @@ import path from "node:path";
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { Require } from "../../../config";
+import { activeSourcePlugin } from "../../activeSource";
+import type {
+  ActiveSource,
+  ActiveSourceApi,
+  SourceLabel,
+  SourceMarker
+} from "../../activeSource/types";
+import type { DeviceDirectory, DeviceTelemetry } from "../../connect/protocol";
 import { linkPlugin } from "../../link";
 import { panelsPlugin } from "../../panels";
 import {
@@ -35,9 +43,13 @@ import type { RenderViewConfig, RenderViewCtx } from "../types";
 // mock, a manual animation-frame queue and a domain ctx over a real state.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The unsubscribe of a listener that never fires.
+ */
+function stopNothing(): void {}
+
 /** The default config of the plugin. */
 export const CONFIG: RenderViewConfig = {
-  fpsSamples: 60,
   releaseLogMax: 50
 };
 
@@ -157,11 +169,17 @@ export type WorkspaceMock = {
   readonly items: PaletteItem[];
   readonly prefsListeners: Set<(prefs: Prefs) => void>;
   readonly show: Mock<(ws: WorkspaceId) => void>;
+  readonly toast: Mock<(message: string, file?: string) => void>;
+  readonly startLocalPreview: Mock<() => Promise<void>>;
   readonly setPreview: Mock<(ws: PreviewWorkspace, patch: Partial<PreviewPrefs>) => void>;
   activeValue: WorkspaceId;
   previewVisible: boolean;
+  /** The editor theme `theme()` answers. */
+  themeValue: "light" | "dark";
   /** Calls every prefs listener with a device. */
   prefs(preset: string, orientation: "portrait" | "landscape"): void;
+  /** Switches the editor theme and calls every prefs listener, like the top bar's theme key. */
+  setTheme(theme: "light" | "dark"): void;
 };
 
 /**
@@ -179,16 +197,22 @@ export function createWorkspaceMock(): WorkspaceMock {
   const setPreview = vi.fn((_ws: PreviewWorkspace, patch: Partial<PreviewPrefs>) => {
     if (patch.visible !== undefined) workspace.previewVisible = patch.visible;
   });
+  const toast = vi.fn<(message: string, file?: string) => void>();
+  const startLocalPreview = vi.fn(() => Promise.resolve());
   const workspace: WorkspaceMock = {
     overlay,
     items,
     prefsListeners,
     show,
     setPreview,
+    toast,
+    startLocalPreview,
     activeValue: "flow",
     previewVisible: true,
+    themeValue: "light",
     api: {
       active: () => workspace.activeValue,
+      theme: () => workspace.themeValue,
       show,
       preview: () => ({
         visible: workspace.previewVisible,
@@ -198,6 +222,8 @@ export function createWorkspaceMock(): WorkspaceMock {
         height: 280
       }),
       setPreview,
+      toast,
+      startLocalPreview,
       gameFrame: () => ({
         url: "/game.html",
         reload: vi.fn(),
@@ -222,9 +248,18 @@ export function createWorkspaceMock(): WorkspaceMock {
         open: vi.fn()
       }
     } as unknown as WorkspaceApi,
+    setTheme(theme) {
+      workspace.themeValue = theme;
+      const prefs = {
+        theme,
+        previews: {},
+        device: { preset: { id: "pixel-8" } }
+      } as unknown as Prefs;
+      for (const fn of prefsListeners) fn(prefs);
+    },
     prefs(preset, orientation) {
       const prefs = {
-        theme: "light",
+        theme: workspace.themeValue,
         previews: {},
         device: { preset: { id: preset }, orientation }
       } as unknown as Prefs;
@@ -232,6 +267,94 @@ export function createWorkspaceMock(): WorkspaceMock {
     }
   };
   return workspace;
+}
+
+/** An activeSource mock: what renderView reads, the source and its telemetry set by the test. */
+export type ActiveSourceMock = {
+  readonly api: ActiveSourceApi;
+  current: ActiveSource;
+  label: SourceLabel;
+  directoryValue: DeviceDirectory | undefined;
+  markersValue: SourceMarker[];
+  offset: number | null;
+  telemetryValue: DeviceTelemetry | undefined;
+  readonly telemetryListeners: Set<(record: DeviceTelemetry) => void>;
+  /** The stops scan() handed out that were called. */
+  readonly scanStops: Mock<() => void>;
+  /** Delivers a telemetry record to every listener. */
+  sendTelemetry(record: DeviceTelemetry): void;
+};
+
+/** The label of the local preview. */
+export const LOCAL_LABEL: SourceLabel = {
+  name: "Local preview",
+  model: null,
+  kind: "local",
+  link: { kind: "local", transport: "frame", address: null }
+};
+
+/**
+ * An activeSource mock on the local preview of session "s-1".
+ *
+ * @returns The mock.
+ */
+export function createActiveSourceMock(): ActiveSourceMock {
+  const telemetryListeners = new Set<(record: DeviceTelemetry) => void>();
+  const scanStops = vi.fn();
+  const mock: ActiveSourceMock = {
+    current: { kind: "local", session: "s-1" },
+    label: LOCAL_LABEL,
+    directoryValue: undefined,
+    markersValue: [],
+    offset: 0,
+    telemetryValue: undefined,
+    telemetryListeners,
+    scanStops,
+    sendTelemetry(record) {
+      mock.telemetryValue = record;
+      for (const listener of telemetryListeners) listener(record);
+    },
+    api: {
+      current: () => mock.current,
+      preview: () => ({ state: "running" }),
+      useDevice: vi.fn(() => Promise.resolve()),
+      useLocal: vi.fn(() => Promise.resolve()),
+      onChange: () => stopNothing,
+      directory: () => mock.directoryValue,
+      scan: vi.fn(() => scanStops),
+      connectWire: vi.fn(() =>
+        Promise.resolve({ port: 47_600, adb: "127.0.0.1:47600", lan: null })
+      ),
+      connectNetwork: vi.fn(() =>
+        Promise.resolve({ port: 47_600, adb: "127.0.0.1:47600", lan: "192.168.1.5:47600" })
+      ),
+      confirmPairing: vi.fn(() => Promise.resolve(true)),
+      refusePairing: vi.fn(() => Promise.resolve()),
+      stopDevices: vi.fn(() => Promise.resolve()),
+      telemetry: () => mock.telemetryValue,
+      onTelemetry: (fn: (record: DeviceTelemetry) => void) => {
+        telemetryListeners.add(fn);
+        return () => {
+          telemetryListeners.delete(fn);
+        };
+      },
+      markers: () => mock.markersValue,
+      notice: () => undefined,
+      dismissNotice: vi.fn(),
+      reconnect: vi.fn(() => Promise.resolve(false)),
+      connectDevice: vi.fn(() => Promise.resolve()),
+      label: () => mock.label,
+      health: () => ({
+        kind: "local",
+        latencyMs: null,
+        samples: new Float32Array(48).fill(Number.NaN),
+        head: 0
+      }),
+      clockOffsetMs: () => mock.offset,
+      openConnect: vi.fn()
+    }
+  };
+  return mock;
 }
 
 /** The emit mock: callable as the typed emit, inspectable as a mock. */
@@ -243,6 +366,7 @@ export type TestCtx = Omit<RenderViewCtx, "emit" | "log"> & {
   readonly log: LogMock;
   readonly link: LinkMock;
   readonly workspace: WorkspaceMock;
+  readonly activeSource: ActiveSourceMock;
   readonly registered: PanelSpec[];
 };
 
@@ -270,6 +394,8 @@ export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
   const link = createLinkMock();
   link.current = { kind: "live", frame: 1841 };
   link.manifestValue = manifestOf(GAME_01_SOURCES);
+  link.api.engine = vi.fn(() => undefined);
+  link.api.onEngine = vi.fn(() => stopNothing);
   const capture = boardCapture();
   link.api.read = vi.fn((id: string, input?: Json) => {
     const key =
@@ -280,12 +406,14 @@ export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
     return Promise.resolve<Json>(null);
   });
   const workspace = createWorkspaceMock();
+  const activeSource = createActiveSourceMock();
   const registered: PanelSpec[] = [];
   const panels = { register: vi.fn((panel: PanelSpec) => registered.push(panel)) };
   const require = vi.fn((plugin: unknown) => {
     if (plugin === linkPlugin) return link.api;
     if (plugin === workspacePlugin) return workspace.api;
     if (plugin === panelsPlugin) return panels;
+    if (plugin === activeSourcePlugin) return activeSource.api;
     throw new Error("unexpected require");
   }) as unknown as Require;
   const resolved = { ...CONFIG, ...config };
@@ -297,6 +425,7 @@ export function createCtx(config: Partial<RenderViewConfig> = {}): TestCtx {
     require,
     link,
     workspace,
+    activeSource,
     registered
   };
 }
@@ -338,6 +467,85 @@ export function stubFrames(): FrameQueue {
       const run = queue;
       queue = [];
       for (const callback of run) callback();
+    }
+  };
+}
+
+/** A manual ResizeObserver: the test resizes every observed element by hand. */
+export type ResizeQueue = {
+  /** How many observers watch an element now. */
+  observed(): number;
+  /** Reports a new border box to every observer. */
+  resize(width: number, height: number): void;
+};
+
+/**
+ * Stubs ResizeObserver with a manual one (the caller unstubs in afterEach).
+ *
+ * @returns The queue.
+ */
+export function stubResizeObserver(): ResizeQueue {
+  const watching = new Set<ResizeObserverCallback>();
+  /** The stand-in: observe and disconnect only. */
+  class ManualObserver {
+    readonly callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe(): void {
+      watching.add(this.callback);
+    }
+    unobserve(): void {
+      watching.delete(this.callback);
+    }
+    disconnect(): void {
+      watching.delete(this.callback);
+    }
+  }
+  vi.stubGlobal("ResizeObserver", ManualObserver);
+  return {
+    observed: () => watching.size,
+    resize(width, height) {
+      const entry = {
+        contentRect: { width, height },
+        borderBoxSize: [{ inlineSize: width, blockSize: height }]
+      };
+      for (const callback of watching) callback([entry] as never, {} as never);
+    }
+  };
+}
+
+/** A manual `prefers-reduced-motion` query. */
+export type MotionQuery = {
+  /** How often `matchMedia` was called. */
+  calls(): number;
+  /** How many change listeners the query has. */
+  listeners(): number;
+  /** Turns reduced motion on or off and fires the query's change event. */
+  set(reduced: boolean): void;
+};
+
+/**
+ * Stubs matchMedia with one query whose `matches` the test sets (the caller unstubs in afterEach).
+ *
+ * @param reduced - Whether reduced motion is on at first.
+ * @returns The query.
+ */
+export function stubMotion(reduced: boolean): MotionQuery {
+  const changes = new Set<() => void>();
+  const query = {
+    matches: reduced,
+    addEventListener: (_type: string, listener: () => void) => changes.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => changes.delete(listener)
+  };
+  const matchMedia = vi.fn(() => query);
+  vi.stubGlobal("matchMedia", matchMedia);
+  return {
+    calls: () => matchMedia.mock.calls.length,
+    listeners: () => changes.size,
+    set(next) {
+      query.matches = next;
+      for (const listener of changes) listener();
     }
   };
 }

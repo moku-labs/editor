@@ -4,9 +4,10 @@ import { defineSource, read, sources } from "@moku-labs/game/inspect";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { registryPlugin } from "../..";
-import type { DevModule, GameLike, RegistryApi } from "../../types";
+import type { Json } from "../../protocol";
+import type { DevModule, GameLike, RegistryApi, RegistryCommandEvent } from "../../types";
 import type { StartedGame } from "../helpers";
-import { startBareGame } from "../helpers";
+import { startBareGame, stubBuild } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // An agent core composed with only the registry, over the bare game
@@ -49,13 +50,13 @@ afterEach(async () => {
 });
 
 describe("registry integration", () => {
-  it("lists the bare game's 20 sources and 17 commands without modules", async () => {
+  it("lists the bare game's 21 sources and 21 commands without modules", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     await app.start();
 
     const manifest = app.registry.manifest();
-    expect(manifest.sources).toHaveLength(20);
-    expect(manifest.commands).toHaveLength(17);
+    expect(manifest.sources).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(21);
     expect(manifest.game).toBe("game");
 
     await app.stop();
@@ -71,8 +72,8 @@ describe("registry integration", () => {
 
     const manifest = app.registry.manifest();
     expect(manifest.game).toBe("tiny-game 0.0.0");
-    expect(manifest.sources).toHaveLength(21);
-    expect(manifest.commands).toHaveLength(18);
+    expect(manifest.sources).toHaveLength(22);
+    expect(manifest.commands).toHaveLength(22);
     expect(manifest.sources.at(-1)?.id).toBe("tiny.coins");
     expect(manifest.commands.at(-1)?.id).toBe("tiny.addCoins");
 
@@ -108,13 +109,42 @@ describe("registry integration", () => {
   });
 
   it("logs a failed command through ctx.log", async () => {
+    const failing: DevModule = {
+      commands: [
+        defineCommand({
+          id: "tiny.fail",
+          title: "Fail",
+          input: {},
+          effect: "read",
+          run: () => {
+            throw new Error("[tiny] the garden is not loaded");
+          }
+        })
+      ]
+    };
+    const app = framework.createApp({
+      pluginConfigs: { registry: { game: game.app, modules: [failing] } }
+    });
+
+    await expect(app.registry.command("tiny.fail")?.run(null)).rejects.toMatchObject({
+      code: -32_000
+    });
+    expect(app.log.trace().some(entry => entry.event === "registry:command-failed")).toBe(true);
+  });
+
+  it("refuses a door command on a page without flags with -32009 dev_only (the engine's controlRefused)", async () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
     vi.stubGlobal("__MOKU_GAME_DEV__", undefined);
 
     await expect(app.registry.command("game.pause")?.run(null)).rejects.toMatchObject({
-      code: -32_000
+      code: -32_009,
+      data: { reason: "dev_only", retryable: false, id: "game.pause" }
     });
-    expect(app.log.trace().some(entry => entry.event === "registry:command-failed")).toBe(true);
+    expect(
+      app.log
+        .trace()
+        .some(entry => entry.event === "registry:command-refused" && entry.level === "info")
+    ).toBe(true);
   });
 
   it("throws from createApp on a duplicate module id", () => {
@@ -159,17 +189,19 @@ describe("registry integration", () => {
 });
 
 describe("registry types", () => {
-  it("exposes exactly manifest, source, command, add, envelope, clock", () => {
+  it("exposes exactly manifest, source, command, add, envelope, clock, game, build", () => {
     const app = framework.createApp({ pluginConfigs: { registry: { game: game.app } } });
 
     expectTypeOf<keyof typeof app.registry>().toEqualTypeOf<
-      "manifest" | "source" | "command" | "add" | "envelope" | "clock"
+      "manifest" | "source" | "command" | "add" | "envelope" | "clock" | "game" | "build"
     >();
     expect(Object.keys(app.registry).toSorted()).toEqual([
       "add",
+      "build",
       "clock",
       "command",
       "envelope",
+      "game",
       "manifest",
       "source"
     ]);
@@ -199,6 +231,98 @@ describe("registry types", () => {
     });
 
     expectTypeOf(app.probe.registry).returns.toEqualTypeOf<RegistryApi>();
-    expect(app.probe.registry().manifest().sources).toHaveLength(20);
+    expect(app.probe.registry().manifest().sources).toHaveLength(21);
+  });
+});
+
+describe("registry on a plain --debug build (agent flag, no dev flag)", () => {
+  it("createApp → start → manifest → refused run → editor source → stop", async () => {
+    stubBuild({ agent: true, build: "debug-20261014T160000Z" });
+    const listeners = new Set<(value: Json) => void>();
+    const perfLike = createAgentPlugin("perfLike", {
+      depends: [registryPlugin],
+      onInit: ctx => {
+        ctx.require(registryPlugin).add({
+          descriptor: { id: "editor.perf.second", title: "Second", input: {}, changes: "frame" },
+          read: () => ({ fps: 60 }),
+          watch: (_raw, fn) => {
+            listeners.add(fn);
+            return () => {
+              listeners.delete(fn);
+            };
+          },
+          probe: () => undefined
+        });
+      }
+    });
+    const app = framework.createApp({
+      plugins: [perfLike],
+      pluginConfigs: { registry: { game: game.app } }
+    });
+    await app.start();
+
+    const manifest = app.registry.manifest();
+    expect(manifest.build).toEqual({ profile: "read", id: "debug-20261014T160000Z" });
+    expect(manifest.commands.find(command => command.id === "game.tap")).toMatchObject({
+      allowed: false,
+      reason: "read-only"
+    });
+    expect(manifest.commands.find(command => command.id === "game.pause")?.allowed).toBe(true);
+    expect(manifest.sources.find(source => source.id === "editor.perf.second")).toEqual({
+      id: "editor.perf.second",
+      title: "Second",
+      input: {},
+      changes: "frame"
+    });
+
+    // The engine's run refuses a route command on this build with controlReadOnly (reason
+    // "read-only"), and runs a cosmetic one.
+    await expect(app.registry.command("game.tap")?.run({ key: "play" })).rejects.toMatchObject({
+      code: -32_009,
+      data: { reason: "read_only", retryable: false, id: "game.tap" }
+    });
+    expect(
+      app.log
+        .trace()
+        .some(entry => entry.event === "registry:command-refused" && entry.level === "info")
+    ).toBe(true);
+    await expect(app.registry.command("game.pause")?.run(null)).resolves.toMatchObject({
+      state: { tainted: false }
+    });
+    expect(app.registry.clock()).toMatchObject({ paused: true, held: true });
+
+    const stop = app.registry.source("editor.perf.second")?.watch(null, () => undefined);
+    expect(listeners.size).toBe(1);
+    stop?.();
+    await app.stop();
+    expect(listeners.size).toBe(0);
+  });
+
+  it("delivers registry:command to a plugin that depends on the registry", async () => {
+    const seen: RegistryCommandEvent[] = [];
+    const recorderLike = createAgentPlugin("recorderLike", {
+      depends: [registryPlugin],
+      hooks: () => ({
+        "registry:command": payload => {
+          seen.push(payload);
+        }
+      })
+    });
+    const app = framework.createApp({
+      plugins: [recorderLike],
+      pluginConfigs: { registry: { game: game.app } }
+    });
+    await app.start();
+
+    await app.registry.command("game.pause")?.run(null, "overlay");
+    await expect(app.registry.command("game.step")?.run({ frames: 1.5 })).rejects.toMatchObject({
+      code: -32_000
+    });
+
+    expect(seen).toEqual([
+      { id: "game.pause", input: null, via: "overlay", ok: true },
+      { id: "game.step", input: { frames: 1.5 }, via: "local", ok: false }
+    ]);
+    await app.stop();
   });
 });

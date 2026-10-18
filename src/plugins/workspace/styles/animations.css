@@ -30,3 +30,21 @@
     scale: 1.8;
   }
 }
+
+/* The live dot of the source pill: a ring that grows out of the dot and fades (ui/SourcePill.css). */
+@keyframes live-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-live) 45%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* The timer line of the disconnect notice: full width down to nothing (ui/SourceNotice.css). */
+@keyframes notice-shrink {
+  to {
+    scale: 0 1;
+  }
+}

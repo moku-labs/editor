@@ -156,13 +156,13 @@ describe("pages integration", () => {
       socket.addEventListener("message", event => {
         const method: string = JSON.parse(String(event.data)).method;
         if (method !== "project") seen.push(method);
-        if (seen.length < 2) return;
+        if (seen.length < 3) return;
         clearTimeout(timer);
         socket.close();
         resolve(seen);
       });
     });
-    expect(methods).toEqual(["sessions", "hotReload"]);
+    expect(methods).toEqual(["sessions", "engine", "hotReload"]);
 
     /**
      * POSTs a hot reload change.

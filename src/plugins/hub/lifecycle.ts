@@ -1,8 +1,12 @@
 /**
- * @file hub plugin — onStart (new token, silent interval) and onStop (clear timers, close every
- * socket with 1001, forget sessions, no selection, token undefined). The Bun server itself belongs
- * to the game.
+ * @file hub plugin — onStart (new token, silent interval, the computer's engine published) and
+ * onStop (clear timers, close every socket with 1001, forget sessions, no selection, token
+ * undefined, device mode torn down). The game's Bun server belongs to the game; the device
+ * listeners are the hub's own.
  */
+import { teardownDevices } from "./device/listen";
+import { clearPairDeadline } from "./device/pairing";
+import { publishEngine } from "./engine";
 import { tickSilent } from "./routing/sessions";
 import { newToken } from "./security/token";
 import { JSON_NULL } from "./sockets/send";
@@ -32,8 +36,9 @@ function unref(timer: ReturnType<typeof setInterval>): void {
 }
 
 /**
- * onStart: a new token per start (never logged) and the silent interval (unref'd), ticking every
- * min(1000, silentAfterMs / 2) ms.
+ * onStart: a new token per start (never logged), the silent interval (unref'd), ticking every
+ * min(1000, silentAfterMs / 2) ms, and `files.engine()` published as `editor.engine` (files
+ * computed it in its own onStart, which runs first). Device mode stays off.
  *
  * @param ctx - Domain context of the hub.
  */
@@ -45,6 +50,7 @@ export function startHub(ctx: HubCtx): void {
   const every = Math.min(MAX_TICK_MS, config.silentAfterMs / 2);
   state.silentTimer = setInterval(() => tickSilent(ctx, Date.now()), every);
   unref(state.silentTimer);
+  publishEngine(ctx);
   ctx.log.info("hub:started", { path: config.path });
 }
 
@@ -52,17 +58,23 @@ export function startHub(ctx: HubCtx): void {
  * onStop: clears the timers, forgets every connection, session, call and watch, then closes every
  * socket with 1001 "editor stopping" (the maps are cleared first, so the close handler finds
  * nothing to announce). No editor page is left, so a kept selection becomes `null` (A7). Later
- * upgrades get 503.
+ * upgrades get 503. Then device mode is torn down by the state-only `teardownDevices` (pairings
+ * aborted, devices forgotten, the device listeners stopped): the teardown context has no log and
+ * no emit, and neither is reached.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
+ * @returns When the device listeners stopped.
  */
-export function stopHub(ctx: { readonly state: HubState }): void {
+export async function stopHub(ctx: { readonly state: HubState }): Promise<void> {
   const { state } = ctx;
   if (state.silentTimer !== undefined) clearInterval(state.silentTimer);
   state.silentTimer = undefined;
   for (const call of state.pending.values()) clearTimeout(call.timer);
 
+  for (const conn of state.conns.values()) {
+    if (conn.kind === "agent" && conn.device !== undefined) clearPairDeadline(conn.device);
+  }
   const sockets = [...state.conns.values()].map(conn => conn.socket);
   state.conns.clear();
   state.sessions.clear();
@@ -73,4 +85,5 @@ export function stopHub(ctx: { readonly state: HubState }): void {
   if (state.published.has("selection")) state.published.set("selection", JSON_NULL);
 
   for (const socket of sockets) socket.close(GOING_AWAY, "editor stopping");
+  await teardownDevices(state);
 }

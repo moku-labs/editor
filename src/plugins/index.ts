@@ -7,9 +7,12 @@
  */
 
 // ─── Plugin Instances ────────────────────────────────────────
+export { activeSourcePlugin } from "./activeSource";
 export { bridgePlugin } from "./bridge";
 export { capturePlugin } from "./capture";
 export { channelPlugin } from "./channel";
+export { collectorPlugin } from "./collector";
+export { connectPlugin } from "./connect";
 export { consoleViewPlugin } from "./consoleView";
 export { filesPlugin } from "./files";
 export { filesViewPlugin } from "./filesView";
@@ -20,6 +23,8 @@ export { linkPlugin } from "./link";
 export { overlayPlugin } from "./overlay";
 export { pagesPlugin } from "./pages";
 export { panelsPlugin } from "./panels";
+export { perfPlugin } from "./perf";
+export { recorderPlugin } from "./recorder";
 export { registryPlugin } from "./registry";
 export { renderViewPlugin } from "./renderView";
 export { stateViewPlugin } from "./stateView";
@@ -27,9 +32,12 @@ export { workspacePlugin } from "./workspace";
 
 // ─── Plugin Types (namespace re-exports) ─────────────────────
 // Consumers access types as Registry.RegistryApi, Link.LinkApi, Workspace.WorkspaceId, …
+export * as ActiveSource from "./activeSource/types";
 export * as Bridge from "./bridge/types";
 export * as Capture from "./capture/types";
 export * as Channel from "./channel/types";
+export * as Collector from "./collector/types";
+export * as Connect from "./connect/types";
 export * as ConsoleView from "./consoleView/types";
 export * as Files from "./files/types";
 export * as FilesView from "./filesView/types";
@@ -40,6 +48,8 @@ export * as Link from "./link/types";
 export * as Overlay from "./overlay/types";
 export * as Pages from "./pages/types";
 export * as Panels from "./panels/types";
+export * as Perf from "./perf/types";
+export * as Recorder from "./recorder/types";
 export * as Registry from "./registry/types";
 export * as RenderView from "./renderView/types";
 export * as StateView from "./stateView/types";

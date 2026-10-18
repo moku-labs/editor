@@ -5,6 +5,7 @@ import { h } from "preact";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import type { Json, Manifest, SessionInfo, ToolsBoot } from "../../../registry/protocol";
 import { encode, notification } from "../../../registry/protocol";
@@ -25,7 +26,7 @@ import { definePanel } from "../../shared/define";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin]
 });
 
 const BOOT: ToolsBoot = {

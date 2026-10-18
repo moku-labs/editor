@@ -1,16 +1,17 @@
 /**
  * @file The compact top bar (round 2 R1, round 2b R15) at every window width the editor runs in:
- * 480, 600, 640, 720 and 899 px show the compact bar (the game mark, game name above 560 px, link
- * pill, Pause and Step as icons, the Hot reload icon toggle, the search icon and the ⋯ menu), 960
- * and 1440 px the wide one (session chip, the labelled Preview, Overlay and Hot reload switches,
- * Registry as an icon with its counts in the title, theme). The test loops
- * `page.setViewportSize` itself, so it runs once, in the desktop project. At each width no two
- * controls of the bar overlap (bounding boxes), every control is on screen and takes the pointer
- * at its centre, and every action works: from the bar icons and the ⋯ menu below 900 px, from the
- * bar from 900 px. At 900, 930 and 960 px, where the wide bar is tightest, it holds its controls
- * on one row without overflow. The Game toolbar has no overlay switch of its own any more; its
- * switches are Safe area, Sound and Copy Ref (the "Copy on select" preference, which has no
- * control in the top bar, D-72). Reference mode is gone (editor UI cleanup, D-65): no control
+ * 480, 600, 640, 720 and 899 px show the compact bar (the game mark, game name above 560 px, the
+ * source pill, link pill, Pause and Step as icons, the Hot reload icon toggle, the search icon and
+ * the ⋯ menu), 960 and 1440 px the wide one (source pill, session chip, the labelled Preview,
+ * Overlay and Hot reload switches, Registry as an icon with its counts in the title, theme). The
+ * test loops `page.setViewportSize` itself, so it runs once, in the desktop project. At each width
+ * no two controls of the bar overlap (bounding boxes), every control is on screen and takes the
+ * pointer at its centre, and every action works: from the bar icons and the ⋯ menu below 900 px,
+ * from the bar from 900 px. At 900, 930 and 960 px, where the wide bar is tightest, and at 1200
+ * and 1280 px, in the band under 1360 px where the bar gives up room in steps (TopBar.css), it
+ * holds its controls on one row without overflow. The Game toolbar has no overlay switch of its
+ * own any more; its switches are Safe area, Sound and Copy Ref (the "Copy on select" preference,
+ * which has no control in the top bar, D-72). Reference mode is gone (editor UI cleanup, D-65): no control
  * named `reference` in either layout, and the key R does nothing.
  *
  * Hot reload is a real switch (D-32): the bin restarts its server with Bun HMR flipped on the same
@@ -65,7 +66,7 @@ const SWITCH_MS = 30_000;
 const WIDTHS = [480, 600, 640, 720, 899, 960, 1440] as const;
 
 /** The first widths of the wide bar: where its controls are tightest. */
-const TIGHT_WIDE_WIDTHS = [900, 930, 960] as const;
+const TIGHT_WIDE_WIDTHS = [900, 930, 960, 1200, 1280] as const;
 
 /** The compact widths. */
 const COMPACT_WIDTHS = WIDTHS.filter(width => width < 900);
@@ -120,6 +121,7 @@ async function measureBar(page: Page): Promise<{ overflow: number; items: BarIte
           (data.search === undefined ? undefined : "search") ??
           (data.gameName === undefined ? undefined : "game-name") ??
           (data.mark === undefined ? undefined : "mark") ??
+          data.part ??
           element.tagName.toLowerCase();
         return {
           name,
@@ -586,6 +588,8 @@ test.describe("top bar · round 2", () => {
         ? [
             "mark",
             ...(width > 560 ? ["game-name"] : []),
+            // The source pill (spec 11 § 5.3): the local preview or the phone the views read.
+            "source-pill",
             "link-pill",
             "pause",
             "step",
@@ -596,7 +600,10 @@ test.describe("top bar · round 2", () => {
         : [
             "mark",
             "game-name",
+            "source-pill",
             "session-chip",
+            // The computer's engine fingerprint, from 1100 px (TopBar.css ENGINE_TEXT_FROM_PX).
+            ...(width >= 1100 ? ["engine"] : []),
             "link-pill",
             "pause",
             "step",
@@ -636,7 +643,7 @@ test.describe("top bar · round 2", () => {
 
   // The wide bar holds three switches (D-72: Copy on select is a switch of the Game toolbar), so
   // it fits from 900 px, where it starts.
-  test("900 / 930 / 960: the bar is wide, has no horizontal overflow, no control is clipped or on a second line", async ({
+  test("900 / 930 / 960 / 1200 / 1280: the bar is wide, has no horizontal overflow, no control is clipped or on a second line", async ({
     tools
   }) => {
     const page = tools.page;
@@ -801,7 +808,7 @@ test.describe("top bar · round 2", () => {
 
       // Registry opens the registry popover under ⋯, inside the window.
       await openMore(page);
-      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("20 · 24");
+      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("31 · 31");
       await menuRow(page, "registry").click();
       const registry = page.locator("[data-ui=registry-popover]");
       await expect(registry).toBeVisible();
@@ -887,7 +894,7 @@ test.describe("top bar · round 2", () => {
       }
       // Registry: the icon only, the counts in its title.
       const registryButton = bar.locator(":scope > [data-action=registry]");
-      await expect(registryButton).toHaveAttribute("title", "Registry · 20 sources · 24 commands");
+      await expect(registryButton).toHaveAttribute("title", "Registry · 31 sources · 31 commands");
       await expect(registryButton).toHaveAccessibleName("Registry");
 
       const overlay = bar.getByRole("switch", { name: "Overlay", exact: true });

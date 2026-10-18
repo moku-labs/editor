@@ -75,6 +75,24 @@ export {
   until
 } from "./wait";
 
+/**
+ * How long `startStack` waits for a live link with a manifest and a project state. Real sockets
+ * and the server's first project index: cold in a worker under load (the pre-commit run does
+ * build, lint and the whole suite at once) the project state alone took 3.6 s, past `until`'s
+ * 3 s default; the repo's other real-socket waits allow 5 s.
+ */
+const LIVE_LINK_MS = 10_000;
+
+/**
+ * The test and hook timeout of every root integration file that imports this harness: a stack
+ * boot (up to LIVE_LINK_MS), the scenario and the bounded shutdown do not fit vitest's 5 s default
+ * under load. Set per file through `vi.setConfig` at import, before the file collects its tests
+ * (vitest resets it after the file); a test's own timeout still wins.
+ */
+const STACK_TIMEOUT_MS = 15_000;
+
+vi.setConfig({ testTimeout: STACK_TIMEOUT_MS, hookTimeout: STACK_TIMEOUT_MS });
+
 /** Options of `startStack`: what each part of the stack takes. */
 export type StackOptions = {
   /** Extra server pluginConfigs (e.g. `{ hub: { callTimeoutMs: 300 } }`). */
@@ -122,7 +140,8 @@ export async function startStack(options: StackOptions = {}): Promise<Stack> {
       link.status().kind === "live" &&
       link.manifest() !== undefined &&
       link.project() !== undefined,
-    "a live link with a manifest and a project state"
+    "a live link with a manifest and a project state",
+    LIVE_LINK_MS
   );
   return { kind: "stack", root, server, page, game, agent, tools };
 }

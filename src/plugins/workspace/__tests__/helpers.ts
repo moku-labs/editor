@@ -1,7 +1,17 @@
-/* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
+/* eslint-disable unicorn/no-null, sonarjs/no-hardcoded-ip -- null is a JSON value on the wire; the addresses are fixtures */
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { Require } from "../../../config";
+import { activeSourcePlugin } from "../../activeSource";
+import type {
+  ActiveSource,
+  ActiveSourceApi,
+  LocalPreview,
+  SourceLabel,
+  SourceNotice
+} from "../../activeSource/types";
+import type { DeviceDirectory } from "../../connect/protocol";
+import type { SessionDevice } from "../../hub/protocol";
 import type { LinkApi } from "../../link/types";
 import type {
   CommandDescriptor,
@@ -18,8 +28,9 @@ import { createWorkspaceState } from "../state";
 import type { WorkspaceConfig, WorkspaceCtx } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared test helpers of workspace: a log mock, a scripted link api, a domain
-// ctx with a real state, and wire fixtures (manifest, run result, boot).
+// Shared test helpers of workspace: a log mock, a scripted link api, a scripted
+// activeSource api, a domain ctx with a real state, and wire fixtures
+// (manifest, run result, boot, sessions, devices).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -114,14 +125,17 @@ export function resultOf(value: Json = null, frame = 1841): RunResult {
 export const FRAME = "f-test";
 
 /**
- * A page URL tagged with a frame id, as link's `frameUrl` builds it.
+ * A page URL tagged with a frame id and, with a player, the scenario, as link's `frameUrl` builds
+ * it.
  *
  * @param url - The page URL.
  * @param frame - The frame id; default the mock's own.
+ * @param player - The scenario; none when absent or "".
  * @returns The tagged URL.
  */
-export function tagged(url: string, frame = FRAME): string {
+export function tagged(url: string, frame = FRAME, player?: string): string {
   const parsed = new URL(url);
+  if (player !== undefined && player !== "") parsed.searchParams.set("player", player);
   parsed.searchParams.set("__editorFrame", frame);
   return parsed.href;
 }
@@ -137,10 +151,14 @@ type HandleCall = (method: RelayedEditorMethod, handler: (params: never) => unkn
 
 /** A scripted link api: plain fields the test sets, mocks for the calls. */
 export type LinkMock = {
-  [K in keyof Omit<LinkApi, "files" | "handle">]: Mock<LinkApi[K]>;
+  [K in keyof Omit<LinkApi, "files" | "handle" | "published" | "onPublished">]: Mock<LinkApi[K]>;
 } & {
   files: LinkApi["files"];
   handle: Mock<HandleCall>;
+  /** Generic over the publish method, so a plain field: `Mock<>` would drop its type parameter. */
+  published: LinkApi["published"];
+  /** Generic over the publish method, so a plain field (see `published`). */
+  onPublished: LinkApi["onPublished"];
   /** Live tap listeners. */
   readonly tapListeners: Set<TapListener>;
   /** Calls every tap listener, like link on a game tap. */
@@ -153,6 +171,14 @@ export type LinkMock = {
   bootValue: ToolsBoot | undefined;
   /** The sessions `sessions()` answers. */
   sessionList: SessionInfo[];
+  /** The id `engine()` answers. */
+  engineValue: string | undefined;
+  /** The device directory `published("devices")` answers. */
+  directoryValue: DeviceDirectory | undefined;
+  /** Live engine listeners. */
+  readonly engineListeners: Set<(engine: string | undefined) => void>;
+  /** Sets the engine id and calls every engine listener, like link on `editor.engine`. */
+  publishEngine(engine: string | undefined): void;
   /** Live manifest listeners. */
   readonly manifestListeners: Set<(manifest: Manifest | undefined) => void>;
   /** Sets the manifest and calls every listener, like link on an attach. */
@@ -167,11 +193,14 @@ export type LinkMock = {
 export function createLinkMock(): LinkMock {
   const listeners = new Set<(manifest: Manifest | undefined) => void>();
   const tapListeners = new Set<TapListener>();
+  const engineListeners = new Set<(engine: string | undefined) => void>();
   const link: LinkMock = {
     current: { kind: "connecting" },
     manifestValue: undefined,
     bootValue: BOOT,
     sessionList: [],
+    engineValue: undefined,
+    engineListeners,
     manifestListeners: listeners,
     read: vi.fn<LinkApi["read"]>(() => Promise.resolve(null)),
     watch: vi.fn<LinkApi["watch"]>(() => vi.fn()),
@@ -191,7 +220,7 @@ export function createLinkMock(): LinkMock {
     retry: vi.fn<LinkApi["retry"]>(),
     expectReload: vi.fn<LinkApi["expectReload"]>(),
     boot: vi.fn<LinkApi["boot"]>(() => link.bootValue),
-    frameUrl: vi.fn<LinkApi["frameUrl"]>(url => tagged(url)),
+    frameUrl: vi.fn<LinkApi["frameUrl"]>((url, opts) => tagged(url, FRAME, opts?.player)),
     isOtherTab: vi.fn<LinkApi["isOtherTab"]>(page => {
       const frame = new URL(page).searchParams.get("__editorFrame");
       return frame !== null && frame !== FRAME;
@@ -216,9 +245,30 @@ export function createLinkMock(): LinkMock {
     setHotReload: vi.fn<LinkApi["setHotReload"]>(() => Promise.resolve(false)),
     selection: vi.fn<LinkApi["selection"]>(() => undefined),
     project: vi.fn<LinkApi["project"]>(() => undefined),
+    engine: vi.fn<LinkApi["engine"]>(() => link.engineValue),
+    onEngine: vi.fn<LinkApi["onEngine"]>(listener => {
+      engineListeners.add(listener);
+      if (link.engineValue !== undefined) listener(link.engineValue);
+      return () => {
+        engineListeners.delete(listener);
+      };
+    }),
+    directoryValue: undefined,
+    published: (method =>
+      method === "devices" ? link.directoryValue : undefined) as LinkApi["published"],
+    onPublished: () => vi.fn(),
+    onSessions: vi.fn<LinkApi["onSessions"]>(() => vi.fn()),
+    onHeartbeat: vi.fn<LinkApi["onHeartbeat"]>(() => vi.fn()),
+    ownSession: vi.fn<LinkApi["ownSession"]>(() => undefined),
+    runIn: vi.fn<LinkApi["runIn"]>(() => Promise.resolve(resultOf())),
+    callEditor: vi.fn<LinkApi["callEditor"]>(() => Promise.resolve(null)),
     notify: vi.fn<LinkApi["notify"]>(),
     handle: vi.fn<HandleCall>(() => vi.fn()),
     tapListeners,
+    publishEngine(engine) {
+      link.engineValue = engine;
+      for (const listener of engineListeners) listener(engine);
+    },
     tap(tap) {
       for (const listener of tapListeners) listener(tap);
     },
@@ -230,18 +280,171 @@ export function createLinkMock(): LinkMock {
   return link;
 }
 
+/** The Galaxy A26 of the frozen demo, linked by wire. */
+export const A26: SessionDevice = {
+  id: "d-7f3a",
+  model: "SM-A266B",
+  link: "adb",
+  address: "127.0.0.1",
+  port: 47_600,
+  engine: "0.15.0+9c41e0",
+  build: "debug-20261016T090000Z"
+};
+
+/** An iPhone 15 on the network. */
+export const IPHONE: SessionDevice = {
+  id: "d-11c2",
+  model: "IPHONE15,4",
+  link: "lan",
+  address: "192.168.1.42",
+  port: 47_600,
+  engine: "0.15.0+9c41e0",
+  build: null
+};
+
+/**
+ * This page's own game frame session (the local preview): embedded, tagged with the mock's frame.
+ *
+ * @param id - Session id.
+ * @returns The session.
+ */
+export function ownSessionOf(id = "s-1"): SessionInfo {
+  return {
+    id,
+    game: "merge-game 0.0.0",
+    page: tagged("http://127.0.0.1:3000/game/"),
+    embedded: true,
+    connectedAt: 1000
+  };
+}
+
+/**
+ * A device session.
+ *
+ * @param id - Session id.
+ * @param device - The device.
+ * @returns The session.
+ */
+export function deviceSessionOf(id = "s-9", device: SessionDevice = A26): SessionInfo {
+  return {
+    id,
+    game: "merge-game 0.0.0",
+    page: "http://localhost/index.html",
+    embedded: false,
+    connectedAt: 2000,
+    device
+  };
+}
+
+/** The label activeSource gives the local preview. */
+export const LOCAL_LABEL: SourceLabel = {
+  name: "Local preview",
+  model: null,
+  kind: "local",
+  link: { kind: "local", transport: "frame", address: null }
+};
+
+/** A scripted activeSource api: plain fields the test sets, mocks for every member. */
+export type SourceMock = { [K in keyof ActiveSourceApi]: Mock<ActiveSourceApi[K]> } & {
+  /** The source `current()` answers. */
+  currentValue: ActiveSource;
+  /** The local preview state `preview()` answers. */
+  previewValue: LocalPreview;
+  /** The label `label()` answers. */
+  labelValue: SourceLabel;
+  /** The notice `notice()` answers. */
+  noticeValue: SourceNotice | undefined;
+};
+
+/**
+ * A scripted activeSource api: the local preview without a session, running nothing, no notice.
+ *
+ * @returns The mock.
+ */
+export function createSourceMock(): SourceMock {
+  const source: SourceMock = {
+    currentValue: { kind: "local", session: null },
+    previewValue: { state: "none" },
+    labelValue: LOCAL_LABEL,
+    noticeValue: undefined,
+    current: vi.fn<ActiveSourceApi["current"]>(() => source.currentValue),
+    preview: vi.fn<ActiveSourceApi["preview"]>(() => source.previewValue),
+    useDevice: vi.fn<ActiveSourceApi["useDevice"]>(() => Promise.resolve()),
+    useLocal: vi.fn<ActiveSourceApi["useLocal"]>(() => Promise.resolve()),
+    onChange: vi.fn<ActiveSourceApi["onChange"]>(() => vi.fn()),
+    directory: vi.fn<ActiveSourceApi["directory"]>(() => undefined),
+    scan: vi.fn<ActiveSourceApi["scan"]>(() => vi.fn()),
+    connectWire: vi.fn<ActiveSourceApi["connectWire"]>(() =>
+      Promise.resolve({ port: 47_600, adb: "127.0.0.1:47600", lan: null })
+    ),
+    connectNetwork: vi.fn<ActiveSourceApi["connectNetwork"]>(() =>
+      Promise.resolve({ port: 47_600, adb: "127.0.0.1:47600", lan: "192.168.1.5:47600" })
+    ),
+    confirmPairing: vi.fn<ActiveSourceApi["confirmPairing"]>(() => Promise.resolve(true)),
+    refusePairing: vi.fn<ActiveSourceApi["refusePairing"]>(() => Promise.resolve()),
+    stopDevices: vi.fn<ActiveSourceApi["stopDevices"]>(() => Promise.resolve()),
+    telemetry: vi.fn<ActiveSourceApi["telemetry"]>(() => undefined),
+    onTelemetry: vi.fn<ActiveSourceApi["onTelemetry"]>(() => vi.fn()),
+    markers: vi.fn<ActiveSourceApi["markers"]>(() => []),
+    notice: vi.fn<ActiveSourceApi["notice"]>(() => source.noticeValue),
+    dismissNotice: vi.fn<ActiveSourceApi["dismissNotice"]>(() => {
+      source.noticeValue = undefined;
+    }),
+    reconnect: vi.fn<ActiveSourceApi["reconnect"]>(() => Promise.resolve(false)),
+    connectDevice: vi.fn<ActiveSourceApi["connectDevice"]>(() => Promise.resolve()),
+    label: vi.fn<ActiveSourceApi["label"]>(() => source.labelValue),
+    health: vi.fn<ActiveSourceApi["health"]>(() => ({
+      kind: "local",
+      latencyMs: null,
+      samples: new Float32Array(48),
+      head: 0
+    })),
+    clockOffsetMs: vi.fn<ActiveSourceApi["clockOffsetMs"]>(() => 0),
+    openConnect: vi.fn<ActiveSourceApi["openConnect"]>()
+  };
+  return source;
+}
+
+/**
+ * Makes a device the source in the mocks: the session listed in link, current and label in
+ * activeSource.
+ *
+ * @param ctx - The test ctx.
+ * @param session - The device session (listed if it is not yet).
+ * @param name - The display name the label carries.
+ */
+export function useDeviceSource(ctx: TestCtx, session: SessionInfo, name: string): void {
+  const device = session.device;
+  if (device === undefined) throw new Error("not a device session");
+  if (!ctx.link.sessionList.some(item => item.id === session.id)) {
+    ctx.link.sessionList = [...ctx.link.sessionList, session];
+  }
+  ctx.source.currentValue = { kind: "device", session: session.id, device };
+  ctx.source.labelValue = {
+    name,
+    model: device.model,
+    kind: "device",
+    link:
+      device.link === "adb"
+        ? { kind: "wire", transport: "adb", address: device.address }
+        : { kind: "network", transport: "lan", address: device.address }
+  };
+}
+
 /** The emit mock: callable as the typed emit, inspectable as a mock. */
 export type EmitMock = WorkspaceCtx["emit"] & Mock<(name: string, payload: unknown) => void>;
 
-/** A workspace ctx whose emit, log and link are mocks. */
+/** A workspace ctx whose emit, log, link and activeSource are mocks. */
 export type TestCtx = Omit<WorkspaceCtx, "emit" | "log"> & {
   readonly emit: EmitMock;
   readonly log: LogMock;
   readonly link: LinkMock;
+  readonly source: SourceMock;
 };
 
 /**
- * A workspace domain ctx with a real state and mock emit, log and link.
+ * A workspace domain ctx with a real state and mock emit, log, link and activeSource: `require`
+ * answers the activeSource mock for `activeSourcePlugin` and the link mock for anything else.
  *
  * @param config - Config overrides.
  * @param link - The link mock to use.
@@ -252,7 +455,10 @@ export function createCtx(
   link: LinkMock = createLinkMock()
 ): TestCtx {
   const resolved: WorkspaceConfig = { ...CONFIG, ...config };
-  const require = vi.fn(() => link) as unknown as Require;
+  const source = createSourceMock();
+  const require = vi.fn((plugin: unknown) =>
+    plugin === activeSourcePlugin ? source : link
+  ) as unknown as Require;
 
   return {
     config: resolved,
@@ -260,7 +466,8 @@ export function createCtx(
     emit: vi.fn() as unknown as EmitMock,
     log: createLog(),
     require,
-    link
+    link,
+    source
   };
 }
 

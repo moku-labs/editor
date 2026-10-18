@@ -1,8 +1,9 @@
 /**
  * @file link plugin — type definitions: config, private constants, the remote channel api (with
- * taps, the page heap, hot reload, the editor page's selection and request handlers, and the
- * project index), the files client, state and the domain context. Wire shapes come from the
- * protocol (R1).
+ * taps, the page heap, hot reload, the editor page's selection and request handlers, the project
+ * index, the published values, the session and heartbeat listeners, the own frame's session,
+ * session-targeted runs and editor-method calls), the files client, state and the domain context. Wire shapes come
+ * from the protocol (R1).
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
@@ -19,10 +20,12 @@ import type {
   Manifest,
   ProjectFound,
   ProjectState,
+  PublishMethod,
   PublishParams,
   RelayedEditorMethod,
   Request as RpcRequest,
   Response as RpcResponse,
+  RunResult,
   SelectionInfo,
   SelectParams,
   SessionInfo,
@@ -269,6 +272,24 @@ export type FilesClient = {
 };
 
 /**
+ * A heartbeat of the chosen session as this page received it: the session, the phone's (or the
+ * page's) epoch ms of the beat (`Heartbeat.at`) and this computer's epoch ms of its arrival. The
+ * clock offset of a device is estimated from the two (activeSource `clockOffsetMs`).
+ *
+ * @example
+ * ```ts
+ * const beat: ReceivedHeartbeat = { session: "s-9", at: 1791986100000, receivedAt: 1791986100420 };
+ * ```
+ */
+export type ReceivedHeartbeat = {
+  readonly session: string;
+  /** `Heartbeat.at`: the epoch ms the game stamped on the beat, by its own clock. */
+  readonly at: number;
+  /** The epoch ms the beat arrived at this page, by this computer's clock. */
+  readonly receivedAt: number;
+};
+
+/**
  * The link api (`app.link`): the remote EditorChannel plus sessions, manifest, boot and the files
  * client. On link the channel members behave so:
  *
@@ -396,20 +417,22 @@ export type LinkApi = EditorChannel & {
 
   /**
    * Tags a game page URL with the frame id of this tools page (the `__editorFrame` query
-   * parameter; one random id per tools page). workspace loads its game frame from the tagged URL,
-   * so the session of that frame is this page's own: the session choice prefers it and never
-   * picks the game frame of another tools tab on its own.
+   * parameter; one random id per tools page) and, with `opts.player`, the dev page's scenario.
+   * workspace loads its game frame from the tagged URL, so the session of that frame is this
+   * page's own: the session choice prefers it and never picks the game frame of another tools tab
+   * on its own.
    *
    * @param url - The game page URL, absolute or relative to the tools page.
+   * @param opts - The scenario to start from (dev only).
    * @returns The absolute tagged URL; the URL unchanged when it does not parse.
    * @example
    * ```ts
-   * // workspace loads its game frame from the boot's game URL.
-   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/");
-   * // "http://127.0.0.1:3000/?__editorFrame=3f9a1c2b7d4e"
+   * // workspace loads its game frame from the scenario the person picked.
+   * ctx.require(linkPlugin).frameUrl("http://127.0.0.1:3000/", { player: "full" });
+   * // "http://127.0.0.1:3000/?player=full&__editorFrame=3f9a1c2b7d4e"
    * ```
    */
-  frameUrl(url: string): string;
+  frameUrl(url: string, opts?: FrameUrlOptions): string;
 
   /**
    * True when a page URL (`Manifest.page`, `SessionInfo.page`) is the game frame of another tools
@@ -570,6 +593,172 @@ export type LinkApi = EditorChannel & {
    */
   project(): ProjectState | undefined;
   /**
+   * The fingerprint id of the engine the computer serves: the project's installed
+   * `@moku-labs/game` (version + dist hash, the recipe of the page's `__MOKU_GAME_ENGINE__`), as
+   * the hub published it (`editor.engine`). Kept across reconnects.
+   *
+   * @returns The id; undefined until the hub sent one, or when it has none ("unknown").
+   * @example
+   * ```ts
+   * // renderView marks a phone that runs another engine than the computer.
+   * ctx.require(linkPlugin).engine(); // "0.14.13+1ab7f2"
+   * ```
+   */
+  engine(): string | undefined;
+  /**
+   * Listens to the computer's engine fingerprint: called at once when it is known, then on each
+   * change. The replay of the same id after a reconnect calls nothing; a change from a known id
+   * to "unknown" calls it with `undefined` (`engine()` answers undefined from then on). A
+   * throwing listener is logged and does not stop the others.
+   *
+   * @param listener - Called with the id; with undefined when the hub no longer knows one.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // workspace re-renders the top bar when the fingerprint arrives.
+   * const stop = ctx.require(linkPlugin).onEngine(() => state.ui.bump());
+   * stop();
+   * ```
+   */
+  onEngine(listener: (engine: string | undefined) => void): () => void;
+  /**
+   * The last value the server published for a method, kept across reconnects (the hub replays it
+   * on every socket open). `devices` and `deviceTelemetry` (connect's device directory and wired
+   * telemetry) are checked whole with the `connect/protocol` guards before link keeps them: a
+   * malformed value is the warning `link:bad-published` and the held one stays. `engine`,
+   * `project`, `hotReload` and `selection` answer the values link already keeps for `engine()`,
+   * `project()`, `hotReload()` and `selection()`; `selection` answers undefined also while
+   * nothing is selected. Frozen: a reader never changes what the next one sees.
+   *
+   * @param method - A publish method: "devices", "deviceTelemetry", "engine", "project",
+   *   "hotReload" or "selection".
+   * @returns The value; undefined before the first.
+   * @example
+   * ```ts
+   * // activeSource checks whether device mode is on before it offers "By wire".
+   * const directory = ctx.require(linkPlugin).published("devices");
+   * directory?.mode.on; // true
+   * directory?.linked[0]?.session; // "s-9": the Galaxy A26 (SM-A266B) linked as d-7f3a
+   * ```
+   */
+  published<M extends PublishMethod>(method: M): PublishParams[M] | undefined;
+  /**
+   * Listens to a published method: called with every new value, never at once (read
+   * `published(method)` for the current one). A replay of an equal value calls nothing, so a
+   * reconnect does not repaint a panel; a malformed value calls nothing. Each listener gets the
+   * same frozen value; a throwing listener is logged as `link:published-listener-failed` and the
+   * others still run.
+   *
+   * @param method - A publish method.
+   * @param fn - Called with each new value; `selection` passes null when the selection clears.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // activeSource shows the wired telemetry of the phone that is the source, once a second.
+   * const off = ctx.require(linkPlugin).onPublished("deviceTelemetry", record => {
+   *   if (record.device === "d-7f3a" && record.gpu.available) show(record.gpu.value.mhz); // 221
+   * });
+   * off();
+   * ```
+   */
+  onPublished<M extends PublishMethod>(
+    method: M,
+    fn: (value: PublishParams[M]) => void
+  ): () => void;
+  /**
+   * Listens to the session list: called after every `sessions` notification of the hub is
+   * applied, so `session()` already answers the new pick. A socket close calls nothing (the list
+   * the hub sends after the reconnect does), nor does a malformed list. Each listener gets the
+   * same frozen list; a throwing listener is logged as `link:sessions-listener-failed` and the
+   * others still run.
+   *
+   * @param fn - Called with each applied list.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // activeSource notices the phone linking: a session with a device appears.
+   * const off = ctx.require(linkPlugin).onSessions(list => {
+   *   const phone = list.find(session => session.device !== undefined);
+   *   phone?.device?.id; // "d-7f3a"
+   * });
+   * off();
+   * ```
+   */
+  onSessions(fn: (list: readonly SessionInfo[]) => void): () => void;
+  /**
+   * Listens to the heartbeats of the chosen session: called with each one that carries its `at`,
+   * with the time it arrived here. A beat of another session, one without `at` and a malformed one
+   * call nothing. Each listener gets the same frozen beat; a throwing listener is logged as
+   * `link:heartbeat-listener-failed` and the others still run.
+   *
+   * @param fn - Called with each beat.
+   * @returns An idempotent unsubscribe.
+   * @example
+   * ```ts
+   * // activeSource estimates the phone's clock: sent at 10 000 by the phone, here at 10 420.
+   * const off = ctx.require(linkPlugin).onHeartbeat(beat => {
+   *   beat.at - beat.receivedAt; // -420: the phone's clock reads behind this computer's (less half a ping)
+   * });
+   * off();
+   * ```
+   */
+  onHeartbeat(fn: (beat: ReceivedHeartbeat) => void): () => void;
+  /**
+   * This page's own game frame session (the local preview): the newest open embedded session
+   * whose page carries this page's frame id (`frameUrl`). The game frame of another tools tab, or
+   * the frame URL opened outside an iframe, is never own. While the frame reloads, the newer of
+   * its two sessions wins.
+   *
+   * @returns The id; undefined when the frame has no session (not mounted yet, reloading, or no
+   *   frame on this page).
+   * @example
+   * ```ts
+   * // activeSource pauses the local preview before the phone becomes the source.
+   * const link = ctx.require(linkPlugin);
+   * const own = link.ownSession(); // "s-1"
+   * if (own !== undefined) await link.runIn(own, "game.pause");
+   * ```
+   */
+  ownSession(): string | undefined;
+  /**
+   * Runs a command on a named open session without changing the choice: `session()`, the watches
+   * and the manifest stay with the chosen session. The result shape is checked like `run`, and
+   * the long-call rule of `run` applies.
+   *
+   * @param session - An open session id from `sessions()`.
+   * @param id - The command id.
+   * @param input - The command input; omitted when undefined.
+   * @returns The RunResult.
+   * @throws {Error} Rejects -32003 `no_session` (not retryable) at once for an id that is not open,
+   *   also while disconnected; the command's own wire error otherwise; -32600 for an answer that
+   *   is not a RunResult.
+   * @example
+   * ```ts
+   * // The phone is the source; the local preview holds while it is.
+   * const paused = await ctx.require(linkPlugin).runIn("s-1", "game.pause");
+   * paused.value; // true
+   * ```
+   */
+  runIn(session: string, id: string, input?: Json): Promise<RunResult>;
+  /**
+   * Calls a server editor-channel method another server plugin registered on the hub
+   * (`hub.addEditorMethods`), such as connect's `connect.wire`. No session: it works without a
+   * game. link adds no rule of its own: the hub answers what it knows.
+   *
+   * @param method - The method, `<plugin>.<verb>`.
+   * @param params - Its params; omitted when undefined.
+   * @returns The method's result.
+   * @throws {Error} Rejects -32002 `link_closed` (retryable) at once while disconnected; the
+   *   method's wire error otherwise (-32601 for a method nobody registered).
+   * @example
+   * ```ts
+   * // The Connect panel's "By wire" turns device mode on.
+   * await ctx.require(linkPlugin).callEditor("connect.wire");
+   * // { listen: { port: 47600, adb: "127.0.0.1:47600", lan: null } }
+   * ```
+   */
+  callEditor(method: string, params?: Json): Promise<Json>;
+  /**
    * The files channel client.
    *
    * @example
@@ -579,6 +768,23 @@ export type LinkApi = EditorChannel & {
    * ```
    */
   files: FilesClient;
+};
+
+/**
+ * Options of `frameUrl`.
+ *
+ * @example
+ * ```ts
+ * const opts: FrameUrlOptions = { player: "full" };
+ * ```
+ */
+export type FrameUrlOptions = {
+  /**
+   * A scenario of the engine dev page (`tests/scenarios/<name>.ts`): sets the `player` query
+   * parameter, which `startPage` reads (`?player=<name>`). Dev only. Absent or "": the URL's own
+   * `player` parameter is left as it is.
+   */
+  readonly player?: string;
 };
 
 /**
@@ -603,6 +809,25 @@ export type PendingCall = {
   readonly resolve: (value: Json) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+};
+
+/**
+ * The publish methods whose values link keeps only for `published` (connect's): the other
+ * methods live in their own state fields (`engine`, `project`, `hotReload`, `selection`).
+ */
+export type HeldMethod = "devices" | "deviceTelemetry";
+
+/**
+ * The last valid value of each held publish method, frozen; undefined before the first.
+ */
+export type HeldPublished = { [M in HeldMethod]: PublishParams[M] | undefined };
+
+/**
+ * The onPublished listeners of every publish method (wrappers: the same function added twice is
+ * two entries).
+ */
+export type PublishedListeners = {
+  readonly [M in PublishMethod]: Set<(value: PublishParams[M]) => void>;
 };
 
 /**
@@ -647,6 +872,21 @@ export type LinkState = {
   selection: SelectionInfo | undefined;
   /** The project index the hub last sent (`editor.project`), frozen; kept across reconnects. */
   project: ProjectState | undefined;
+  /**
+   * The computer-side engine the hub published (`editor.engine`), frozen; kept across reconnects.
+   * The id "unknown" is held too: `engine()` answers undefined for it.
+   */
+  engine: PublishParams["engine"] | undefined;
+  /** onEngine listeners (wrappers, like hotReloadListeners). */
+  engineListeners: Set<(engine: string | undefined) => void>;
+  /** connect's published values (`editor.devices`, `editor.deviceTelemetry`); kept across reconnects. */
+  published: HeldPublished;
+  /** onPublished listeners, per publish method. */
+  publishedListeners: PublishedListeners;
+  /** onSessions listeners (wrappers, like tapListeners). */
+  sessionsListeners: Set<(list: readonly SessionInfo[]) => void>;
+  /** onHeartbeat listeners (wrappers, like tapListeners). */
+  heartbeatListeners: Set<(beat: ReceivedHeartbeat) => void>;
   /** The last wire value this page notified, per method; sent again on every socket open. */
   notified: Map<NotifyMethod, Json>;
   /**

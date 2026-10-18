@@ -1,24 +1,38 @@
 /**
  * @file bridge plugin — config check and the editor.reload and editor.clock commands (onInit), the
- * domain deps, start (onStart: heartbeat listener, page and reload listeners, the checkpoint
- * restore, connect — not awaited) and stop (onStop: bye, close, clear timers).
+ * domain deps, start (onStart: the remembered links, mode and address, heartbeat listener, page
+ * and reload listeners, the checkpoint restore in page mode, connect — not awaited) and stop
+ * (onStop: bye, close, clear timers and the ack deadline).
  */
 import { channelPlugin } from "../channel";
+import { parseAddress } from "../hub/protocol";
+import { recorderPlugin } from "../recorder";
 import { registryPlugin } from "../registry";
 import { encode, notification } from "../registry/protocol";
 import { restoreCheckpoint, takeStoredCheckpoint, watchReload } from "./checkpoint/checkpoint";
 import { defaultReload } from "./checkpoint/hot";
 import { clockEntry } from "./clock";
+import { resolveMode, startCandidatesAt } from "./connection/device";
 import { connectInBackground, onBeat } from "./connection/loop";
+import { readRemembered } from "./connection/pairing-store";
 import { defaultNet } from "./connection/socket";
 import { asError } from "./dispatch/dispatch";
 import { dropInflight, NORMAL_CLOSE, SOCKET_OPEN } from "./dispatch/send";
 import { dropAll } from "./dispatch/subscriptions";
+import { dropShipping } from "./lines";
 import { watchTaps, watchVisibility } from "./page";
+import { readFlags } from "./pair-device";
 import { reloadEntry } from "./reload";
 import { setStatus } from "./status";
-import type { BridgeConfig, BridgeCtx, BridgeDeps, BridgeState, TakenCheckpoint } from "./types";
-import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
+import type {
+  BridgeConfig,
+  BridgeCtx,
+  BridgeDeps,
+  BridgeState,
+  CheckpointStorage,
+  TakenCheckpoint
+} from "./types";
+import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS, MAX_LINES_PER_BATCH } from "./types";
 
 /**
  * The smallest retryMs and callTimeoutMs.
@@ -26,7 +40,8 @@ import { DEFAULT_CALL_TIMEOUT_MS, DEFAULT_RETRY_MS } from "./types";
 const MIN_MS = 100;
 
 /**
- * Builds a config error in the two-line format (spec/11 Part 3, R7 prefix).
+ * Builds a config error in the two-line format (spec/11 Part 3, R7 prefix), a TypeError (config
+ * validation).
  *
  * @param field - The config field.
  * @param rule - What it must be.
@@ -34,11 +49,11 @@ const MIN_MS = 100;
  * @returns The error, ready to throw.
  * @example
  * ```ts
- * throw configError("retryMs", "a whole number of at least 100", "1000");
+ * throw configError("retryMs", "a whole number of at least 100", "1000"); // TypeError "[moku-editor] bridge.retryMs must be a whole number of at least 100.\n  Fix pluginConfigs.bridge.retryMs, for example 1000."
  * ```
  */
-function configError(field: string, rule: string, example: string): Error {
-  return new Error(
+function configError(field: string, rule: string, example: string): TypeError {
+  return new TypeError(
     `[moku-editor] bridge.${field} must be ${rule}.\n  Fix pluginConfigs.bridge.${field}, for example ${example}.`
   );
 }
@@ -49,7 +64,7 @@ function configError(field: string, rule: string, example: string): Error {
  * @param field - The config field.
  * @param value - Its value.
  * @param example - Its default.
- * @throws {Error} `[moku-editor] bridge.<field> must be a whole number of at least 100.`
+ * @throws {TypeError} `[moku-editor] bridge.<field> must be a whole number of at least 100.`
  * @example
  * ```ts
  * checkWhole("retryMs", 50, 1000); // throws
@@ -61,19 +76,58 @@ function checkWhole(field: string, value: number, example: number): void {
 }
 
 /**
- * onInit: `hello` non-empty; `retryMs`, `callTimeoutMs` finite integers ≥ 100.
+ * True for a configured device address `parseAddress` refuses (undefined is no address).
+ *
+ * @param device - config.device.
+ * @returns Whether the config check must throw.
+ * @example
+ * ```ts
+ * isBadDevice("192.168.1.5"); // true: no port
+ * ```
+ */
+function isBadDevice(device: unknown): boolean {
+  return device !== undefined && (typeof device !== "string" || parseAddress(device) === undefined);
+}
+
+/**
+ * True for a whole number of log lines from 1 to MAX_LINES_PER_BATCH.
+ *
+ * @param linesPerBatch - config.linesPerBatch.
+ * @returns Whether it is in range.
+ * @example
+ * ```ts
+ * isBatchInRange(200); // true
+ * ```
+ */
+function isBatchInRange(linesPerBatch: number): boolean {
+  return (
+    Number.isInteger(linesPerBatch) && linesPerBatch >= 1 && linesPerBatch <= MAX_LINES_PER_BATCH
+  );
+}
+
+/**
+ * onInit: `hello` non-empty; `retryMs`, `callTimeoutMs` finite integers ≥ 100; `device`, when
+ * set, a `host:port` parseAddress takes; `linesPerBatch` a whole number from 1 to 1000.
  *
  * @param ctx - Plugin context.
  * @param ctx.config - Resolved plugin config.
- * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`
+ * @throws {TypeError} `[moku-editor] bridge.<field> must be <rule>.`
  */
 export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): void {
-  const { hello, retryMs, callTimeoutMs } = ctx.config;
+  const { hello, retryMs, callTimeoutMs, device, linesPerBatch } = ctx.config;
   const isHelloSet = typeof hello === "string" && hello !== "";
   if (!isHelloSet) throw configError("hello", "a non-empty string", '"/__editor/hello"');
 
   checkWhole("retryMs", retryMs, DEFAULT_RETRY_MS);
   checkWhole("callTimeoutMs", callTimeoutMs, DEFAULT_CALL_TIMEOUT_MS);
+  if (isBadDevice(device)) {
+    throw new TypeError(
+      '[moku-editor] bridge.device must be host:port, for example "192.168.1.5:47600".\n  Fix pluginConfigs.bridge.device, for example "127.0.0.1:47600".'
+    );
+  }
+  if (!isBatchInRange(linesPerBatch)) {
+    throw configError("linesPerBatch", "a whole number from 1 to 1000", "200");
+  }
 }
 
 /**
@@ -82,7 +136,8 @@ export function checkConfig(ctx: { readonly config: Readonly<BridgeConfig> }): v
  * start.
  *
  * @param ctx - Plugin context of the bridge.
- * @throws {Error} `[moku-editor] bridge.<field> must be <rule>.`, or when `editor.reload` or
+ * @throws {TypeError} `[moku-editor] bridge.<field> must be <rule>.`
+ * @throws {Error} When `editor.reload` or
  *   `editor.clock` is already in the registry (createApp fails loudly).
  */
 export function initBridge(ctx: BridgeCtx): void {
@@ -94,28 +149,68 @@ export function initBridge(ctx: BridgeCtx): void {
 }
 
 /**
- * Builds the domain deps: registry and channel through ctx.require, emit of bridge:status,
- * defaultNet(globalThis), the reload seam and the page probe (URL, document, window).
+ * The page's localStorage for the remembered links, or undefined where there is none or touching
+ * it throws (a WebView with storage off).
+ *
+ * @param scope - Where to look for `localStorage`.
+ * @param scope.localStorage - The page's localStorage, if any.
+ * @returns The storage, or undefined.
+ * @example
+ * ```ts
+ * linkStorageOf({}); // undefined: no localStorage outside a browser
+ * ```
+ */
+function linkStorageOf(scope: {
+  readonly localStorage?: CheckpointStorage;
+}): CheckpointStorage | undefined {
+  try {
+    return scope.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The domain deps of each bridge state, built once. */
+const known = new WeakMap<BridgeState, BridgeDeps>();
+
+/**
+ * The domain deps, built once per plugin state, so the api, the hooks and start share one
+ * snapshot of the flags, the net and the page: registry, channel and recorder through
+ * ctx.require, emit of bridge:status, defaultNet(globalThis), the reload seam, the page flags, the
+ * link storage and the page probe (URL, document, window).
  *
  * @param ctx - Plugin context of the bridge.
  * @returns The deps every bridge module takes.
  */
 export function depsOf(ctx: BridgeCtx): BridgeDeps {
+  const cached = known.get(ctx.state);
+  if (cached !== undefined) return cached;
+  const deps = buildDeps(ctx);
+  known.set(ctx.state, deps);
+  return deps;
+}
+
+/**
+ * Builds the domain deps of `ctx` (see depsOf).
+ *
+ * @param ctx - Plugin context of the bridge.
+ * @returns The deps.
+ */
+function buildDeps(ctx: BridgeCtx): BridgeDeps {
   return {
     config: ctx.config,
     state: ctx.state,
     log: ctx.log,
-    /**
-     * Emits the global agent event (fire and forget).
-     *
-     * @param payload - The status and the session.
-     */
+    // Emits the global agent event (fire and forget).
     emit: payload => {
       ctx.emit("bridge:status", payload);
     },
     registry: ctx.require(registryPlugin),
     channel: ctx.require(channelPlugin),
+    recorder: ctx.require(recorderPlugin),
     net: defaultNet(globalThis),
+    flags: readFlags(globalThis),
+    linkStorage: linkStorageOf(globalThis),
     reload: defaultReload(),
     page: {
       href: globalThis.location?.href,
@@ -143,14 +238,46 @@ function restoreThenConnect(deps: BridgeDeps, checkpoint: TakenCheckpoint): void
 }
 
 /**
- * onStart: publishes connecting, installs the heartbeat, visibility, tap and reload listeners,
- * then connects without awaiting: `app.start()` never waits for, or fails on, the editor server.
- * A checkpoint stored before Bun's full reload is restored first (R6).
+ * Reads the remembered links and decides the mode and the address. A `connect` before start
+ * already chose device mode; that choice stays. A build address `parseAddress` refuses is
+ * warned about once (the engine's `--editor` rule is wider than ours).
  *
- * @param ctx - Plugin context of the bridge.
+ * @param deps - The domain deps.
  */
-export function startBridge(ctx: BridgeCtx): void {
-  const deps = depsOf(ctx);
+function resolveStart(deps: BridgeDeps): void {
+  const { state, flags, config } = deps;
+  state.remembered = readRemembered(deps);
+  if (flags.editor !== undefined && parseAddress(flags.editor) === undefined) {
+    deps.log.warn("bridge:bad-address", { address: flags.editor });
+  }
+  // A connect() before start chose device mode: its address goes first, with the remembered ones.
+  if (state.mode === "device") {
+    if (state.address !== undefined) startCandidatesAt(state, state.address);
+    return;
+  }
+
+  // Decide mode and address from the flags, config and remembered links.
+  const resolved = resolveMode({
+    config,
+    flags,
+    href: deps.page.href,
+    remembered: state.remembered
+  });
+  state.mode = resolved.mode;
+  state.address = resolved.address;
+  if (resolved.address !== undefined) startCandidatesAt(state, resolved.address);
+}
+
+/**
+ * Starts the bridge over its deps: the remembered links, mode and address, connecting announced,
+ * the heartbeat, visibility, tap and reload listeners, then a connect without awaiting:
+ * `app.start()` never waits for, or fails on, a computer. In page mode a checkpoint stored before
+ * Bun's full reload is restored first (R6); a device page has no Bun HMR.
+ *
+ * @param deps - The domain deps.
+ */
+export function startWith(deps: BridgeDeps): void {
+  resolveStart(deps);
   setStatus(deps, { kind: "connecting" }, true);
   deps.state.off.push(
     deps.channel.onHeartbeat(beat => {
@@ -161,14 +288,24 @@ export function startBridge(ctx: BridgeCtx): void {
     watchReload(deps)
   );
 
-  const checkpoint = takeStoredCheckpoint(deps);
+  const checkpoint = deps.state.mode === "page" ? takeStoredCheckpoint(deps) : undefined;
   if (checkpoint === undefined) connectInBackground(deps);
   else restoreThenConnect(deps, checkpoint);
 }
 
 /**
- * onStop: phase stopped, timers cleared, listeners removed, subs stopped, bye + normal close.
- * Teardown context only: no emit, no log.
+ * onStart: starts the bridge over the deps of `ctx`.
+ *
+ * @param ctx - Plugin context of the bridge.
+ */
+export function startBridge(ctx: BridgeCtx): void {
+  startWith(depsOf(ctx));
+}
+
+/**
+ * onStop: phase stopped, timers cleared (the ack deadline too), listeners removed, subs stopped,
+ * bye + normal close. The remembered links stay in storage. Teardown context only: no emit, no
+ * log.
  *
  * @param ctx - Teardown context.
  * @param ctx.state - Own state.
@@ -181,6 +318,7 @@ export function stopBridge(ctx: { readonly state: BridgeState }): void {
   if (state.retryTimer !== undefined) clearTimeout(state.retryTimer);
   state.retryTimer = undefined;
   dropInflight(state);
+  dropShipping(state);
   for (const off of state.off.splice(0)) off();
   dropAll({ state });
 

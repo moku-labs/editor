@@ -1,5 +1,6 @@
 /**
- * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, render-tree
+ * @file gameView plugin — the Element tab (C7) and the Element F5 strings: empty state, the switch
+ * to the local preview while a phone is the source (G1), render-tree
  * breadcrumb, name and type, bounds with the device, texture with its manifest data, entity,
  * children, the resolved style as fields that record pending edits for the agent (U8; or the
  * style the project index knows when the scene sends none), the fields of a text node's text
@@ -29,6 +30,7 @@ import { writtenStyle } from "../element/style-path";
 import { openStyleCard, stepStyle, styleErrorText } from "../element/styles";
 import { openTextStyle } from "../element/text-styles";
 import { copySelectedReference } from "../reference/pick";
+import { DEVICE_SOURCE_TEXT, onDevice } from "../scene/device";
 import { readManifest } from "../scene/manifest";
 import type { GameViewCtx, StyleCard, StyleLookup, StyleSource } from "../types";
 import { CodeSection } from "./CodeSection";
@@ -487,6 +489,14 @@ export function ElementTab(props: ElementTabProps): VNode {
     void openTextStyle(ctx);
   }, [id, textStyle]);
 
+  // A phone as the source sends no scene (G1): the element tools read the local preview.
+  if (onDevice(ctx)) {
+    return (
+      <div data-part="element" data-empty="" data-source="device">
+        <p>{DEVICE_SOURCE_TEXT}</p>
+      </div>
+    );
+  }
   if (selected === undefined) {
     return (
       <div data-part="element" data-empty="">

@@ -38,6 +38,16 @@ function socketConstructorOf(scope: typeof globalThis): SocketConstructor | unde
 }
 
 /**
+ * True when the scope has `WebSocket` (device mode needs no fetch).
+ *
+ * @param scope - The global scope.
+ * @returns Whether the bridge can open a socket in this runtime.
+ */
+export function hasSocket(scope: typeof globalThis): boolean {
+  return socketConstructorOf(scope) !== undefined;
+}
+
+/**
  * True when the scope has both `WebSocket` and `fetch` (connect step 2).
  *
  * @param scope - The global scope.

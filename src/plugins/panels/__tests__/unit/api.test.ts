@@ -6,7 +6,7 @@ import type { WorkspaceId } from "../../../workspace/types";
 import { createPanelsApi } from "../../api";
 import { definePanel } from "../../shared/define";
 import type { PanelSpec } from "../../types";
-import { createCtx, flush, resultOf } from "../helpers";
+import { createCtx, flush, resultOf, stopCreatedCtxs } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // createPanelsApi: register, list, mountInto, run — over a mock link and
@@ -21,6 +21,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopCreatedCtxs();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });

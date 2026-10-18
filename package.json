@@ -56,6 +56,7 @@
     "test:coverage": "bun --bun vitest run --project unit --project integration --coverage",
     "build": "tsdown && bun run build:tools",
     "build:tools": "bun scripts/build-tools.ts",
+    "fonts:overlay": "bun scripts/overlay-fonts.ts",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots",
     "validate": "publint && attw --pack . --profile esm-only",
@@ -66,7 +67,7 @@
   "peerDependencies": {
     "@moku-labs/common": "^0.3.4",
     "@moku-labs/core": "^1.7.1",
-    "@moku-labs/game": ">=0.13.1",
+    "@moku-labs/game": ">=0.15.0",
     "typescript": ">=5.5"
   },
   "dependencies": {
@@ -78,10 +79,12 @@
     "@arethetypeswrong/core": "0.18.3",
     "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "2.4.16",
+    "@fontsource/barlow": "5.3.0",
+    "@fontsource/barlow-condensed": "5.3.0",
     "@moku-labs/ci": "1.5.7",
     "@moku-labs/common": "0.3.10",
     "@moku-labs/core": "1.7.6",
-    "@moku-labs/game": "0.14.12",
+    "@moku-labs/game": "^0.15.1",
     "@playwright/test": "1.63.0",
     "@types/bun": "1.4.2",
     "@vitest/coverage-istanbul": "4.0.18",
@@ -95,6 +98,7 @@
     "jiti": "2.6.1",
     "lefthook": "2.1.1",
     "publint": "0.3.21",
+    "subset-font": "2.9.0",
     "tsdown": "0.22.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.58.0",

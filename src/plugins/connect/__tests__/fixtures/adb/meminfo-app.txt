@@ -1,0 +1,48 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 812345678 Realtime: 912345678
+
+** MEMINFO in pid 23811 [com.moku.garden.debug] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    98714    98600        0        0   100380   131072   101245    29826
+  Dalvik Heap    12345    12100        0        0    20112    24576    12288    12288
+ Dalvik Other     6291     6200        0        0     7024
+        Stack     1228     1228        0        0     1240
+       Ashmem      120      100        0        0      840
+      Gfx dev    30886    30886        0        0    30886
+    Other dev       52        0       48        0      412
+     .so mmap    40112     2210    21400        0    92310
+    .jar mmap     2310        0     1104        0    30120
+    .apk mmap     9120        0     7240        0    18230
+    .ttf mmap      412        0        0        0     1640
+    .dex mmap     6120       12     5980        0     7210
+    .oat mmap     1243        0      220        0    14320
+    .art mmap     4810     4120       20        0    16320
+   Other mmap     3101       12     2180        0     8120
+   EGL mtrack      244      244        0        0      244
+    GL mtrack   184422   184422        0        0   184422
+      Unknown   152314   152210        0        0   152980
+        TOTAL   553984   492534    59392        0   705222   155648   113533    42114
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    18636                          36432
+         Native Heap:    98714                         100380
+                Code:    62771                         163850
+               Stack:     1228                           1240
+            Graphics:   215552                         215552
+       Private Other:    22937
+              System:   134146
+             Unknown:                                    187768
+
+           TOTAL PSS:   553984            TOTAL RSS:   705222       TOTAL SWAP PSS:        0
+
+ Objects
+               Views:        3         ViewRootImpl:        1
+         AppContexts:        6           Activities:        1
+              Assets:       21        AssetManagers:        0
+       Local Binders:       28        Proxy Binders:       41
+       Parcel memory:       12         Parcel count:       49
+    Death Recipients:        2             WebViews:        1

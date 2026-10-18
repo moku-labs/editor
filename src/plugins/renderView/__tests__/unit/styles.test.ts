@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The Render sheets at 480 px: the workspace is a size container, the tiles
-// grid drops to 2 columns under 560 px and to 1 under 380 px, the card columns
-// stack into one under 560 px, and the render
-// tree header wraps its buttons onto their own line instead of overlapping.
+// The Render sheets at 480 px: the workspace is a size container, the scene
+// cards' two columns stack into one under 560 px, and the render tree header
+// wraps its buttons onto their own line instead of overlapping. (The tiles grid
+// and the device strip's sheets went with Mission control, spec 09 § M1, M14.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -34,22 +34,12 @@ function blockOf(css: string, query: string): string {
 
 describe("Render sheets", () => {
   it("names the Render workspace an inline-size container", () => {
-    expect(sheet("tiles.css")).toMatch(/:scope \{[^}]*container: render \/ inline-size;/);
-  });
-
-  it("lays the tiles in 2 columns under 560 px and in 1 column under 380 px", () => {
-    const css = sheet("tiles.css");
-    const two = blockOf(css, "@container render (width < 560px) {\n    :scope");
-    const one = blockOf(css, "@container render (width < 380px) {\n    :scope");
-
-    expect(two).toMatch(/grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-    expect(one).toMatch(/grid-template-columns: minmax\(0, 1fr\);/);
-    expect(css.indexOf("(width < 380px)")).toBeGreaterThan(css.lastIndexOf("(width < 560px)"));
+    expect(sheet("scene.css")).toMatch(/:scope \{[^}]*container: render \/ inline-size;/);
   });
 
   it("stacks the two card columns into one under 560 px", () => {
     const narrow = blockOf(
-      sheet("tiles.css"),
+      sheet("scene.css"),
       "@container render (width < 560px) {\n    [data-columns]"
     );
 
@@ -62,5 +52,16 @@ describe("Render sheets", () => {
     expect(css).toMatch(/header \{[^}]*flex-wrap: wrap;/);
     expect(css).toMatch(/h2,\s*\[data-count\] \{[^}]*min-inline-size: 0;/);
     expect(css).toMatch(/\[data-actions\] \{[^}]*flex: none;[^}]*margin-inline-start: auto;/);
+  });
+
+  it("no Barlow face on the tools page: fonts.css loads Geist only and build:tools copies none", () => {
+    const fonts = readFileSync(`${process.cwd()}/src/plugins/workspace/styles/fonts.css`, "utf8");
+    const families = [...fonts.matchAll(/font-family: "([^"]+)";/g)].map(match => match[1]);
+    const script = readFileSync(`${process.cwd()}/scripts/build-tools.ts`, "utf8");
+
+    expect(families).toEqual(["Geist", "Geist Mono"]);
+    expect(fonts).not.toMatch(/barlow/i);
+    expect(script).not.toContain('"src/plugins/overlay/fonts"');
+    expect(script).toContain("no Barlow face in assets/");
   });
 });

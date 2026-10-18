@@ -6,9 +6,12 @@
  * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
  * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
  * 127.0.0.1. `moku-editor e2e -c <playwright config> [playwright args…]` is the exception: only
- * its config is read, every other word belongs to Playwright.
+ * its config is read, every other word belongs to Playwright. `moku-editor perf …` is the other
+ * branch parsed before the strict parse (`perf/args.ts`): its switches (`--lan`, `--no-ui`, …)
+ * are not the serving bin's.
  */
 import { parseArgs } from "node:util";
+import { perfArgs } from "./perf/args";
 import type { BinArgs } from "./types";
 
 /**
@@ -300,23 +303,26 @@ function e2eArgs(words: readonly string[]): BinArgs {
 
 /**
  * Parses the bin arguments. A first word `e2e` picks that subcommand before anything else (its
- * words belong to Playwright, `--help` too); a first positional `mcp` or `mcp-config` picks that
+ * words belong to Playwright, `--help` too); a first word `perf` picks the perf CLI before the
+ * strict parse (its own switches); a first positional `mcp` or `mcp-config` picks that
  * subcommand.
  *
  * @param argv - Arguments after the script name.
  * @returns `run` with html (left out for the engine page), port, root, hmr, preload and
- * servePlugins; `mcp`; `mcp-config`; `e2e` with the config and Playwright's words; `help`; or
- * `error` with a message.
+ * servePlugins; `mcp`; `mcp-config`; `e2e` with the config and Playwright's words; `perf`,
+ * `perf-mark`, `perf-summary` or `perf-compare`; `help`; or `error` with a message.
  * @example
  * ```ts
  * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true, preload: [], servePlugins: [] }
  * parseBinArgs(["--root", "games/timber"]); // { kind: "run", port: 3000, root: "games/timber", hmr: true, preload: [], servePlugins: [] }
  * parseBinArgs(["mcp", "web/index.html"]); // { kind: "mcp", html: "web/index.html", root: ".", hmr: true }
  * parseBinArgs(["e2e", "-c", "pw.config.ts", "--headed"]); // { kind: "e2e", config: "pw.config.ts", rest: ["--headed"] }
+ * parseBinArgs(["perf", "--lan"]); // { kind: "perf", lan: true, port: 47600, out: ".moku/perf", every: 10, ui: true }
  * ```
  */
 export function parseBinArgs(argv: readonly string[]): BinArgs {
   if (argv[0] === "e2e") return e2eArgs(argv.slice(1));
+  if (argv[0] === "perf") return perfArgs(argv.slice(1));
   if (argv.includes("--help") || argv.includes("-h")) return { kind: "help" };
 
   const parsed = tryParse(argv);

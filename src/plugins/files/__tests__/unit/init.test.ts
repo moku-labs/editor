@@ -45,7 +45,9 @@ describe("createFilesState", () => {
       opening: undefined,
       projectState: { state: "off", reason: "not opened" },
       stopWatch: undefined,
-      stopped: false
+      stopped: false,
+      engine: undefined,
+      engineAt: 0
     });
   });
 

@@ -1,6 +1,9 @@
 /**
- * @file bridge plugin — dispatch of the hub's messages: the `editor`/`session` notification, and
- * every game request answered exactly once, within its deadline (R1, R7).
+ * @file bridge plugin — dispatch of the hub's messages: the `editor`/`session` notification (with
+ * the computer's engine), `editor`/`paired` and `editor`/`perf.ack` of device mode, and every game
+ * request answered exactly once, within its deadline (R1, R7). A hub `run` runs with the `via` of
+ * the hub's `from` stamp (`"tools"`, `"mcp"`, or `"bridge"` for a hub that does not say) and, for
+ * an agent, the MCP client's name (spec 07 B1), so the registry and the recorder name who ran it.
  */
 import type {
   Json,
@@ -20,9 +23,11 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
+import { adoptLinkedAddress, onPaired } from "../connection/device";
+import { onAck } from "../lines";
 import { currentStatus, setStatus } from "../status";
 import type { BridgeDeps } from "../types";
-import { checkParams, deadlineFor, memberOf } from "./params";
+import { checkParams, clientOf, deadlineFor, memberOf, viaOf } from "./params";
 import { messageOf, sendNow } from "./send";
 import { refreshAll, subscribe, unsubscribe } from "./subscriptions";
 
@@ -64,6 +69,7 @@ function answerWithin(
   work: Promise<Json>
 ): Promise<void> {
   const { state } = deps;
+  // Arm the deadline: a late result becomes -32002 (retryable); the command itself runs on.
   const deadline = deadlineFor(request.method, request.params, deps.config.callTimeoutMs);
   const timer = setTimeout(() => {
     state.inflight.delete(request.id);
@@ -82,6 +88,7 @@ function answerWithin(
    * @param response - The response of the settled call.
    */
   const settle = (response: RpcResponse): void => {
+    // Settle once: a result after the deadline, or after the socket closed, is dropped.
     if (state.inflight.get(request.id) !== timer) {
       deps.log.debug("bridge:late-result", { id, request: request.id });
       return;
@@ -91,6 +98,7 @@ function answerWithin(
     sendNow(deps, response);
   };
 
+  // Respond when the call settles: its value, or its error as a wire error.
   return work.then(
     value => {
       settle(success(request.id, value));
@@ -133,8 +141,9 @@ async function route(deps: BridgeDeps, request: RpcRequest): Promise<void> {
       return;
     }
     case "run": {
-      const { id, input } = checkParams("run", params);
-      await answerWithin(deps, request, id, deps.channel.run(id, input));
+      const { id, input, from, client } = checkParams("run", params);
+      const work = deps.channel.run(id, input, viaOf(from), clientOf(from, client));
+      await answerWithin(deps, request, id, work);
       refreshAll(deps);
       return;
     }
@@ -184,28 +193,72 @@ function sessionAfter(
 }
 
 /**
- * Serves a notification of the hub: the `editor`/`session` notification sets or clears the
- * session (R6) and announces it; every other one is ignored.
+ * The computer accepted this page's hello: the page counts as linked (a later loss is a warning,
+ * not "no computer") and the failure streak and its backoff start over.
+ *
+ * @param deps - The domain deps.
+ */
+function onReached(deps: BridgeDeps): void {
+  const { state } = deps;
+  state.everLinked = true;
+  state.attempt = 0;
+  state.failureLogged = false;
+  adoptLinkedAddress(deps);
+}
+
+/**
+ * The `editor`/`session` notification: sets or clears the session (R6) and announces it; keeps
+ * the computer's `engine` it carries, which a device-mode link publishes as `editorEngine`. An
+ * opened session means the computer was reached (`onReached`).
+ *
+ * @param deps - The domain deps.
+ * @param params - The notification's params.
+ */
+function onSession(deps: BridgeDeps, params: Json | undefined): void {
+  const id = memberOf(params, "id");
+  if (typeof id !== "string") return;
+  if (memberOf(params, "open") === true) onReached(deps);
+
+  const { state } = deps;
+  const engine = memberOf(params, "engine");
+  const engineChanged = typeof engine === "string" && engine !== state.editorEngine;
+  if (engineChanged) state.editorEngine = engine;
+  const next = sessionAfter(state.session, id, memberOf(params, "open"));
+  const isUnchanged = next === state.session;
+  // A new engine shows only in device mode (`editorEngine` of the link).
+  const needsStatus = !isUnchanged || (engineChanged && state.mode === "device");
+  if (!needsStatus) return;
+  state.session = next;
+  setStatus(deps, currentStatus(deps), !isUnchanged);
+}
+
+/**
+ * The editor-channel notifications the bridge serves, by method.
+ */
+const EDITOR_NOTIFICATIONS: ReadonlyMap<
+  string,
+  (deps: BridgeDeps, params: Json | undefined) => void
+> = new Map([
+  ["session", onSession],
+  ["paired", onPaired],
+  ["perf.ack", onAck]
+]);
+
+/**
+ * Serves a notification of the hub: `editor`/`session`, `editor`/`paired` (device mode pairing)
+ * and `editor`/`perf.ack` (log shipping); every other one is ignored.
  *
  * @param deps - The domain deps.
  * @param message - The notification.
  */
 function handleNotification(deps: BridgeDeps, message: Notification): void {
-  if (message.channel !== "editor" || message.method !== "session") {
-    deps.log.debug("bridge:notification-ignored", {
-      channel: message.channel,
-      method: message.method
-    });
+  const { channel, method, params } = message;
+  const serve = channel === "editor" ? EDITOR_NOTIFICATIONS.get(method) : undefined;
+  if (serve === undefined) {
+    deps.log.debug("bridge:notification-ignored", { channel, method });
     return;
   }
-  const id = memberOf(message.params, "id");
-  if (typeof id !== "string") return;
-
-  const { state } = deps;
-  const next = sessionAfter(state.session, id, memberOf(message.params, "open"));
-  if (next === state.session) return;
-  state.session = next;
-  setStatus(deps, currentStatus(deps), true);
+  serve(deps, params);
 }
 
 /**
@@ -243,7 +296,8 @@ export function handleText(deps: BridgeDeps, data: unknown): void {
  * @returns The Error, or undefined for anything else.
  * @example
  * ```ts
- * log.error("bridge:connect-crashed", undefined, asError(error));
+ * asError(new Error("boom")) instanceof Error; // true
+ * asError("boom"); // undefined
  * ```
  */
 export function asError(error: unknown): Error | undefined {

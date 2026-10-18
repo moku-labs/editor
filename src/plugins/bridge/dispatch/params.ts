@@ -1,13 +1,17 @@
 /**
  * @file bridge plugin — the params of the five game-channel methods, their check (checkInput plus
- * the SubId rule, R6) and the deadline of a request (R1 long calls).
+ * the SubId rule, R6), who ran a hub `run` (`viaOf`, `clientOf`: the hub's `from` and `client`
+ * stamps, spec 07 B1) and the deadline of a request (R1 long calls).
  */
-import type { InputOf, InputSchema, Json } from "../../registry/protocol";
+import { MAX_CLIENT_NAME } from "../../hub/protocol";
+import type { CommandVia, InputOf, InputSchema, Json } from "../../registry/protocol";
 import { checkInput, errorCode, wireError } from "../../registry/protocol";
 import { DEADLINE_EXTRA_CAP_MS, SERIES_ID, SHEET_ID } from "../types";
 
 /**
- * The params schema of each game-channel method.
+ * The params schema of each game-channel method. A `run` also takes the hub's stamps `from` and
+ * `client` as any JSON: `viaOf` and `clientOf` read them, and a value they do not know is ignored,
+ * never refused (a newer hub may add origins).
  *
  * @example
  * ```ts
@@ -19,8 +23,59 @@ export const PARAMS = {
   read: { id: "string", input: "json?" },
   watch: { sub: "number", id: "string", input: "json?" },
   unwatch: { sub: "number" },
-  run: { id: "string", input: "json?" }
+  run: { id: "string", input: "json?", from: "json?", client: "json?" }
 } as const satisfies Record<string, InputSchema>;
+
+/**
+ * Who ran a hub `run`, as the registry's `registry:command` names it: the tools page, an agent
+ * through MCP, or a hub that does not say (`"bridge"`).
+ *
+ * @example
+ * ```ts
+ * const via: HubVia = "mcp";
+ * ```
+ */
+export type HubVia = Extract<CommandVia, "tools" | "mcp" | "bridge">;
+
+/**
+ * The registry's `via` of a hub `run`, from the hub's `from` stamp: the editor page (`"page"`) is
+ * `"tools"`, an agent (`"mcp"`) is `"mcp"`; no stamp (an older hub) or a value this bridge does
+ * not know (a newer hub's origin) is `"bridge"`.
+ *
+ * @param from - The `from` of the run's params, as it arrived.
+ * @returns The via.
+ * @example
+ * ```ts
+ * viaOf("page"); // "tools"
+ * viaOf(undefined); // "bridge"
+ * ```
+ */
+export function viaOf(from: Json | undefined): HubVia {
+  if (from === "page") return "tools";
+  return from === "mcp" ? "mcp" : "bridge";
+}
+
+/**
+ * The MCP client's name of a hub `run`, for the command (the recorder's "started by agent
+ * (Claude)"): the `client` string cut to 64 characters (code points, so a character is never
+ * split), only with `from: "mcp"`. A page run, an older hub, and a name that is no string or is
+ * empty give undefined.
+ *
+ * @param from - The `from` of the run's params, as it arrived.
+ * @param client - The `client` of the run's params, as it arrived.
+ * @returns The name, or undefined.
+ * @example
+ * ```ts
+ * clientOf("mcp", "Claude"); // "Claude"
+ * clientOf("page", "Claude"); // undefined
+ * ```
+ */
+export function clientOf(from: Json | undefined, client: Json | undefined): string | undefined {
+  if (from !== "mcp" || typeof client !== "string") return undefined;
+
+  const name = [...client].slice(0, MAX_CLIENT_NAME).join("");
+  return name === "" ? undefined : name;
+}
 
 /**
  * The checked params of a method.

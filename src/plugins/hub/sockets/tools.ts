@@ -1,11 +1,13 @@
 /**
  * @file hub plugin — messages of a tools page connection: game-channel requests are checked
- * (session, id in the manifest, input) before they are forwarded to the agent; files-channel
- * requests go to the files plugin; editor-channel requests answer the kept selection or are
- * relayed to the editor page (`select`, `device`, `show`, `node`: one table, each with the protocol
- * parser of its params, D-60). An editor page (`role=page`, D-33) also sends its `selection` and
- * answers relayed calls; other notifications and responses are ignored. At most 256 pending calls
- * per connection.
+ * (session, id in the manifest, input) before they are forwarded to the agent, a `run` stamped with
+ * the hub's `from` and `client` for an agent whose hello named `run-from` (spec 11 § 5.1); files-channel requests go to the files plugin;
+ * editor-channel requests answer the kept selection, are relayed to the editor page (`select`,
+ * `device`, `show`, `node`: one table, each with the protocol parser of its params, D-60), or run an
+ * editor method another server plugin registered (H2). An editor page (`role=page`, D-33) also
+ * sends its `selection` and answers relayed calls; a plain tools client (the MCP bridge) names its
+ * MCP client with `client { name }`; other notifications and responses are ignored. At most 256
+ * pending calls per connection.
  */
 import type { FilesApi } from "../../files/types";
 import type {
@@ -36,7 +38,9 @@ import {
   toWireValue,
   wireError
 } from "../../registry/protocol";
-import { discardReplies, forward, settle } from "../routing/calls";
+import { CLIENT_METHOD, clientNameOf } from "../protocol";
+import { discardReplies, forward, runParamsOf, settle } from "../routing/calls";
+import { callEditorMethod } from "../routing/editor-methods";
 import { dispatchFiles } from "../routing/files";
 import { closePage, forwardToPage, receiveSelection } from "../routing/pages";
 import { chooseSession } from "../routing/sessions";
@@ -55,9 +59,15 @@ const MAX_PENDING = 256;
 const NO_PARAMS = {} satisfies InputSchema;
 
 /**
- * Params of `read` and `run`.
+ * Params of `read`.
  */
 const CALL = { id: "string", input: "json?" } satisfies InputSchema;
+
+/**
+ * Params of `run`: `from` and `client` are taken (any value) and never forwarded: the hub stamps
+ * its own.
+ */
+const RUN = { id: "string", input: "json?", from: "json?", client: "json?" } satisfies InputSchema;
 
 /**
  * Params of `watch`.
@@ -210,22 +220,36 @@ function checkTarget(session: Session, method: string, id: string, input: Json |
 }
 
 /**
- * A `read` or `run`: checked, then forwarded with the tools id as reply target.
+ * A `read`: checked, then forwarded as sent with the tools id as reply target.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
  * @param req - The request.
  */
-function call(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
+function read(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
   const { id, input } = checkInput(CALL, req.params ?? {});
   const session = chooseSession(ctx, req.session);
-  checkTarget(session, req.method, id, input);
+  checkTarget(session, "read", id, input);
 
-  forward(ctx, session, req.method, req.params, {
-    kind: "tools",
-    conn: conn.conn,
-    toolsId: req.id
-  });
+  forward(ctx, session, "read", req.params, { kind: "tools", conn: conn.conn, toolsId: req.id });
+}
+
+/**
+ * A `run`: checked, stamped with the hub's `from` and `client` when the session's agent named
+ * `run-from` in its hello (whatever the tools client wrote there is dropped either way), then
+ * forwarded with the tools id as reply target.
+ *
+ * @param ctx - Domain context of the hub.
+ * @param conn - The tools connection.
+ * @param req - The request.
+ */
+function run(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
+  const { id, input } = checkInput(RUN, req.params ?? {});
+  const session = chooseSession(ctx, req.session);
+  checkTarget(session, "run", id, input);
+
+  const params = runParamsOf({ id, input }, conn, session.caps);
+  forward(ctx, session, "run", params, { kind: "tools", conn: conn.conn, toolsId: req.id });
 }
 
 /**
@@ -266,9 +290,12 @@ function routeGame(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
       sendJson(conn, success(req.id, toWireValue(manifest)));
       return;
     }
-    case "read":
+    case "read": {
+      read(ctx, conn, req);
+      return;
+    }
     case "run": {
-      call(ctx, conn, req);
+      run(ctx, conn, req);
       return;
     }
     case "watch": {
@@ -337,9 +364,10 @@ function relayToPage(
 }
 
 /**
- * An editor-channel request: `selection` answers the kept selection (`null` when none, never
- * forwarded); `select`, `device`, `show` and `node` are checked and relayed to the editor page,
- * whose answer comes back with the tools id.
+ * An editor-channel request, in this order: `selection` answers the kept selection (`null` when
+ * none, never forwarded); `select`, `device`, `show` and `node` are checked and relayed to the
+ * editor page, whose answer comes back with the tools id; a method another server plugin registered
+ * runs (H2); anything else is -32601.
  *
  * @param ctx - Domain context of the hub.
  * @param conn - The tools connection.
@@ -354,9 +382,14 @@ function routeEditor(ctx: HubCtx, conn: ToolsConn, req: RpcRequest): void {
     sendJson(conn, success(req.id, ctx.state.published.get("selection") ?? JSON_NULL));
     return;
   }
-  if (!isRelayed(method)) throw unknownMethod(`editor.${method}`);
+  if (isRelayed(method)) {
+    relayToPage(ctx, conn, req, method);
+    return;
+  }
 
-  relayToPage(ctx, conn, req, method);
+  const handler = ctx.state.editorMethods.get(method);
+  if (handler === undefined) throw unknownMethod(`editor.${method}`);
+  callEditorMethod(ctx, conn, req, handler);
 }
 
 /**
@@ -391,9 +424,43 @@ function isSelectionNote(message: Message): message is Notification {
 }
 
 /**
+ * True for the editor-channel `client` notification (the MCP bridge names its MCP client).
+ *
+ * @param message - A decoded message.
+ * @returns Whether it is the client notification.
+ * @example
+ * ```ts
+ * isClientNote({ jsonrpc: "2.0", channel: "editor", method: "client", params: { name: "Claude Code" } }); // true
+ * ```
+ */
+function isClientNote(message: Message): message is Notification {
+  return (
+    isNotification(message) && message.channel === "editor" && message.method === CLIENT_METHOD
+  );
+}
+
+/**
+ * The `name` member of notification params, as it arrived.
+ *
+ * @param params - The params.
+ * @returns The member, or undefined when the params are no object.
+ * @example
+ * ```ts
+ * nameIn({ name: "Claude Code" }); // "Claude Code"
+ * ```
+ */
+function nameIn(params: Json | undefined): Json | undefined {
+  return typeof params === "object" && params !== null && !Array.isArray(params)
+    ? params.name
+    : undefined;
+}
+
+/**
  * One decoded message of a tools connection. Requests are answered (errors through
  * toWireError, never a stack). An editor page's responses settle the calls relayed to it and its
- * `selection` is published; every other notification or response is ignored (debug log).
+ * `selection` is published; a plain tools client's `client` names it (cleaned by `clientNameOf`,
+ * last value wins, an empty name clears it); every other notification or response, the editor
+ * page's `client` included, is ignored (debug log).
  *
  * @param ctx - Domain context of the hub.
  * @param files - The files api, resolved once with the socket handler.
@@ -419,6 +486,9 @@ export function onToolsMessage(
     settle(ctx, message, { kind: "page", conn: conn.conn });
   } else if (conn.page && isSelectionNote(message)) {
     receiveSelection(ctx, conn, message.params);
+  } else if (!conn.page && isClientNote(message)) {
+    conn.client = clientNameOf(nameIn(message.params));
+    ctx.log.debug("hub:tools-client", { conn: conn.conn, client: conn.client });
   } else {
     ctx.log.debug("hub:tools-ignored", { method: "method" in message ? message.method : "" });
   }

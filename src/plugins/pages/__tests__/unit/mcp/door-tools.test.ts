@@ -306,6 +306,7 @@ function fakeClient(first: SessionView[]) {
   });
   const client: HubClient = {
     bin: BIN,
+    identify: () => undefined,
     request,
     watch: () => Promise.resolve(() => undefined),
     sessions: () => list,

@@ -346,7 +346,7 @@ describe("builtInCommands", () => {
     ctx.link.run.mockResolvedValue(resultOf());
     find(builtInCommands(ctx), "cmd:overlay").run();
     await flush();
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
     expect(ctx.emit).toHaveBeenCalledWith(
       "workspace:ran",
       expect.objectContaining({ id: "editor.overlay", origin: "palette" })

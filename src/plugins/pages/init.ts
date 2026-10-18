@@ -56,9 +56,15 @@ function schemeOf(url: string): string {
  *
  * @param config - The resolved config.
  * @throws {Error} `[moku-editor] pages.<field> …` for a bad title, editorUrl or gameUrl.
+ * @throws {TypeError} `[moku-editor] pages.toolsPage is …` for a toolsPage that is not a boolean.
  */
 export function validatePagesConfig(config: Readonly<PagesConfig>): void {
-  const { title, editorUrl, gameUrl } = config;
+  const { title, editorUrl, gameUrl, toolsPage } = config;
+  if (typeof toolsPage !== "boolean") {
+    throw new TypeError(
+      `[moku-editor] pages.toolsPage is ${String(toolsPage)}.\n  Give true or false; false is moku-editor perf --no-ui.`
+    );
+  }
   if (title.length === 0 || title.length > TITLE_MAX) {
     throw configError(
       "title",
@@ -95,6 +101,7 @@ export function validatePagesConfig(config: Readonly<PagesConfig>): void {
  * @param ctx - Domain context of pages.
  * @param candidates - Page folders tried when `pageDir` is not set (default: pageDirCandidates()).
  * @throws {Error} `[moku-editor] pages.<field> …` for a bad title, editorUrl or gameUrl.
+ * @throws {TypeError} `[moku-editor] pages.toolsPage is …` for a toolsPage that is not a boolean.
  */
 export function initPages(
   ctx: PagesCtx,

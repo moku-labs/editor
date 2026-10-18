@@ -1,86 +1,78 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { isWireError } from "../../../registry/protocol";
-import { initOverlay, registerOverlayCommand } from "../../command";
-import type { TestOctx } from "../helpers";
-import { createOctx, ENVELOPE, pluginCtxOf } from "../helpers";
+import { registerOverlayCommand } from "../../command";
+import { initOverlay } from "../../lifecycle";
+import { createOctx, ENVELOPE, pluginCtxOf, type TestOctx } from "../helpers";
 
 /**
- * Registers the command and returns its entry.
+ * The editor.overlay entry a context added.
  *
  * @param octx - The test context.
- * @returns The added entry.
+ * @returns The entry.
  */
 function entryOf(octx: TestOctx) {
   registerOverlayCommand(octx);
-  const entry = octx.registry.added[0];
-  if (entry === undefined) throw new Error("no entry added");
+  const entry = octx.registry.added.find(added => added.descriptor.id === "editor.overlay");
+  if (entry === undefined) throw new Error("editor.overlay was not added");
   return entry;
 }
 
-/**
- * Awaits a rejection and returns its reason.
- *
- * @param promise - The promise.
- * @returns What it rejected with.
- */
-async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
-  try {
-    await promise;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("expected a rejection");
-}
-
 describe("editor.overlay", () => {
-  it("is a cosmetic command with a boolean input", () => {
-    const octx = createOctx();
-
-    expect(entryOf(octx).descriptor).toEqual({
+  it("is a cosmetic command with a mode input", () => {
+    expect(entryOf(createOctx()).descriptor).toEqual({
       id: "editor.overlay",
       title: "Overlay in game",
-      input: { on: "boolean" },
+      input: { mode: "string" },
       effect: "cosmetic"
     });
-    expect(octx.registry.added).toHaveLength(1);
   });
 
-  it("opens and answers { on: true } with the registry envelope", async () => {
+  it("switches the mode and answers it with the registry envelope", async () => {
     const octx = createOctx();
-
-    const result = await entryOf(octx).run({ on: true });
-
-    expect(result).toEqual({ value: { on: true }, state: ENVELOPE });
-    expect(octx.state.open).toBe(true);
+    const entry = entryOf(octx);
+    expect(await entry.run({ mode: "pill" })).toEqual({ value: { mode: "pill" }, state: ENVELOPE });
+    expect(await entry.run({ mode: "card" })).toEqual({ value: { mode: "card" }, state: ENVELOPE });
+    expect(await entry.run({ mode: "hidden" })).toEqual({
+      value: { mode: "hidden" },
+      state: ENVELOPE
+    });
   });
 
-  it("closes and answers { on: false }", async () => {
+  it("the value reports the asked mode instead of the mode after the call", async () => {
     const octx = createOctx();
-    octx.state.open = true;
-
-    const result = await entryOf(octx).run({ on: false });
-
-    expect(result.value).toEqual({ on: false });
-    expect(octx.state.open).toBe(false);
+    const entry = entryOf(octx);
+    const result = await entry.run({ mode: "pill" });
+    expect(result.value).toEqual({ mode: octx.state.mode });
   });
 
-  it.each([{ on: "yes" }, { on: true, x: 1 }, {}])("refuses %j with -32602", async raw => {
+  it("{ on: true } still opens (it is refused with -32602)", async () => {
     const octx = createOctx();
+    await expect(entryOf(octx).run({ on: true })).rejects.toMatchObject({
+      code: -32_602,
+      message: "[moku-editor] on is not a known input"
+    });
+    expect(octx.state.mode).toBe("hidden");
+  });
 
-    const error = await rejectionOf(entryOf(octx).run(raw));
+  it("mode: 'full' closes the overlay (it is refused, the mode stays)", async () => {
+    const octx = createOctx();
+    const entry = entryOf(octx);
+    await entry.run({ mode: "card" });
+    await expect(entry.run({ mode: "full" })).rejects.toMatchObject({
+      code: -32_602,
+      data: { reason: "invalid_input", field: "mode" }
+    });
+    expect(octx.state.mode).toBe("card");
+  });
 
-    expect(isWireError(error)).toBe(true);
-    expect(error).toMatchObject({ code: -32_602 });
-    expect((error as Error).message.startsWith("[moku-editor] ")).toBe(true);
-    expect(octx.state.open).toBe(false);
+  it("the -32602 message has no fix line (it has two lines)", async () => {
+    await expect(entryOf(createOctx()).run({ mode: "open" })).rejects.toThrow(
+      '[moku-editor] editor.overlay: mode must be "hidden", "pill" or "card".\n  Run it with { mode: "card" }.'
+    );
   });
 
   it("is added by initOverlay over the plugin context", () => {
     const octx = createOctx();
-
     initOverlay(pluginCtxOf(octx));
-
-    expect(octx.registry.added[0]?.descriptor.id).toBe("editor.overlay");
+    expect(octx.registry.added.map(entry => entry.descriptor.id)).toEqual(["editor.overlay"]);
   });
 });

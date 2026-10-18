@@ -1,5 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { NodeRef } from "../../../registry/protocol";
@@ -13,7 +14,7 @@ import type { Config, FilesViewApi, SaveResult, UsedBy } from "../../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, filesViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, filesViewPlugin]
 });
 
 type App = ReturnType<typeof framework.createApp>;

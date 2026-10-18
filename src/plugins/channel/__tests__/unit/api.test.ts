@@ -1,6 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Heartbeat, Json } from "../../../registry/protocol";
+import type { CommandVia, Heartbeat, Json } from "../../../registry/protocol";
 import { wireError } from "../../../registry/protocol";
 import { buildChannelApi, createChannelApi } from "../../api";
 import { beginHeartbeat } from "../../heartbeat";
@@ -95,6 +95,52 @@ describe("run", () => {
     await buildChannelApi(deps).run("game.step");
 
     expect(command?.runs).toEqual([null]);
+  });
+
+  it('passes via to the entry: "bridge" when the caller names it, undefined without it', async () => {
+    const deps = createDeps();
+    const step = fakeCommand("game.step", async () => ({
+      value: null,
+      state: { path: "home", frame: 1, tainted: false }
+    }));
+    const vias: (CommandVia | undefined)[] = [];
+    deps.registry.commands.set("game.step", {
+      ...step,
+      run: (raw, via) => {
+        vias.push(via);
+        return step.run(raw);
+      }
+    });
+    const channel = buildChannelApi(deps);
+
+    await channel.run("game.step", { frames: 1 }, "bridge");
+    await channel.run("game.step");
+
+    expect(vias).toEqual(["bridge", undefined]);
+    expect(step.runs).toEqual([{ frames: 1 }, null]);
+  });
+
+  // Bug: the MCP client's name dropped on the way, so a recording an agent started reads
+  // "started by agent" without its name (spec 07 B1, the recorder's startedBy).
+  it("hands the MCP client's name to the entry next to via", async () => {
+    const deps = createDeps();
+    const record = fakeCommand("editor.record", async () => ({
+      value: null,
+      state: { path: "home", frame: 1, tainted: false }
+    }));
+    const seen: [CommandVia | undefined, string | undefined][] = [];
+    deps.registry.commands.set("editor.record", {
+      ...record,
+      run: (raw, via, client) => {
+        seen.push([via, client]);
+        return record.run(raw);
+      }
+    });
+
+    await buildChannelApi(deps).run("editor.record", { on: true }, "mcp", "Claude");
+
+    expect(seen).toEqual([["mcp", "Claude"]]);
+    expect(record.runs).toEqual([{ on: true }]);
   });
 
   it("rejects an unknown command asynchronously with -32601", async () => {

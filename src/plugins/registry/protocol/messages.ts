@@ -43,7 +43,13 @@ const REASONS: Readonly<Record<ErrorReason, true>> = {
   link_closed: true,
   no_editor_page: true,
   page_closed: true,
-  no_graph: true
+  no_graph: true,
+  read_only: true,
+  dev_only: true,
+  port_in_use: true,
+  no_lan: true,
+  not_owner: true,
+  no_ticket: true
 };
 
 /**

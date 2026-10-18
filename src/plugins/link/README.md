@@ -10,7 +10,13 @@ and exposes the remote `EditorChannel` that every panel reads through. It also c
 client and derives the link status. As the editor page (`role: "page"`), it publishes the editor
 selection to the hub and answers the editor requests the hub relays: `select`, `device`, `show`
 and `node` (D-33, D-60). It keeps the project index the hub publishes and asks it where a key
-lives (`files.find`). It renders nothing.
+lives (`files.find`). It also carries the generic seams the device source is built on (spec 11
+§ 5.2): the values the server publishes (`published`, `onPublished`: connect's device directory
+and wired telemetry among them), a listener of the session list (`onSessions`), a listener of the
+chosen session's heartbeats (`onHeartbeat`, the clock offset of a device), this page's own game
+frame session (`ownSession`), a command on a named session without changing the choice
+(`runIn`) and the server's editor methods of other plugins (`callEditor`). link stays
+policy-free: which session is the source is activeSource's. It renders nothing.
 
 ## Configuration
 
@@ -37,7 +43,8 @@ Fixed constants in `types.ts` (not config):
 ## API
 
 `app.link` is `LinkApi` = `EditorChannel` plus sessions, manifest, boot, taps, the page heap, hot
-reload, the editor selection, the request handlers, the project index and files.
+reload, the editor selection, the request handlers, the project index, the published values, the
+session listeners, the own frame's session, session-targeted runs, editor-method calls and files.
 
 | Member | Signature | What it does |
 |---|---|---|
@@ -47,13 +54,13 @@ reload, the editor selection, the request handlers, the project index and files.
 | `status` | `() => LinkStatus` | A copy of the current status. |
 | `manifest` | `() => Manifest \| undefined` | The cached manifest of the chosen session. |
 | `onManifest` | `(fn) => () => void` | Called at once when a manifest exists, then on every attach, and with `undefined` when the session is lost. |
-| `sessions` | `() => readonly SessionInfo[]` | A copy of the last session list from the hub. Empty while disconnected. |
+| `sessions` | `() => readonly SessionInfo[]` | A copy of the last session list from the hub. Empty while disconnected. Each session keeps the hub's `heartbeat` readout (`{ frame, paused, silent }`) and a device session its `device`. |
 | `session` | `() => string \| undefined` | The chosen session id. |
 | `choose` | `(session) => Promise<Manifest>` | Makes a session the sticky choice and attaches it. Rejects -32003 `choose_session` for an id that is not open. |
 | `expectReload` | `() => void` | Tells link that the game page is about to reload on purpose (U7). The loss that follows reads `lost` with `reloading: true` until the game beats again, or for `reloadGraceMs`. A loss before the call stays plain. No-op after stop. workspace calls it before it reloads the game frame. |
 | `retry` | `() => void` | "Retry now": reconnects, re-picks a session or re-reads the boot tag. No-op unless the status is `lost`. |
 | `boot` | `() => ToolsBoot \| undefined` | The boot data. `undefined` without a valid tag. Never log its token. |
-| `frameUrl` | `(url) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. |
+| `frameUrl` | `(url, opts?: { player?: string }) => string` | The game URL tagged with this page's frame id: the `__editorFrame` query parameter, one random id per tools page. workspace loads its game frame from it. `opts.player` (dev only) sets the `player` query parameter first: the engine dev page starts from `tests/scenarios/<player>.ts`. Absent or `""` leaves the URL's own `player` as it is. The only function that tags a game URL; `frameUrl(url)` answers as before. |
 | `isOtherTab` | `(page) => boolean` | True when a page URL carries another tools page's frame id. A page without one is not another tab's. |
 | `onTap` | `(listener: (tap: Tap) => void) => () => void` | Called with every `tap { x, y, at }` of the chosen session: a `pointerdown` on the game page in page CSS px, `at` = the page's `performance.now()`. The bridge sends at most one per 50 ms. Taps of other sessions and malformed taps are dropped. Every listener gets the same frozen tap. A throwing listener is logged as `link:tap-listener-failed` and the others still run. The same function added twice is two subscriptions. Returns an idempotent unsubscribe. |
 | `heap` | `() => { usedMb, limitMb } \| undefined` | A copy of the heap from the last heartbeat of the chosen session, in MB. `undefined` until the page reports one (only Chromium does), when its last beat had none, and after every attach or session loss. |
@@ -64,6 +71,15 @@ reload, the editor selection, the request handlers, the project index and files.
 | `notify` | `(method: "selection", params: SelectionInfo \| null) => void` | Sends the editor-channel notification `selection` to the hub through `toWireValue`. `null` (nothing selected) goes out without params: the wire refuses null params. Dropped while the socket is closed. The last value, `null` included, is sent again each time a socket opens. The hub takes it only from a `role: "page"` link. A failed send is the warn `link:notify-failed`. A no-op after stop. |
 | `handle` | `<M extends RelayedEditorMethod>(method: M, handler: RequestHandler<M>) => () => void` | Handles an editor-channel request the hub relays to this page: `select`, `device`, `show` or `node`. One handler per method. Returns an idempotent remover that removes only its own handler. See [handle](#handle). |
 | `project` | `() => ProjectState \| undefined` | The project index from the hub's last `editor.project` notification: `on` with its key maps (`defs`, `uses`, `broken`, `manifest`), or `off` with the reason. Frozen. Kept across reconnects. `undefined` until the hub sent one. |
+| `engine` | `() => string \| undefined` | The computer's engine fingerprint id (`0.14.13+1ab7f2`) from the hub's `editor.engine` notification (`EngineInfo`, spec 01 C7). Kept across reconnects. `undefined` until the hub sent one, and for the id `"unknown"` (no game installed under the root), so a STALE mark never fires on it. |
+| `onEngine` | `(listener: (engine: string \| undefined) => void) => () => void` | Called at once when the id is known, then on each change. The replay of the same id after a reconnect calls nothing; a change from a known id to `"unknown"` calls it with `undefined` (the top bar drops the old id); `"unknown"` before any id calls nothing. A malformed value is the warn `link:bad-engine` and keeps the id. A throwing listener is logged as `link:engine-listener-failed`. Returns an idempotent unsubscribe. |
+| `published` | `<M extends PublishMethod>(method: M) => PublishParams[M] \| undefined` | The last value the server published for a method, kept across reconnects (the hub replays it on open). `devices` (`DeviceDirectory`) and `deviceTelemetry` (`DeviceTelemetry`) come from `editor.devices` / `editor.deviceTelemetry`, checked whole with `readDirectory` / `readTelemetry` of `connect/protocol`: a malformed value is the warn `link:bad-published { method }` and keeps the held one. `engine` (the whole `EngineInfo`, also with the id `"unknown"`), `project`, `hotReload` and `selection` answer the values link keeps for `engine()`, `project()`, `hotReload()` and `selection()`; `selection` answers `undefined` also while nothing is selected. Frozen (`selection` a fresh copy). `undefined` before the first. |
+| `onPublished` | `<M extends PublishMethod>(method: M, fn: (value: PublishParams[M]) => void) => () => void` | Called with every new value of the method, never at once (read `published` for the current one). A replay of an equal value (the hub's replay after a reconnect) calls nothing; a malformed value calls nothing. `devices` and `deviceTelemetry` compare as JSON; `engine` compares the whole info; `project`, `hotReload` and `selection` use their own sameness (revision and manifest, `hmr` and `owner`, the info). A selection that clears passes `null`, once. Each listener gets the same frozen value. A throwing listener is logged as `link:published-listener-failed { method }`. Returns an idempotent unsubscribe. |
+| `onSessions` | `(fn: (list: readonly SessionInfo[]) => void) => () => void` | Called after every `sessions` notification of the hub is applied: the list stored, a lost choice dropped, the pick attached, so `session()` already answers it. Never at once. A socket close calls nothing (the list the hub sends after the reconnect does), nor does a malformed list. Each listener gets the same frozen list. A throwing listener is logged as `link:sessions-listener-failed`. Returns an idempotent unsubscribe. |
+| `onHeartbeat` | `(fn: (beat: ReceivedHeartbeat) => void) => () => void` | Called with each heartbeat of the chosen session that carries its `at`: a frozen `{ session, at, receivedAt }` (the game's epoch ms of the beat by its own clock, and this computer's epoch ms of its arrival). A beat of another session, one without `at` and a malformed one call nothing. Never at once. A throwing listener is logged as `link:heartbeat-listener-failed`. Returns an idempotent unsubscribe. activeSource estimates a device's clock offset from it. |
+| `ownSession` | `() => string \| undefined` | This page's own game frame session: the newest open embedded session whose page carries this page's frame id (`frameUrl`). Another tab's frame, and the frame URL opened outside an iframe, are never own; during a reload the newer of the two sessions wins. `undefined` when the frame has no session (not mounted, reloading, or no frame on this page). |
+| `runIn` | `(session, id, input?) => Promise<RunResult>` | Runs a command on a named open session without changing the choice: `session()`, the watches and the manifest stay. Checks the result shape like `run`; the long-call rule of `run` applies. Rejects -32003 `no_session` (not retryable) at once for an id that is not open, also while disconnected; the command's own error otherwise. activeSource pauses and resumes the local preview with it. |
+| `callEditor` | `(method, params?) => Promise<Json>` | Sends an editor-channel request with no session: a method another server plugin registered on the hub (`hub.addEditorMethods`), such as `connect.wire`. Rejects -32002 `link_closed` at once while disconnected; the method's wire error otherwise (-32601 for a method nobody registered). |
 | `files` | `FilesClient` | `list(dir)`, `read(path)`, `write(path, text, version?)`, `writeBinary(path, dataUrl)`, `readBinary(path)`, `find(key)`. No session needed. `find` answers the `ProjectFound[]` of a project-index key, lines read from disk at the call; `[]` for a key the index does not know; -32008 `not_installed` while the index is off. |
 
 ```ts
@@ -85,8 +101,18 @@ const offSelect = app.link.handle("select", params => selectByKey(params)); // M
 app.link.selection()?.key; // "coins"
 app.link.project(); // { state: "on", revision: "r2", defs: { "node:board/merge": ["nodes/merge.ts"] }, … }
 await app.link.files.find("node:board/merge"); // [{ path: "nodes/merge.ts", line: 17, range: [17, 1, 30, 3], hash: "a1" }]
+app.link.published("devices")?.mode.on; // true: device mode runs
+const offTelemetry = app.link.onPublished("deviceTelemetry", record => show(record.gpu)); // 221 MHz
+const offSessions = app.link.onSessions(list => list.filter(session => session.device)); // [s-9]
+const offBeats = app.link.onHeartbeat(beat => beat.at - beat.receivedAt); // -420: the phone's clock behind
+app.link.ownSession(); // "s-1": this page's game frame
+await app.link.runIn("s-1", "game.pause"); // the local preview holds; app.link.session() is unchanged
+await app.link.callEditor("connect.wire"); // { listen: { port: 47600, adb: "127.0.0.1:47600", lan: null } }
 await app.link.files.write("docs/plan.md", text);
 app.link.retry();
+offTelemetry();
+offBeats();
+offSessions();
 offTaps();
 offSelect();
 stop();
@@ -126,10 +152,10 @@ Every error is a wire error built with `wireError`. Its message starts with `[mo
 
 | Code | `data.reason` | Retryable | When |
 |---|---|---|---|
-| -32003 | `no_session` | no | `read` or `run` with no open socket or no chosen session. |
+| -32003 | `no_session` | no | `read` or `run` with no open socket or no chosen session; `runIn` with a session that is not open. |
 | -32003 | `choose_session` | no | `choose` with an id that is not open. |
 | -32002 | `timeout` | yes | No answer before the deadline. |
-| -32002 | `link_closed` | yes | Socket not open, socket closed, or `app.stop()`. |
+| -32002 | `link_closed` | yes | Socket not open, socket closed, or `app.stop()` (also `callEditor`). |
 | any | from the hub | from the hub | The hub's error, rebuilt with its code and data. |
 
 Answers this page sends to the hub for an editor-channel request:
@@ -187,8 +213,9 @@ Hooks: none. Inputs are socket messages and timers.
 | Kind | What |
 |---|---|
 | `depends` | none. `link` is the first tools plugin. |
-| Imports | `../registry/protocol` (runtime-free wire types and helpers). |
+| Imports | `../registry/protocol` (runtime-free wire types and helpers); `../connect/protocol` (runtime-free: the guards `readDirectory` and `readTelemetry` of the published device values). |
 | Global events | emits `link:status`, `link:project`. |
+| Listens (wire) | the hub's editor notifications `sessions`, `session`, `hotReload`, `selection`, `project`, `engine`, `devices`, `deviceTelemetry`; the game notifications `heartbeat`, `value`, `tap` of the chosen session. |
 | Runtime globals | `WebSocket`, `fetch`, `document`, timers. No npm runtime dependency. |
 
 ## Usage
@@ -216,7 +243,7 @@ const off = link.onManifest(manifest => recheck(manifest));
 |---|---|
 | `onInit` | Validates `reloadGraceMs`. |
 | `onStart` | Starts the 1 s silence check, reads the boot tag, opens the socket. Does not wait for the socket. |
-| `onStop` | Sets `stopped`, clears the retry and silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap and hot reload listeners, the notified values and the request handlers. |
+| `onStop` | Sets `stopped`, clears the retry and silence timers and the expected reload window, rejects pending calls with `link_closed`, answers waiting `setHotReload` calls false, closes the socket with 1000, forgets watches, manifest, tap, hot reload, engine, published and session listeners, the notified values and the request handlers. |
 
 ## Integration notes
 
@@ -234,6 +261,12 @@ const off = link.onManifest(manifest => recheck(manifest));
 - Hot reload switch (D-32, A1): the bin answers the POST, then restarts its server. The hub closes the socket with 1012 `editor restarting` first; link logs `link:closed` at info, as every close, and reconnects after `retryMs`; the hub replays `hotReload` on open. That replay settles a `setHotReload` whose answer the restart cut off.
 - Editor page (D-33): gameView publishes every selection change with `notify("selection", …)` and registers `handle("select", …)` for MCP. `device`, `show` and `node` ride the same relay, one handler per method (D-60). The hub keeps the last selection and sends it to every tools connection, this page included, so `selection()` follows it. An answer to a relayed request goes out only on the socket the request came on; after a reconnect it is dropped (`link:answer-dropped` debug): the hub failed that call with `page_closed` already.
 - Project index: the files plugin opens the index of the files root; the hub publishes its state as `editor.project` and replays it on every socket open. link parses it with the protocol's `parseProjectState` (re-exported as `readProjectState`). A malformed state is the warn `link:bad-project` and keeps the last one. Views read `project()` and drop what the `link:project` delta names. JSX keys never ride the state: only `files.find` reaches them.
+- Engine fingerprint: the hub sends `editor.engine { id, version, dist, patch? }` after each tools socket opens and on change (`server/engine.ts`, `onEngineNote`). link keeps the whole info like `project` (`published("engine")`) and answers its id from `engine()`; an info without `version` or `dist` is the warn `link:bad-engine`, a malformed `patch` is left out. workspace shows the id in the top bar, renderView compares it with a phone's for STALE.
+- Published values (spec 11 § 5.2, `server/published.ts`): connect publishes the device directory as `editor.devices` and the wired telemetry of a watched phone as `editor.deviceTelemetry` (1 Hz). link checks each with the `connect/protocol` guards, keeps the last valid one frozen across reconnects and gives each new one to `onPublished`. activeSource reads both; link reads no device in them.
+- Device sources (spec 11 § 4): activeSource hears a phone link or leave through `onSessions`, pauses this page's frame (`ownSession`) with `runIn(own, "game.pause")` before it chooses the phone, and calls connect's methods (`connect.scan`, `connect.wire`, `connect.watch` …) through `callEditor`. The hub answers `callEditor` only on tools sockets (token, loopback).
+- Heartbeat readout (L9, spec 11 § 5.2): `readSessions` keeps the hub's `SessionInfo.heartbeat` (`{ frame, paused, silent }`, frozen) when every field has its type; a malformed readout is left out, never the session. The hub re-sends the list when `paused` or `silent` flips, so `sessions()` and `onSessions` show whether a session is paused, also one that is not chosen: activeSource reads the own frame's `heartbeat.paused` before it pauses the local preview, so it never resumes a game the developer paused on purpose (spec 11 § 4 B4). link's own status still comes from the forwarded heartbeats of the chosen session.
+- Device sessions: `readSessions` keeps `SessionInfo.device` (`{ id, model, link: "adb" | "lan", address, port, engine, build, appId? }`, spec 01 C8) when every field has its type, and leaves a malformed device out (the session then reads as a browser session); an `appId` that is not text drops only itself. renderView reads it for the D1 device strip.
+- Heartbeat listeners (L10, spec 11 § 5.2): `onHeartbeat` gives each heartbeat of the chosen session that carries `at` (`Heartbeat.at`, the game's epoch ms by its own clock) to every listener as a frozen `{ session, at, receivedAt }` (`receivedAt`: this computer's epoch ms of arrival). The hub forwards beats of every session; link passes only the chosen one's, which is the device while a phone is the source. activeSource estimates `clockOffsetMs()` from them. A throwing listener is logged `link:heartbeat-listener-failed`; onStop drops every listener.
 - Requests on another channel than `editor` are still only logged (`link:unexpected-request` debug), without an answer.
 - A socket that never opened refreshes the token through `${boot.path}/hello` before the next attempt.
 - Outside a browser (Bun), the socket sends an `Origin` header equal to the boot page origin. In a browser the URL is the only constructor argument.

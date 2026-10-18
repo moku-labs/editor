@@ -1,6 +1,7 @@
 /**
  * @file pages/mcp — the MCP dispatcher (M1): `initialize` with version negotiation and the
- * instructions, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`
+ * instructions (its `clientInfo.title`, else `clientInfo.name`, goes to the editor link, which names
+ * the MCP client to the hub), `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`
  * and `notifications/cancelled`. The tools are read per request (the generic tools, then the door
  * tools); the first `tools/list` waits for the door tools at most 3 s, and no `list_changed` goes
  * out before it was answered. A message without an id is never answered; an unknown request is
@@ -121,6 +122,28 @@ export function negotiateVersion(requested: string): string {
 }
 
 /**
+ * The MCP client's name in `initialize` params: `clientInfo.title` when it is a string with text
+ * (Claude Code sends "Claude Code"), else `clientInfo.name` when it is a string. The hub cleans it.
+ *
+ * @param params - The `initialize` params.
+ * @returns The name, or undefined.
+ * @example
+ * ```ts
+ * clientNameIn({ protocolVersion: "2025-11-25", clientInfo: { name: "claude-code", title: "Claude Code" } }); // "Claude Code"
+ * clientNameIn({ protocolVersion: "2025-11-25", clientInfo: { name: "cursor" } }); // "cursor"
+ * clientNameIn({ protocolVersion: "2025-11-25" }); // undefined
+ * ```
+ */
+function clientNameIn(params: JsonObject | undefined): string | undefined {
+  const info = params?.clientInfo;
+  if (!isObject(info)) return undefined;
+
+  const { title, name } = info;
+  if (typeof title === "string" && title.trim() !== "") return title;
+  return typeof name === "string" ? name : undefined;
+}
+
+/**
  * The key of a request id in the in-flight map (a string id and a number id never collide).
  *
  * @param id - The request id.
@@ -212,7 +235,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   let firstList: Promise<void> | undefined;
 
   /**
-   * The `initialize` result: the negotiated version, the capabilities and the server info.
+   * The `initialize` result: the negotiated version, the capabilities and the server info. The
+   * client's `clientInfo.title` (else `name`), when it gave one, names it to the hub through the
+   * editor link.
    *
    * @param params - The request params.
    * @returns The result.
@@ -222,6 +247,8 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     if (typeof requested !== "string") {
       throw new RpcError(rpcCode.invalidParams, "initialize needs a protocolVersion string");
     }
+    const name = clientNameIn(params);
+    if (name !== undefined) context.editor.identify(name);
     return {
       protocolVersion: negotiateVersion(requested),
       capabilities: { tools: { listChanged: true }, logging: {} },

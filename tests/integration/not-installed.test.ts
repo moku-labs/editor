@@ -88,9 +88,9 @@ describe("a game without the effects plugin", () => {
     await game.frames(3);
     await settle();
 
-    expect(host.querySelector("[data-tile='scene'] [data-note]")?.textContent).toBe(
-      "Effects not installed in this game"
-    );
+    // The Scene tile that said "Effects not installed in this game" went with Mission control
+    // (spec 09 § M1); renderView's snapshot still says so (awaited above).
+    expect(tools.app.renderView.snapshot().tiles.effectsInstalled).toBe(false);
     expect(entriesOf(...apps).filter(entry => FAILURE_EVENTS.has(entry.event))).toEqual([]);
     expect(logErrors(...apps)).toEqual([]);
     expect(

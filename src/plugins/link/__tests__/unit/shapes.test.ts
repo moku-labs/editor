@@ -33,14 +33,67 @@ describe("readSessions", () => {
     expect(list).toEqual([sessionOf("s-1"), sessionOf("s-2", { embedded: true })]);
   });
 
-  it("reads a session that carries the hub heartbeat readout and drops the readout", () => {
+  it("keeps the hub heartbeat readout, frozen; a malformed readout is dropped and the session kept", () => {
+    // Bug: activeSource cannot see that the person paused the local preview (spec 11 § 4 B4), so
+    // it pauses and later resumes a game the developer paused on purpose.
+    const heartbeat = { frame: 1840, paused: true, silent: false };
     const list = readSessions({
       list: [
-        { ...toObject(sessionOf("s-1")), heartbeat: { frame: 1840, paused: true, silent: false } }
+        { ...toObject(sessionOf("s-1")), heartbeat },
+        { ...toObject(sessionOf("s-2")), heartbeat: { frame: 1840, paused: "yes", silent: false } }
       ]
     });
 
-    expect(list).toEqual([sessionOf("s-1")]);
+    expect(list).toEqual([sessionOf("s-1", { heartbeat }), sessionOf("s-2")]);
+    expect(Object.isFrozen(list?.[0]?.heartbeat)).toBe(true);
+  });
+
+  it("keeps the device of a device session and leaves a malformed device out", () => {
+    const device = {
+      id: "d-7f3a",
+      model: "SM-A266B",
+      link: "adb",
+      address: "127.0.0.1",
+      port: 47_600,
+      engine: "0.14.12+9c41e0",
+      build: null
+    } as const;
+    const list = readSessions({
+      list: [
+        { ...toObject(sessionOf("s-1")), device },
+        { ...toObject(sessionOf("s-2")), device: { ...device, link: "usb" } },
+        { ...toObject(sessionOf("s-3")), device: { ...device, port: "47600" } }
+      ]
+    });
+
+    expect(list).toEqual([sessionOf("s-1", { device }), sessionOf("s-2"), sessionOf("s-3")]);
+  });
+
+  it("keeps the app id of a device, and drops only an app id that is not text", () => {
+    // Bug: activeSource and the panels never seeing which app a phone runs.
+    const device = {
+      id: "d-7f3a",
+      model: "SM-A266B",
+      link: "adb",
+      address: "127.0.0.1",
+      port: 47_600,
+      engine: "0.15.1+2b7c11",
+      build: null
+    } as const;
+    const list = readSessions({
+      list: [
+        {
+          ...toObject(sessionOf("s-1")),
+          device: { ...device, appId: "com.mokulabs.timber.debug" }
+        },
+        { ...toObject(sessionOf("s-2")), device: { ...device, appId: 7 } }
+      ]
+    });
+
+    expect(list).toEqual([
+      sessionOf("s-1", { device: { ...device, appId: "com.mokulabs.timber.debug" } }),
+      sessionOf("s-2", { device })
+    ]);
   });
 
   it("is undefined without a list", () => {
@@ -96,6 +149,74 @@ describe("readManifest", () => {
     );
     expect(readManifest({ ...good, restored: "yes" })).not.toHaveProperty("restored");
     expect(readManifest(good)).not.toHaveProperty("restored");
+  });
+
+  it("keeps the overlay marker and the build verdict of a command, and the page's build", () => {
+    const good = toObject(manifestOf());
+    const glow = {
+      id: "garden.glow",
+      title: "Glow",
+      input: { on: "boolean" },
+      effect: "cosmetic",
+      overlay: "toggle",
+      allowed: true
+    };
+    const tap = {
+      id: "game.tap",
+      title: "Tap",
+      input: { target: "string" },
+      effect: "route",
+      overlay: "button",
+      allowed: false,
+      reason: "read-only"
+    };
+    const build = { profile: "read", id: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" };
+
+    const read = readManifest({ ...good, commands: [glow, tap], build });
+
+    expect(read?.commands).toEqual([glow, tap]);
+    expect(read?.build).toEqual(build);
+    expect(readManifest({ ...good, build: { profile: "none" } })?.build).toEqual({
+      profile: "none"
+    });
+  });
+
+  it("reads an older agent's manifest without the new fields as before", () => {
+    const read = readManifest(toObject(manifestOf()));
+
+    expect(read).not.toHaveProperty("build");
+    expect(read?.commands[0]).toEqual({
+      id: "game.step",
+      title: "Step",
+      input: { frames: "number" },
+      effect: "raw"
+    });
+  });
+
+  it("drops a malformed marker, verdict or build and keeps the rest of the manifest", () => {
+    const good = toObject(manifestOf());
+    const base = { id: "game.tap", title: "Tap", input: {}, effect: "route" };
+
+    const read = readManifest({
+      ...good,
+      commands: [
+        { ...base, overlay: "slider", allowed: "yes", reason: "read-only" },
+        { ...base, id: "game.drag", allowed: true, reason: "read-only" },
+        { ...base, id: "game.key", allowed: false, reason: "sudo" }
+      ],
+      build: { profile: "release", id: "debug-1" }
+    });
+
+    expect(read?.commands).toEqual([
+      base,
+      { ...base, id: "game.drag", allowed: true },
+      { ...base, id: "game.key", allowed: false }
+    ]);
+    expect(read).not.toHaveProperty("build");
+    expect(
+      readManifest({ ...good, build: { profile: "dev", id: 7, engine: null } })?.build
+    ).toEqual({ profile: "dev" });
+    expect(readManifest({ ...good, build: "dev" })).not.toHaveProperty("build");
   });
 
   it("rejects bad descriptors", () => {

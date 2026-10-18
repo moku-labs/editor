@@ -20,7 +20,8 @@ export const DEFAULT_CONFIG: PagesConfig = {
   title: "moku editor",
   editorUrl: "vscode://file/{path}:{line}",
   pageDir: undefined,
-  gameUrl: "/"
+  gameUrl: "/",
+  toolsPage: true
 };
 
 /** The token the fake hub hands out. */
@@ -84,6 +85,7 @@ export function createHub(): FakeHub {
       message: vi.fn(),
       close: vi.fn(),
       drain: vi.fn(),
+      pong: vi.fn(),
       maxPayloadLength: 1,
       idleTimeout: 1,
       perMessageDeflate: false
@@ -92,7 +94,13 @@ export function createHub(): FakeHub {
     guard: (req, server, mode) => guard(req, server, mode, new Set()),
     publish: vi.fn<HubApi["publish"]>(),
     closeAll: vi.fn<HubApi["closeAll"]>(),
-    path: () => "/__editor"
+    path: () => "/__editor",
+    listenDevices: vi.fn(),
+    stopDevices: vi.fn(async () => undefined),
+    devices: vi.fn(() => []),
+    listenLan: vi.fn(),
+    stopLan: vi.fn(async () => undefined),
+    addEditorMethods: vi.fn()
   };
   return hub;
 }
@@ -114,7 +122,9 @@ export function createFiles(root = "/projects/merge-game"): FilesApi {
     resolve: vi.fn(),
     root: () => root,
     find: vi.fn(),
-    project: () => ({ state: "off", reason: "not opened" })
+    project: () => ({ state: "off", reason: "not opened" }),
+    engine: () => ({ id: "unknown", version: "unknown", dist: "unknown" }),
+    refreshEngine: async () => ({ id: "unknown", version: "unknown", dist: "unknown" })
   };
 }
 

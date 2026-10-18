@@ -1,5 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import { activeSourcePlugin } from "../../../activeSource";
 import { linkPlugin } from "../../../link";
 import { panelsPlugin } from "../../../panels";
 import type { Json } from "../../../registry/protocol";
@@ -8,7 +9,7 @@ import { stateViewPlugin } from "../..";
 import type { Config, LastCommit, StatePatch, StateViewApi, TrackerNote } from "../../types";
 
 const framework = createToolsCore(toolsCoreConfig, {
-  plugins: [linkPlugin, workspacePlugin, panelsPlugin, stateViewPlugin]
+  plugins: [linkPlugin, activeSourcePlugin, workspacePlugin, panelsPlugin, stateViewPlugin]
 });
 
 type App = ReturnType<typeof framework.createApp>;

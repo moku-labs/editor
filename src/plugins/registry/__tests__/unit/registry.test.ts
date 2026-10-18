@@ -37,13 +37,13 @@ describe("registryPlugin", () => {
     expect(registryPlugin.spec.config).toEqual({ game: undefined, modules: [], name: undefined });
   });
 
-  it("wires state, api, onInit and the start probe, and no stop", () => {
+  it("wires state, api, onInit, the start probe and its own event, and no stop", () => {
     expect(registryPlugin.spec.createState).toBe(createRegistryState);
     expect(typeof registryPlugin.spec.api).toBe("function");
     expect(typeof registryPlugin.spec.onInit).toBe("function");
     expect(registryPlugin.spec.onStart).toBe(refreshManifest);
     expect("onStop" in registryPlugin.spec).toBe(false);
-    expect("events" in registryPlugin.spec).toBe(false);
+    expect("events" in registryPlugin.spec).toBe(true);
     expect("depends" in registryPlugin.spec).toBe(false);
   });
 });

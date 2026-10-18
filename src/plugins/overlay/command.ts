@@ -1,29 +1,22 @@
 /**
- * @file overlay plugin — onInit: adds the editor.overlay command (state from registry.envelope(), R2).
+ * @file overlay plugin — the registry command `editor.overlay { mode }` [cosmetic]: the mirror the
+ * tools page and MCP switch the window with. Added in onInit (the registry builds its manifest from
+ * entries added before start); its state is `registry.envelope()` (it runs no door).
  */
 import type { RunResult } from "../registry/protocol";
-import { checkInput } from "../registry/protocol";
-import { closeOverlay, openOverlay } from "./api";
-import { overlayCtxOf } from "./context";
-import type { OverlayCtx, OverlayPluginCtx } from "./types";
+import { checkInput, errorCode, wireError } from "../registry/protocol";
+import { closeOverlay, openOverlay } from "./modes";
+import type { OverlayCtx } from "./types";
 
 /**
  * The input schema of editor.overlay.
  */
-const OVERLAY_INPUT: { readonly on: "boolean" } = { on: "boolean" };
+const OVERLAY_INPUT: { readonly mode: "string" } = { mode: "string" };
 
 /**
- * onInit: `registerOverlayCommand(overlayCtxOf(ctx))`.
- *
- * @param ctx - Plugin context of the overlay.
- */
-export function initOverlay(ctx: OverlayPluginCtx): void {
-  registerOverlayCommand(overlayCtxOf(ctx));
-}
-
-/**
- * Adds `editor.overlay { on: "boolean" }` [cosmetic] to the registry. Its value is `{ on }`
- * after the call; its state is the registry's envelope (it runs no door). A duplicate id throws.
+ * Adds `editor.overlay { mode: "string" }` [cosmetic] to the registry. "hidden" closes the window,
+ * "pill" and "card" open it; any other string is refused with -32602. Its value is `{ mode }` after
+ * the call. A duplicate id throws.
  *
  * @param octx - Domain context.
  */
@@ -36,16 +29,23 @@ export function registerOverlayCommand(octx: OverlayCtx): void {
       effect: "cosmetic"
     },
     /**
-     * Switches the overlay and answers the state after the call.
+     * Switches the window and answers the mode after the call.
      *
-     * @param raw - `{ on: boolean }`; anything else is refused with -32602.
-     * @returns `{ value: { on }, state: registry.envelope() }`.
+     * @param raw - `{ mode }`; anything else is refused with -32602.
+     * @returns `{ value: { mode }, state: registry.envelope() }`.
      */
     run: async (raw): Promise<RunResult> => {
-      const { on } = checkInput(OVERLAY_INPUT, raw);
-      if (on) openOverlay(octx);
-      else closeOverlay(octx);
-      return { value: { on: octx.state.open }, state: octx.registry.envelope() };
+      const { mode } = checkInput(OVERLAY_INPUT, raw);
+      if (mode === "hidden") closeOverlay(octx);
+      else if (mode === "pill" || mode === "card") openOverlay(octx, { mode });
+      else {
+        throw wireError(
+          errorCode.invalidInput,
+          'editor.overlay: mode must be "hidden", "pill" or "card".\n  Run it with { mode: "card" }.',
+          { reason: "invalid_input", field: "mode" }
+        );
+      }
+      return { value: { mode: octx.state.mode }, state: octx.registry.envelope() };
     }
   });
 }

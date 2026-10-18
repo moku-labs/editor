@@ -2,13 +2,15 @@
  * @file gameView plugin — `scene()` and `locate()`: the watched scene while Game is shown, else
  * one read of the three sources (and the calibration when not read yet or its target changed),
  * built with the shared buildScene (R8). The picker click reads the three once more too
- * (`readFreshScene`), so it never picks from a screen the game already left.
+ * (`readFreshScene`), so it never picks from a screen the game already left. A phone as the
+ * source is not read: the read refuses with the switch to the local preview (G1).
  */
 import { linkPlugin } from "../../link";
 import type { ElementRef, PageRect, SceneError, SceneSnapshot } from "../../panels/shared/scene";
 import { buildScene, refId } from "../../panels/shared/scene";
 import type { GameViewCtx } from "../types";
 import { calibrate, targetChanged } from "./calibrate";
+import { deviceSourceError, onDevice } from "./device";
 import { frameOf, storeScene } from "./rebuild";
 
 /**
@@ -45,7 +47,8 @@ async function calibrationSettled(ctx: GameViewCtx): Promise<void> {
  *
  * @param ctx - Domain context of gameView.
  * @returns The scene snapshot.
- * @throws {Error} The link's WireError, or a shape error.
+ * @throws {Error} The link's WireError, a shape error, or the switch to the local preview while a
+ *   phone is the source.
  */
 export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
   const { state } = ctx;
@@ -66,9 +69,11 @@ export async function readScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
  *
  * @param ctx - Domain context of gameView.
  * @returns The scene snapshot.
- * @throws {Error} The link's WireError, or a shape error.
+ * @throws {Error} The link's WireError, a shape error, or the switch to the local preview while a
+ *   phone is the source (G1: nothing is read from it).
  */
 export async function readFreshScene(ctx: GameViewCtx): Promise<SceneSnapshot> {
+  if (onDevice(ctx)) throw deviceSourceError();
   const { state } = ctx;
   const link = ctx.require(linkPlugin);
   const [ui, entities, projections] = await Promise.all([

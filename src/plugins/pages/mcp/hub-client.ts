@@ -2,9 +2,13 @@
  * @file pages/mcp — the bridge's hub tools connection (M2): `${ws}?token=…&kind=tools` with the
  * Origin header `http://127.0.0.1:<port>` so the hub guard passes, JSON-RPC ids, the `sessions`
  * list with the live heartbeats, the last `editor.hotReload` and `editor.project` (the hub replays
- * both to a new connection right after its `sessions` list), game, files and editor requests, and
- * `watch`/`value`/`unwatch`. The token is never logged, and neither is the URL that carries it.
+ * both to a new connection right after its `sessions` list), game, files and editor requests,
+ * `watch`/`value`/`unwatch`, and the `client { name }` notification that names the MCP client for
+ * the hub's run stamping. The token is never logged, and neither is the URL that carries it.
  */
+
+import type { ClientParams } from "../../hub/protocol";
+import { CLIENT_METHOD } from "../../hub/protocol";
 import type {
   Channel,
   Json,
@@ -20,6 +24,7 @@ import {
   fromWireError,
   isFailure,
   isNotification,
+  notification,
   parseProjectState,
   request as requestMessage,
   wireError
@@ -357,6 +362,11 @@ function clientOf(
       state.closedByUs = true;
       onClosed(state);
       socket.close(NORMAL_CLOSE, "bridge closing");
+    },
+    identify: name => {
+      // A socket that closed drops the frame by itself (WebSocket send after close).
+      const params: ClientParams = { name };
+      socket.send(encode(notification("editor", CLIENT_METHOD, params)));
     }
   };
 }

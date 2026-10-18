@@ -6,7 +6,9 @@
 import { envPlugin, logPlugin } from "@moku-labs/common/browser";
 import { createCoreConfig } from "@moku-labs/core";
 import type { FilesWritten } from "./plugins/files/types";
+import type { DeviceLink } from "./plugins/hub/protocol";
 import type { HubSession } from "./plugins/hub/types";
+import type { OverlayChanged } from "./plugins/overlay/types";
 import type { ElementRef } from "./plugins/panels/shared/scene/types";
 import type { LinkStatus, ProjectDelta, ProjectState } from "./plugins/registry/protocol";
 import type { Density, RanEvent, WorkspaceId } from "./plugins/workspace/types";
@@ -32,21 +34,40 @@ export type ServerConfig = Record<never, never>;
 export type ToolsConfig = Record<never, never>;
 
 /**
- * Global events of the agent core. `bridge:status` lives here, not on the bridge, so the overlay
- * hooks it without depending on the opt-in bridge (R2).
+ * Global events of the agent core. An event lives here only when its listener cannot depend on its
+ * emitter:
+ * - `bridge:status`: the bridge is opt-in; the default overlay hooks it without depending on it (R2).
+ * - `overlay:changed`: its listener, the recorder, is a dependency of the overlay; a per-plugin
+ *   event would need recorder → overlay, a cycle.
+ * - `overlay:connect`: its listener, the bridge, is opt-in and ordered after every default; the
+ *   overlay must not depend on it (decision "bridge pulls from recorder").
+ *
+ * `recorder:status` (recorder), `registry:command` (registry) and the server's `collector:session`
+ * (collector) are per-plugin events of their emitters, hooked through `depends`; they are not
+ * declared here.
  *
  * @example
  * ```ts
  * ctx.emit("bridge:status", { status: { kind: "live", frame: 12 }, session: "s-7f3a" });
+ * ctx.emit("overlay:connect", { address: "192.168.1.5:47600" });
  * ```
  */
 export type AgentEvents = {
-  /** The bridge link changed kind or session. */
-  "bridge:status": { status: LinkStatus; session?: string };
+  /**
+   * The bridge link changed kind, session or device link. `link` is present in device mode only: no
+   * computer, connecting (with the pairing code), live over adb or the LAN, the computer's engine,
+   * last seen.
+   */
+  "bridge:status": { status: LinkStatus; session?: string; link?: DeviceLink };
+  /** The overlay window changed mode or tab (the recorder logs it as a `devtools` monitor event; `overlay` is the game's). */
+  "overlay:changed": OverlayChanged;
+  /** The Link tab asks for a device link to this address (`host:port`); the opt-in bridge hooks it. */
+  "overlay:connect": { address: string };
 };
 
 /**
- * Global events of the server core (contracts §4).
+ * Global events of the server core (contracts §4). Unchanged: `collector:session` is the collector's own
+ * per-plugin event, and `hub:device` the hub's; neither is declared here.
  *
  * @example
  * ```ts

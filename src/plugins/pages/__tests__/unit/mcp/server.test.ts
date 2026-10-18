@@ -1,4 +1,5 @@
 /* eslint-disable unicorn/no-null -- JSON-RPC answers a parse error with id null */
+import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createMcpServer,
@@ -25,9 +26,10 @@ import type {
 // static tool table.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** An EditorLink that never connects. */
-function idleEditor(): EditorLink {
+/** An EditorLink that never connects; `identify` records the names it is told. */
+function idleEditor(): EditorLink & { identify: Mock<EditorLink["identify"]> } {
   return {
+    identify: vi.fn<EditorLink["identify"]>(),
     start: () => Promise.resolve(),
     hub: () => Promise.reject(new Error("[moku-editor] not running")),
     connected: () => undefined,
@@ -67,7 +69,8 @@ function serve(
   doors: { ready?: () => Promise<void>; retired?: () => ReadonlySet<string> } = {}
 ) {
   const frames: OutgoingFrame[] = [];
-  const context: ToolContext = { editor: idleEditor(), now: Date.now };
+  const editor = idleEditor();
+  const context: ToolContext = { editor, now: Date.now };
   const server = createMcpServer({
     send: frame => frames.push(frame),
     tools: typeof tools === "function" ? tools : () => tools,
@@ -78,7 +81,7 @@ function serve(
   });
   /** Sends one message as a line. */
   const send = (message: object): void => server.handleLine(JSON.stringify(message));
-  return { server, frames, send };
+  return { server, frames, send, editor };
 }
 
 describe("initialize", () => {
@@ -118,6 +121,63 @@ describe("initialize", () => {
     send({ jsonrpc: "2.0", id: 3, method: "initialize", params: {} });
     await server.idle();
     expect(frames[0]).toMatchObject({ id: 3, error: { code: -32_602 } });
+  });
+
+  it("names the MCP client to the editor link with clientInfo.title, once per initialize", async () => {
+    const { server, send, editor } = serve();
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        clientInfo: { name: "claude-code", title: "Claude Code", version: "2.1.280" }
+      }
+    });
+    await server.idle();
+    expect(editor.identify.mock.calls).toEqual([["Claude Code"]]);
+  });
+
+  it("falls back to clientInfo.name without a title, or with a blank one", async () => {
+    const { server, send, editor } = serve();
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", clientInfo: { name: "cursor", version: "1.0.0" } }
+    });
+    send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", clientInfo: { name: "zed", title: "  " } }
+    });
+    await server.idle();
+    expect(editor.identify.mock.calls).toEqual([["cursor"], ["zed"]]);
+  });
+
+  it("names nobody without clientInfo, with a name that is no string, or on a refused initialize", async () => {
+    const { server, send, editor } = serve();
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25" }
+    });
+    send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", clientInfo: { name: 7 } }
+    });
+    send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "initialize",
+      params: { clientInfo: { name: "Claude" } }
+    });
+    await server.idle();
+    expect(editor.identify).not.toHaveBeenCalled();
   });
 });
 

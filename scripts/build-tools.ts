@@ -2,8 +2,10 @@
  * @file The build:tools step (D-06): bundles the tools page (src/plugins/pages/page: index.html,
  * main.tsx, index.css and the fonts it reaches) with Bun.build into dist/tools/ (or `--outdir`).
  * Bun inlines CSS fonts as data URLs, which the tools page CSP (`default-src 'self'`) refuses, so
- * the woff2 files stay external and are copied into assets/ with hashed names. Then the 09-pages
- * step 4 layout checks run. Output through the branded console (MC1).
+ * the woff2 files stay external and are copied into assets/ with hashed names, each found in the
+ * font folder src/plugins/workspace/styles/fonts (Geist and Geist Mono, the tools page's only
+ * faces: the phone overlay's Barlow stays in the overlay, spec 09 Delta 2026-10-15). Then the
+ * 09-pages step 4 layout checks run. Output through the branded console (MC1).
  */
 import { copyFile, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path/posix";
@@ -13,7 +15,8 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 const PAGE_ENTRY = join(REPO, "src/plugins/pages/page/index.html");
-const FONT_DIR = join(REPO, "src/plugins/workspace/styles/fonts");
+// Decision "Tools-page strip in the editor's look and theme": the tools page loads Geist only.
+const FONT_DIRS = [join(REPO, "src/plugins/workspace/styles/fonts")] as const;
 const ui = createBrandConsole();
 
 /**
@@ -45,26 +48,50 @@ function shortHash(bytes: Uint8Array | string): string {
 }
 
 /**
+ * The file of a font the CSS names, from the first font folder that has it.
+ *
+ * @param stem - The name without `.woff2`.
+ * @returns The absolute path, or undefined when no folder has it.
+ * @example
+ * ```ts
+ * await fontFile("Geist-Variable"); // ".../src/plugins/workspace/styles/fonts/Geist-Variable.woff2"
+ * ```
+ */
+async function fontFile(stem: string): Promise<string | undefined> {
+  for (const dir of FONT_DIRS) {
+    const path = join(dir, `${stem}.woff2`);
+    if (await Bun.file(path).exists()) return path;
+  }
+  return undefined;
+}
+
+/**
  * Copies each font a CSS file references into assets/ with a hashed name, points the CSS at it,
- * and renames the CSS by its new content hash.
+ * and renames the CSS by its new content hash. A font found in no folder fails the build.
  *
  * @param outDir - The output folder.
  * @param cssPath - Absolute path of the bundled CSS under assets/.
- * @returns The new CSS path.
+ * @returns The new CSS path; undefined when a font is missing (reported through the console).
  * @example
  * ```ts
  * await externalizeFonts("dist/tools", "dist/tools/assets/index-abc.css");
  * ```
  */
-async function externalizeFonts(outDir: string, cssPath: string): Promise<string> {
+async function externalizeFonts(outDir: string, cssPath: string): Promise<string | undefined> {
   const css = await readFile(cssPath, "utf8");
   const copies = new Map<string, string>();
   for (const match of css.matchAll(FONT_URL)) {
     const stem = match[2] ?? "";
     if (copies.has(stem)) continue;
-    const bytes = await readFile(join(FONT_DIR, `${stem}.woff2`));
-    const name = `${stem}-${shortHash(bytes)}.woff2`;
-    await copyFile(join(FONT_DIR, `${stem}.woff2`), join(outDir, "assets", name));
+    const source = await fontFile(stem);
+    if (source === undefined) {
+      ui.error(
+        `[moku-editor] build:tools found no font file for ./fonts/${stem}.woff2.\n  Put it in src/plugins/workspace/styles/fonts.`
+      );
+      return undefined;
+    }
+    const name = `${stem}-${shortHash(await readFile(source))}.woff2`;
+    await copyFile(source, join(outDir, "assets", name));
     copies.set(stem, name);
   }
   const rewritten = css.replaceAll(FONT_URL, (_match, _quote, stem: string) => {
@@ -160,7 +187,11 @@ async function checkLayout(outDir: string): Promise<boolean> {
     [sheets.length === 1, "exactly one stylesheet linked"],
     [
       files.some(file => file.startsWith("assets/") && file.endsWith(".woff2")),
-      "Geist woff2 fonts in assets/"
+      "woff2 fonts in assets/"
+    ],
+    [
+      files.every(file => !/^assets\/barlow-[\w-]+\.woff2$/.test(file)),
+      "no Barlow face in assets/"
     ],
     [
       texts.every(text => !/\{\s*with\s*:\s*\{\s*type\s*:/.test(text)),
@@ -208,7 +239,8 @@ async function buildTools(): Promise<number> {
   }
 
   for (const output of result.outputs) {
-    if (output.path.endsWith(".css")) await externalizeFonts(outDir, output.path);
+    if (!output.path.endsWith(".css")) continue;
+    if ((await externalizeFonts(outDir, output.path)) === undefined) return 1;
   }
   await dropTextAttributes(outDir);
   if (!(await checkLayout(outDir))) {

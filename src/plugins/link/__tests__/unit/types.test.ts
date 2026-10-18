@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { createToolsCore, toolsCoreConfig } from "../../../../config";
+import type { DeviceDirectory, DeviceTelemetry } from "../../../connect/protocol";
 import type {
   DeviceInfo,
   DeviceParams,
@@ -46,6 +47,16 @@ describe("link types", () => {
     expectTypeOf(app.link.files.write).returns.toEqualTypeOf<Promise<WriteResult>>();
     expectTypeOf(app.link.files.readBinary).returns.toEqualTypeOf<Promise<FileBinary>>();
     expect(typeof app.link.files.readBinary).toBe("function");
+  });
+
+  it("frameUrl takes the scenario as a string and engine answers the id", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.engine).returns.toEqualTypeOf<string | undefined>();
+    // @ts-expect-error — the scenario is a file stem, not a number
+    app.link.frameUrl("http://127.0.0.1:3000/", { player: 1 });
+    expect(app.link.frameUrl("http://127.0.0.1:3000/", { player: "full" })).toContain(
+      "player=full"
+    );
   });
 
   it("app.link carries onTap and heap", () => {
@@ -97,6 +108,27 @@ describe("link types", () => {
     expect(() => app.link.notify("hotReload", { hmr: true, owner: "bin" })).not.toThrow();
     // @ts-expect-error — `selection` is not relayed to the page: the hub answers it itself
     expect(typeof app.link.handle("selection", async () => ({}))).toBe("function");
+  });
+
+  it("published and onPublished are typed by their method; a misspelt method does not compile", () => {
+    const app = framework.createApp({});
+    expectTypeOf(app.link.published<"devices">).returns.toEqualTypeOf<
+      DeviceDirectory | undefined
+    >();
+    expectTypeOf(app.link.onPublished<"deviceTelemetry">)
+      .parameter(1)
+      .toEqualTypeOf<(value: DeviceTelemetry) => void>();
+    expectTypeOf(app.link.onSessions)
+      .parameter(0)
+      .toEqualTypeOf<(list: readonly SessionInfo[]) => void>();
+    expectTypeOf(app.link.runIn).returns.toEqualTypeOf<Promise<RunResult>>();
+    expectTypeOf(app.link.callEditor).returns.toEqualTypeOf<Promise<Json>>();
+    // @ts-expect-error — the method is "devices"
+    const misspelt = () => app.link.published("device");
+    // @ts-expect-error — a devices listener gets the directory, not the telemetry
+    const crossed = () => app.link.onPublished("devices", (record: DeviceTelemetry) => record);
+    expectTypeOf(misspelt).toBeFunction();
+    expect(typeof crossed).toBe("function");
   });
 
   it("rejects a watch without its arguments and a link:status without frame", () => {

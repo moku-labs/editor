@@ -232,9 +232,18 @@ function driver(page: Page): Tools {
       page.locator("[data-ui=session-chip]"),
       page.locator("[data-ui=preview] [data-preview-body]"),
       page.locator("[data-frame-box]"),
-      page.locator("[data-render=workspace] > h1"),
-      page.locator("[data-render=tiles]"),
       page.locator("[data-render=textures] tbody"),
+      // Render's Mission control reads the local preview live: the source pill's health line, the
+      // connection bar's facts (the rate now), the frames header's numbers, every painted canvas
+      // (timeline, lane, overview, health line, sparklines), the cards' live numbers, the passes
+      // panel's headline and the inspector's summary of the view.
+      page.locator("[data-source-pill] [data-health]"),
+      page.locator("[data-render=connection] [data-facts]"),
+      page.locator("[data-render=frames] [data-headline]"),
+      page.locator("[data-paint]"),
+      page.locator("[data-card-kind]"),
+      page.locator("[data-render=passes] [data-headline]"),
+      page.locator("[data-render=inspector]"),
       page.locator("[data-part=title]"),
       page.locator("[data-part=runner-card]"),
       page.locator("[data-part=session-card]"),

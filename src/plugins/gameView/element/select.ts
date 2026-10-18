@@ -14,6 +14,7 @@ import type { FrameBox } from "../../workspace/types";
 import { hideCard } from "../capture/shot";
 import { completePick } from "../reference/pick";
 import { logReadFailure, messageOf } from "../report";
+import { onDevice } from "../scene/device";
 import { readFreshScene, readScene } from "../scene/read";
 import { SIDE_PANEL } from "../side";
 import { notify } from "../state";
@@ -24,21 +25,23 @@ import { saveStyle } from "./styles";
 
 /**
  * Turns the picker on (shows Game and the Element tab, hides the capture card so the first Esc
- * leaves the picker, round 2b R17) or off (clears the hover); toggles without an argument.
+ * leaves the picker, round 2b R17) or off (clears the hover); toggles without an argument. While
+ * a phone is the source the picker stays off: the Element tab says to switch to the local preview
+ * (G1).
  *
  * @param ctx - Domain context of gameView.
  * @param on - The wanted state; omitted toggles.
  */
 export function setPicker(ctx: GameViewCtx, on?: boolean): void {
   const { state } = ctx;
-  const next = on ?? !state.picker.on;
-  if (next) {
+  const wanted = on ?? !state.picker.on;
+  if (wanted) {
     ctx.require(workspacePlugin).show("game");
     state.tab = "element";
     ensureOverlayRoot(ctx);
     hideCard(ctx);
   }
-  state.picker = { on: next, hover: undefined };
+  state.picker = { on: wanted && !onDevice(ctx), hover: undefined };
   notify(state);
 }
 

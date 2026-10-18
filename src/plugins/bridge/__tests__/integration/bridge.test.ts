@@ -2,11 +2,15 @@
 import { defineCommand } from "@moku-labs/game/control";
 import { defineSource } from "@moku-labs/game/inspect";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { createFakeMonitor } from "../../../../../tests/fixtures/fake-monitor";
 import type { TinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
 import { channelPlugin } from "../../../channel";
+import type { DeviceLink } from "../../../hub/protocol";
+import { perfPlugin } from "../../../perf";
+import { recorderPlugin } from "../../../recorder";
 import { registryPlugin } from "../../../registry";
 import type {
   Json,
@@ -29,13 +33,13 @@ import { CHECKPOINT_KEY } from "../../checkpoint/checkpoint";
 import type { BridgeApi } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The agent core (registry + channel + bridge) over the headless tiny game,
+// The agent core (registry + channel + perf + recorder + bridge) over the headless tiny game,
 // linked to a minimal hub: a real Bun.serve with the hello route and the
 // websocket upgrade (token, kind=agent and an Origin header required).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const framework = createAgentCore(agentCoreConfig, {
-  plugins: [registryPlugin, channelPlugin, bridgePlugin]
+  plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, bridgePlugin]
 });
 
 /** The server side of one agent socket. */
@@ -316,13 +320,15 @@ function valuesOf(connection: Connection, sub: number): Json[] {
 /**
  * Creates and starts the agent app linked to the hub.
  *
+ * @param options - The game the registry wraps (the headless tiny game by default).
+ * @param options.app - Another game, e.g. the tiny game with a monitor grafted on.
  * @returns The app.
  */
-async function startAgent() {
+async function startAgent(options: { app?: GameLike } = {}) {
   const app = framework.createApp({
     plugins: [spyPlugin],
     pluginConfigs: {
-      registry: { game: game.app, modules: [testModule], name: "tiny-screen 0.0.0" },
+      registry: { game: options.app ?? game.app, modules: [testModule], name: "tiny-screen 0.0.0" },
       channel: { heartbeatMs: 100 },
       bridge: {
         hello: `http://127.0.0.1:${String(hub.port)}/__editor/hello`,
@@ -352,10 +358,11 @@ async function startAgent() {
 /**
  * Starts the agent and waits for the first connection and its session.
  *
+ * @param options - As for startAgent.
  * @returns The app and the hub side of its socket.
  */
-async function linked() {
-  const agent = await startAgent();
+async function linked(options: Parameters<typeof startAgent>[0] = {}) {
+  const agent = await startAgent(options);
   const connection = await waitFor(() => hub.connections[0]);
   await waitFor(() => agent.app.bridge.session());
   return { ...agent, connection };
@@ -393,11 +400,17 @@ describe("bridge integration", { timeout: 15_000 }, () => {
       "manifest"
     );
     const sources = listOf(field(manifest, "sources"));
-    expect(sources).toHaveLength(21);
-    expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
-      20
+    const registered = app.registry.manifest();
+    // The hello carries the registry's whole manifest: the game's 21 sources, perf's and the recorder's.
+    expect(sources.map(source => field(source, "id"))).toEqual(
+      registered.sources.map(source => source.id)
     );
-    expect(listOf(field(manifest, "commands"))).toHaveLength(21);
+    expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
+      21
+    );
+    expect(listOf(field(manifest, "commands")).map(command => field(command, "id"))).toEqual(
+      registered.commands.map(command => command.id)
+    );
     expect(field(manifest, "game")).toBe("tiny-screen 0.0.0");
     expect(hub.origins).toEqual([`http://127.0.0.1:${String(hub.port)}`]);
 
@@ -480,6 +493,25 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     expect(valuesOf(connection, 2)).toEqual([0, 1]);
   });
 
+  // Bug: the hub's stamp lost between the socket and the recorder, so a recording an agent started
+  // reads "started by the editor" (spec 07 B1, spec 05 R2).
+  it("a run of editor.record stamped from the agent Claude shows on editor.recorder's startedBy", async () => {
+    const monitor = createFakeMonitor({ capacity: 64 });
+    const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
+    const { connection } = await linked({ app: grafted });
+
+    const ran = await call(connection, "run", {
+      id: "editor.record",
+      input: { on: true },
+      from: "mcp",
+      client: "Claude"
+    });
+    const recorder = await call(connection, "read", { id: "editor.recorder" });
+
+    expect(ran).toMatchObject({ result: { value: { on: true } } });
+    expect(recorder).toMatchObject({ result: { startedBy: { by: "agent", name: "Claude" } } });
+  });
+
   it("rejects bad command input with -32602 and a hung command with -32002 after the deadline", async () => {
     const { connection } = await linked();
 
@@ -515,7 +547,8 @@ describe("bridge integration", { timeout: 15_000 }, () => {
       id: "editor.reload",
       title: "Reload the page",
       input: { restore: "boolean?" },
-      effect: "route"
+      effect: "route",
+      allowed: true
     });
 
     const ran = await call(connection, "run", { id: "editor.reload" });
@@ -534,15 +567,18 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     const editor = app.registry
       .manifest()
       .commands.filter(command => command.id.startsWith("editor."));
+    const reload = editor.findIndex(command => command.id === "editor.reload");
 
-    expect(editor).toEqual([
+    // The recorder's editor commands come first (it is composed before the bridge).
+    expect(editor.slice(reload)).toEqual([
       {
         id: "editor.reload",
         title: "Reload the page",
         input: { restore: "boolean?" },
-        effect: "route"
+        effect: "route",
+        allowed: true
       },
-      { id: "editor.clock", title: "Clock", input: {}, effect: "read" }
+      { id: "editor.clock", title: "Clock", input: {}, effect: "read", allowed: true }
     ]);
   });
 
@@ -736,12 +772,16 @@ describe("bridge types", () => {
     expect(app.bridge.status()).toEqual({ kind: "connecting" });
   });
 
-  it("a hook on bridge:status receives { status: LinkStatus; session?: string }", () => {
+  it("a hook on bridge:status receives { status: LinkStatus; session?: string; link?: DeviceLink }", () => {
     let hooked = false;
     const watcher = createAgentPlugin("watcher", {
       hooks: () => ({
         "bridge:status": payload => {
-          expectTypeOf(payload).toEqualTypeOf<{ status: LinkStatus; session?: string }>();
+          expectTypeOf(payload).toEqualTypeOf<{
+            status: LinkStatus;
+            session?: string;
+            link?: DeviceLink;
+          }>();
           hooked = true;
         }
       })

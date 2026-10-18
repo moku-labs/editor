@@ -2,8 +2,10 @@
 /**
  * The `@moku-labs/editor/tools` entry: the tools core for the tools page. Default plugins: link
  * (the websocket to the hub), workspace (the shell and the one game frame), panels (the panel
- * host) and the six workspaces flowView, gameView, renderView, stateView, filesView, consoleView.
- * The prebuilt tools page composes it in `src/plugins/pages/page/main.tsx` (D-06).
+ * host) and the six workspaces flowView, gameView, renderView, stateView, filesView, consoleView;
+ * activeSource keeps the page's one source (the local preview or a device). The prebuilt tools page
+ * composes it in `src/plugins/pages/page/main.tsx`
+ * (D-06); `moku-editor perf` serves the same page on the device port.
  *
  * Plugin options and their defaults, set through `pluginConfigs`:
  *
@@ -13,6 +15,12 @@
  * | link | boot | "#moku-editor-boot" |
  * | link | role | "page" |
  * | link | reloadGraceMs | 8000 |
+ * | activeSource | autoUse | true |
+ * | activeSource | pauseLocal | true |
+ * | activeSource | rejoinMs | 15000 |
+ * | activeSource | noticeMs | 12000 |
+ * | activeSource | renewMs | 4000 |
+ * | activeSource | markers | 32 |
  * | workspace | defaultWorkspace | "game" |
  * | workspace | storageKey | "moku-editor" |
  * | workspace | reloadTimeoutMs | 15000 |
@@ -29,7 +37,6 @@
  * | gameView | seriesDurationsMs | [1000, 2000, 5000, 10000, 20000] |
  * | gameView | seriesIntervalsMs | [16, 50, 100, 250, 500, 1000] |
  * | gameView | seriesWarnShots | 200 |
- * | renderView | fpsSamples | 60 |
  * | renderView | releaseLogMax | 50 |
  * | stateView | expandDepth | 2 |
  * | stateView | maxPatches | 200 |
@@ -56,6 +63,7 @@
  * ```
  */
 import { createToolsCore, toolsCoreConfig } from "./config";
+import { activeSourcePlugin } from "./plugins/activeSource";
 import { consoleViewPlugin } from "./plugins/consoleView";
 import { filesViewPlugin } from "./plugins/filesView";
 import { flowViewPlugin } from "./plugins/flowView";
@@ -67,10 +75,12 @@ import { stateViewPlugin } from "./plugins/stateView";
 import { workspacePlugin } from "./plugins/workspace";
 
 const framework = createToolsCore(toolsCoreConfig, {
-  // Dependency order: workspace requires link; panels requires link and workspace; every view
-  // requires link and panels (all but stateView also workspace). No view depends on another view.
+  // Dependency order: activeSource requires link; workspace requires link; panels requires link and
+  // workspace; every view requires link and panels (all but stateView also workspace; renderView
+  // also activeSource, spec 11 § 1). No view depends on another view.
   plugins: [
     linkPlugin,
+    activeSourcePlugin,
     workspacePlugin,
     panelsPlugin,
     flowViewPlugin,
@@ -106,6 +116,7 @@ export const createApp = framework.createApp;
 export const createPlugin = framework.createPlugin;
 
 // ─── Plugins ──────────────────────────────────────────────────
+export { activeSourcePlugin } from "./plugins/activeSource";
 export { consoleViewPlugin } from "./plugins/consoleView";
 export { filesViewPlugin } from "./plugins/filesView";
 export { flowViewPlugin } from "./plugins/flowView";
@@ -117,6 +128,7 @@ export { stateViewPlugin } from "./plugins/stateView";
 export { workspacePlugin } from "./plugins/workspace";
 
 // ─── Plugin Types (namespace re-exports) ──────────────────────
+export * as ActiveSource from "./plugins/activeSource/types";
 export * as ConsoleView from "./plugins/consoleView/types";
 export * as FilesView from "./plugins/filesView/types";
 export * as FlowView from "./plugins/flowView/types";

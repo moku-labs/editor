@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Require } from "../../../../config";
 import { encode, notification } from "../../../registry/protocol";
-import { checkConfig, stopBridge } from "../../lifecycle";
+import { checkConfig, depsOf, stopBridge } from "../../lifecycle";
 import { createBridgeState } from "../../state";
-import { CONFIG, FakeSocket, openDeps } from "../helpers";
+import type { BridgeCtx } from "../../types";
+import {
+  CONFIG,
+  createLog,
+  FakeSocket,
+  fakeChannel,
+  fakeRecorder,
+  fakeRegistry,
+  LAN,
+  openDeps
+} from "../helpers";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -25,7 +36,22 @@ describe("createBridgeState", () => {
       pending: new Map(),
       inflight: new Map(),
       off: [],
-      restored: undefined
+      restored: undefined,
+      dial: 0,
+      mode: "page",
+      address: undefined,
+      candidates: [],
+      candidate: 0,
+      pairing: undefined,
+      pairNext: false,
+      editorEngine: undefined,
+      seenAt: undefined,
+      seenEmittedAt: 0,
+      emittedLink: undefined,
+      everLinked: false,
+      shipping: undefined,
+      shippingStalled: false,
+      remembered: { v: 1, last: undefined, links: {} }
     });
   });
 
@@ -59,6 +85,28 @@ describe("checkConfig", () => {
     expect(() => checkConfig({ config: { ...CONFIG, callTimeoutMs: 99 } })).toThrow(
       "[moku-editor] bridge.callTimeoutMs must be a whole number of at least 100.\n  Fix pluginConfigs.bridge.callTimeoutMs, for example 5000."
     );
+  });
+
+  it("accepts a device address and rejects one without a port, as a TypeError", () => {
+    expect(() => checkConfig({ config: { ...CONFIG, device: LAN } })).not.toThrow();
+    expect(() => checkConfig({ config: { ...CONFIG, device: "my-pc.local" } })).toThrow(
+      new TypeError(
+        '[moku-editor] bridge.device must be host:port, for example "192.168.1.5:47600".\n  Fix pluginConfigs.bridge.device, for example "127.0.0.1:47600".'
+      )
+    );
+  });
+
+  it.each([0, 1001, 2.5])("rejects linesPerBatch %s as a TypeError", linesPerBatch => {
+    expect(() => checkConfig({ config: { ...CONFIG, linesPerBatch } })).toThrow(
+      new TypeError(
+        "[moku-editor] bridge.linesPerBatch must be a whole number from 1 to 1000.\n  Fix pluginConfigs.bridge.linesPerBatch, for example 200."
+      )
+    );
+  });
+
+  it("accepts linesPerBatch 1 and 1000", () => {
+    expect(() => checkConfig({ config: { ...CONFIG, linesPerBatch: 1 } })).not.toThrow();
+    expect(() => checkConfig({ config: { ...CONFIG, linesPerBatch: 1000 } })).not.toThrow();
   });
 });
 
@@ -112,11 +160,58 @@ describe("stopBridge", () => {
     expect(socket.closes).toHaveLength(1);
   });
 
+  it("clears the ack deadline of a batch in flight", () => {
+    vi.useFakeTimers();
+    const { deps } = openDeps();
+    deps.state.shipping = {
+      log: "perf-1.jsonl",
+      from: 0,
+      count: 2,
+      timer: setTimeout(() => {}, 5000)
+    };
+
+    stopBridge({ state: deps.state });
+
+    expect(deps.state.shipping).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("is safe without a socket", () => {
     const { deps } = openDeps();
     deps.state.socket = undefined;
 
     expect(() => stopBridge({ state: deps.state })).not.toThrow();
     expect(deps.state.phase).toBe("stopped");
+  });
+});
+
+/**
+ * A plugin context of the bridge over fakes.
+ *
+ * @returns The context.
+ */
+function fakeCtx(): BridgeCtx {
+  const apis: Record<string, unknown> = {
+    registry: fakeRegistry(),
+    channel: fakeChannel(),
+    recorder: fakeRecorder()
+  };
+  return {
+    config: CONFIG,
+    state: createBridgeState({ config: CONFIG }),
+    emit: vi.fn() as unknown as BridgeCtx["emit"],
+    log: createLog(),
+    require: ((plugin: { readonly name: string }) => apis[plugin.name]) as unknown as Require
+  };
+}
+
+describe("depsOf", () => {
+  it("builds the deps once per state: api, hooks and start share one snapshot", () => {
+    const ctx = fakeCtx();
+
+    const first = depsOf(ctx);
+
+    expect(depsOf({ ...ctx })).toBe(first);
+    expect(depsOf(fakeCtx())).not.toBe(first);
   });
 });

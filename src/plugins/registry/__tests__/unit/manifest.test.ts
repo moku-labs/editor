@@ -59,8 +59,8 @@ describe("buildManifest", () => {
     expect(manifest.game).toBe("tiny-game 0.0.0");
     expect(manifest.sources.map(source => source.id)).toEqual([...ctx.state.sources.keys()]);
     expect(manifest.commands.map(command => command.id)).toEqual([...ctx.state.commands.keys()]);
-    expect(manifest.sources).toHaveLength(20);
-    expect(manifest.commands).toHaveLength(17);
+    expect(manifest.sources).toHaveLength(21);
+    expect(manifest.commands).toHaveLength(21);
     expect("panels" in manifest).toBe(false);
   });
 
@@ -79,7 +79,7 @@ describe("buildManifest", () => {
     }
   });
 
-  it("describes a source as { id, title, input, changes } and a command as { id, title, input, effect }", () => {
+  it("describes a source as { id, title, input, changes } and a command with its build verdict", () => {
     const manifest = buildManifest(ctx.state, "g");
 
     expect(manifest.sources.find(source => source.id === "game.history")).toEqual({
@@ -88,7 +88,15 @@ describe("buildManifest", () => {
       input: { last: "number?" },
       changes: "edge"
     });
-    expect(Object.keys(manifest.commands[0] ?? {})).toEqual(["id", "title", "input", "effect"]);
+    // No flag is stubbed here: the page runs no command (profile "none").
+    expect(Object.keys(manifest.commands[0] ?? {})).toEqual([
+      "id",
+      "title",
+      "input",
+      "effect",
+      "allowed",
+      "reason"
+    ]);
   });
 });
 

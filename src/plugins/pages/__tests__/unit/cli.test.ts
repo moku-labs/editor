@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { createBrandConsole } from "@moku-labs/common/cli";
@@ -10,6 +10,7 @@ import { main, startBin, stopOnce } from "../../cli";
 import type { E2eDeps } from "../../e2e";
 import type { PreparePage, WatchKeys } from "../../engine-page";
 import { runBridge } from "../../mcp/bridge";
+import { perfDeps, perfLogText } from "../../perf/__tests__/helpers";
 import { REEXEC_ENV } from "../../reexec";
 import type { ReexecDeps } from "../../types";
 
@@ -704,7 +705,8 @@ describe("startBin engine page (B5)", () => {
   /** The page the stubbed engine writes. */
   const page = () => ({
     html: join(moku, ".moku", "index.html"),
-    bunfig: join(moku, ".moku", "bunfig.toml")
+    bunfig: join(moku, ".moku", "bunfig.toml"),
+    engine: { id: "0.0.0+src", version: "0.0.0", dist: "src", folder: "/fixture" }
   });
 
   /**
@@ -1009,5 +1011,83 @@ describe("startBin engine page (B5)", () => {
         await rm(root, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe("startBin perf", () => {
+  let root: string;
+
+  beforeAll(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-perf-")));
+    await writeFile(join(root, "a.jsonl"), perfLogText());
+  });
+
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("--help lists the three perf lines", async () => {
+    const { deps, lines } = createDeps();
+    await startBin(["--help"], deps);
+    const text = lines.join("\n");
+    expect(text).toContain(
+      "moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]"
+    );
+    expect(text).toContain(
+      'moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jsonl> <b.jsonl>'
+    );
+    expect(text).toContain("perf        phones over adb reverse (--lan: by pairing code)");
+  });
+
+  it("dispatches perf mark, perf summary and perf compare to the perf deps", async () => {
+    const { deps, lines } = createDeps();
+    const perf = perfDeps({ cwd: () => root, readText: path => readFile(path, "utf8") });
+    const log = join(root, "a.jsonl");
+    await expect(startBin(["perf", "mark", "boss"], { ...deps, perf })).resolves.toEqual({
+      code: 1
+    });
+    expect(lines.join("\n")).toContain("No moku-editor perf runs in this folder");
+    await expect(startBin(["perf", "summary", log], { ...deps, perf })).resolves.toEqual({
+      code: 0
+    });
+    expect(lines.join("\n")).toContain("SM-A266B · webgpu");
+    await expect(startBin(["perf", "compare", log, log], { ...deps, perf })).resolves.toEqual({
+      code: 0
+    });
+    expect(lines.join("\n")).toContain("Compare A a.jsonl → B a.jsonl");
+  });
+
+  it("prints a bad perf switch as two lines with the usage, exit 2", async () => {
+    const { deps, lines } = createDeps();
+    await expect(startBin(["perf", "--every", "0"], deps)).resolves.toEqual({ code: 2 });
+    expect(lines[0]).toBe(
+      "  ✗ [moku-editor] perf --every must be an integer 1-3600 (seconds).\n  Run moku-editor perf --every 10."
+    );
+    expect(lines.join("\n")).toContain("Usage: moku-editor");
+  });
+
+  it("main catches a SIGINT during a perf start: the run stops once started, exits 0 and leaves no .moku/perf.json", async () => {
+    const before = { int: process.listenerCount("SIGINT"), term: process.listenerCount("SIGTERM") };
+    const { deps, lines } = createDeps();
+    const perf = perfDeps({
+      cwd: () => root,
+      pid: process.pid,
+      appIdOf: async () => {
+        // Ctrl+C mid-start, before the bin's own handlers exist.
+        process.emit("SIGINT");
+        return undefined;
+      },
+      extraConfig: { collector: { adb: "/no/adb" } }
+    });
+    expect(await main(["perf", "--port", "0", "--no-ui"], { ...deps, perf })).toBe(0);
+    await vi.waitFor(() => expect(deps.exit).toHaveBeenCalledWith(0));
+    expect(lines.join("\n")).toContain("moku editor  perf");
+    expect(lines.join("\n")).toContain("stopped");
+    expect(existsSync(join(root, ".moku/perf.json"))).toBe(false);
+    process.emit("SIGINT");
+    process.emit("SIGTERM");
+    expect(deps.exit).toHaveBeenCalledTimes(1);
+    expect(process.listenerCount("SIGINT")).toBe(before.int);
+    expect(process.listenerCount("SIGTERM")).toBe(before.term);
   });
 });

@@ -1,9 +1,13 @@
 /**
  * @file workspace plugin — hooks: link:status drives the pill, the stale bar, the F4 cards and
- * the frame spinner of an expected reload.
+ * the frame spinner of an expected reload, and runs the first scenario listing once the socket is
+ * open; activeSource's `activeSource:changed` repaints the paused veil, the source pill and the
+ * disconnect notice.
  */
 import type { ToolsEvents } from "../../config";
 import { syncSpinner } from "./frame/frame";
+import { syncVeil } from "./frame/veil";
+import { listOnFirstOpen } from "./scenarios";
 import type { WorkspaceCtx, WorkspaceHooks, WorkspaceState } from "./types";
 
 /**
@@ -12,14 +16,27 @@ import type { WorkspaceCtx, WorkspaceHooks, WorkspaceState } from "./types";
 const TICK_MS = 1000;
 
 /**
- * Workspace listens to one global event: `link:status`, which drives the pill, the stale bar, the
- * F4 cards and the frame spinner of an expected reload.
+ * Workspace listens to the global `link:status`, which drives the pill, the stale bar, the F4
+ * cards and the frame spinner of an expected reload (the first status after start that says the
+ * socket is open also runs the first scenario listing), and to activeSource's
+ * `activeSource:changed`, which repaints the veil over the local frame and the shell (source pill,
+ * notice).
  *
  * @param ctx - Domain context of workspace.
  * @returns The hooks.
  */
 export function createHandlers(ctx: WorkspaceCtx): WorkspaceHooks {
-  return { "link:status": handleLinkStatus(ctx) };
+  const onStatus = handleLinkStatus(ctx);
+  return {
+    "link:status": payload => {
+      onStatus(payload);
+      listOnFirstOpen(ctx, payload.status.kind);
+    },
+    "activeSource:changed": () => {
+      syncVeil(ctx);
+      ctx.state.ui.bump();
+    }
+  };
 }
 
 /**

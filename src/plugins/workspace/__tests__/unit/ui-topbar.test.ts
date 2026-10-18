@@ -207,7 +207,7 @@ describe("TopBar", () => {
     bump();
     act(() => control("overlay").click());
     await flush();
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
     expect(ctx.emit).toHaveBeenCalledWith(
       "workspace:ran",
       expect.objectContaining({ id: "editor.overlay", origin: "topbar" })
@@ -585,6 +585,37 @@ describe("TopBar at 900 px and wider", () => {
     vi.stubGlobal("innerWidth", 899);
     bump();
     expect(root.querySelector<HTMLElement>("[data-ui='top-bar']")?.dataset.layout).toBe("compact");
+  });
+});
+
+describe("TopBar · the computer's engine fingerprint (spec 09 W3)", () => {
+  it("the wide bar shows 'engine <id>' once link knows it, after the session chip", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    ctx.link.engineValue = "0.14.13+1ab7f2";
+    mount();
+
+    const engine = root.querySelector('[data-ui="session-chip"] + [data-part="engine"]');
+    expect(engine?.textContent).toBe("engine 0.14.13+1ab7f2");
+  });
+
+  it("nothing shows while it is unknown", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    mount();
+
+    expect(root.querySelector('[data-part="engine"]')).toBeNull();
+    expect(root.querySelector("[data-game-name]")?.getAttribute("title")).toBeNull();
+  });
+
+  it("the compact bar puts it into the game name's title", () => {
+    vi.stubGlobal("innerWidth", 720);
+    ctx.link.manifestValue = manifestOf();
+    ctx.link.engineValue = "0.14.13+1ab7f2";
+    mount();
+
+    expect(root.querySelector('[data-part="engine"]')).toBeNull();
+    expect(root.querySelector("[data-game-name]")?.getAttribute("title")).toBe(
+      "merge-game 0.0.0 · engine 0.14.13+1ab7f2"
+    );
   });
 });
 

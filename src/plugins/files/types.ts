@@ -3,10 +3,12 @@
  * WriteResult, ProjectFound, ProjectState) come from the protocol (R1); files declares only its
  * config, state, api, the `files:written` payload, the project handle it keeps and its domain
  * context. No type here names a type of `@moku-labs/game/project` (P4): the handle is structural.
+ * The engine fingerprint's wire form, EngineInfo, comes from hub/protocol.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { ServerEvents } from "../../config";
+import type { EngineInfo } from "../hub/protocol";
 import type {
   FileBinary,
   FileEntry,
@@ -73,6 +75,10 @@ export type FilesState = {
   stopWatch: (() => void) | undefined;
   /** Set by onStop; an open that settles later closes its handle and announces nothing. */
   stopped: boolean;
+  /** The engine fingerprint of the root, computed on start; undefined before the first start. */
+  engine: EngineInfo | undefined;
+  /** Epoch ms of the last fingerprint run; 0 before the first. */
+  engineAt: number;
 };
 
 /**
@@ -266,6 +272,37 @@ export type FilesApi = {
    * ```
    */
   project(): ProjectState;
+
+  /**
+   * The engine of this computer's project: the installed `@moku-labs/game`, by the recipe of the
+   * engine's `__MOKU_GAME_ENGINE__` (version + hash of its dist and patch). Computed on start;
+   * `refreshEngine()` renews it. The hub publishes it as `editor.engine`.
+   *
+   * @returns The fingerprint; `{ id: "unknown", … }` when the game is not installed under the root.
+   * @throws {Error} `[moku-editor] files.engine() needs a started app.` before the first start (a
+   * lifecycle error).
+   * @example
+   * ```ts
+   * // The perf command prints the computer's engine next to each phone's.
+   * editor.files.engine().id; // "0.14.12+9c41e0"
+   * ```
+   */
+  engine(): EngineInfo;
+
+  /**
+   * Computes the fingerprint again when the last run is older than 2 s (ENGINE_REFRESH_MS), else
+   * answers the kept one. The hub calls it when a device pairs or reconnects (a reinstall during a
+   * long perf run).
+   *
+   * @returns The fingerprint, fresh or kept.
+   * @throws {Error} The `engine()` lifecycle error before the first start.
+   * @example
+   * ```ts
+   * // The hub, when a phone pairs: publish the engine again only when its id changed.
+   * const info = await ctx.require(filesPlugin).refreshEngine(); // { id: "0.14.13+1ab7f2", version: "0.14.13", dist: "1ab7f2…" }
+   * ```
+   */
+  refreshEngine(): Promise<EngineInfo>;
 };
 
 /**

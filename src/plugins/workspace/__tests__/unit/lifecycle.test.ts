@@ -2,6 +2,7 @@
 // @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkspaceApi } from "../../api";
+import { createHandlers } from "../../handlers";
 import { initWorkspace, startWorkspace, stopWorkspace, validateConfig } from "../../lifecycle";
 import { createCtx, flush, keyEvent, manifestOf, type TestCtx } from "../helpers";
 
@@ -130,6 +131,7 @@ describe("initWorkspace", () => {
     expect(ctx.state.keys.escape.map(entry => entry.layer).toSorted()).toEqual([
       "contextMenu",
       "contextMenu",
+      "contextMenu",
       "palette",
       "registry",
       "stepPopover"
@@ -196,7 +198,7 @@ describe("startWorkspace — keys", () => {
     press("o");
     await flush();
     expect(ctx.state.overlayInGame).toBe(true);
-    expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenLastCalledWith("editor.overlay", { mode: "card" });
   });
 
   it("R is a free key (D-65): the press runs nothing, emits nothing and is left to the page", () => {
@@ -330,7 +332,7 @@ describe("startWorkspace — listeners", () => {
     await flush();
     expect(ctx.state.everLive).toBe(true);
     expect(ctx.state.ui.version).toBeGreaterThan(version);
-    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { on: true });
+    expect(ctx.link.run).toHaveBeenCalledWith("editor.overlay", { mode: "card" });
   });
 
   it("resize bumps the UI; an OS theme change updates the theme while none is chosen", () => {
@@ -362,6 +364,48 @@ describe("startWorkspace — listeners", () => {
     ctx.state.theme.chosen = "light";
     fire?.({ matches: false });
     expect(document.documentElement.dataset.theme).toBe("light");
+  });
+});
+
+describe("startWorkspace — scenarios and the engine fingerprint", () => {
+  it("the first open socket lists the scenarios once", async () => {
+    const hooks = createHandlers(ctx);
+    vi.mocked(ctx.link.files.list).mockResolvedValue([
+      { path: "tests/scenarios/full.ts", kind: "file", size: 9 }
+    ]);
+
+    hooks["link:status"]({ status: { kind: "connecting" } });
+    expect(ctx.link.files.list).not.toHaveBeenCalled();
+    hooks["link:status"]({ status: { kind: "empty" } });
+    hooks["link:status"]({ status: { kind: "live", frame: 1 }, session: "s-1" });
+    await flush();
+    hooks["link:status"]({ status: { kind: "live", frame: 2 }, session: "s-1" });
+
+    expect(ctx.link.files.list).toHaveBeenCalledTimes(1);
+    expect(ctx.link.files.list).toHaveBeenCalledWith("tests/scenarios");
+    expect(createWorkspaceApi(ctx).scenarios().scenarios).toEqual(["full"]);
+  });
+
+  it("a lost socket lists nothing until it opens", () => {
+    const hooks = createHandlers(ctx);
+
+    hooks["link:status"]({
+      status: { kind: "lost", reason: "socket_closed", lastFrame: 0, retryInMs: 1000 }
+    });
+
+    expect(ctx.link.files.list).not.toHaveBeenCalled();
+  });
+
+  it("the engine fingerprint bumps the top bar; onStop drops the listener", () => {
+    initWorkspace(ctx);
+    startWorkspace(ctx);
+    const version = ctx.state.ui.version;
+
+    ctx.link.publishEngine("0.14.13+1ab7f2");
+    expect(ctx.state.ui.version).toBeGreaterThan(version);
+
+    stopWorkspace(ctx);
+    expect(ctx.link.engineListeners.size).toBe(0);
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * @file workspace plugin — the built-in keys of design §4 (⌘1–⌘6 and bare 1–6, ⌘K, `.`, P, O,
- * G, H) and the Esc layers the shell owns (palette, the session and ⋯ menus, registry, step
+ * G, H) and the Esc layers the shell owns (palette, the session, source and ⋯ menus, registry, step
  * popover). In Flow, flowView's H (History) wins over the global Hot reload key.
  */
 import { WORKSPACE_IDS, WORKSPACE_LABELS } from "../../panels/shared/workspaces";
@@ -59,6 +59,7 @@ export function registerBuiltIns(ctx: WorkspaceCtx): void {
     return true;
   });
   addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "session"));
+  addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "source"));
   addEscapeLayer(ctx, "contextMenu", () => closePopover(state, "more"));
   addEscapeLayer(ctx, "registry", () => closePopover(state, "registry"));
   addEscapeLayer(ctx, "stepPopover", () => closePopover(state, "step"));

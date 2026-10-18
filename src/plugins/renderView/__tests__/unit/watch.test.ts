@@ -90,8 +90,7 @@ describe("tracker", () => {
     expect(ctx.link.active("game.render")).toHaveLength(1);
   });
 
-  it("keeps one FPS sample per delivered value, trimmed to fpsSamples, at the link frame", () => {
-    ctx = createCtx({ fpsSamples: 2 });
+  it("keeps the stats of each delivered value at the link frame, the first frame of the session once", () => {
     startTracker(ctx);
     const listener = vi.fn();
     ctx.state.listeners.add(listener);
@@ -101,39 +100,10 @@ describe("tracker", () => {
     ctx.link.send("game.render", { ...(RENDER as object), fps: 59 });
     ctx.link.send("game.render", { ...(RENDER as object), fps: 60 });
 
-    expect(ctx.state.fps).toEqual([59, 60]);
     expect(ctx.state.firstFrame).toBe(1841);
     expect(ctx.state.lastFrame).toBe(1900);
     expect(ctx.state.render?.fps).toBe(60);
     expect(listener).toHaveBeenCalledTimes(3);
-  });
-
-  it("reads the page heap from link on each game.render change", () => {
-    startTracker(ctx);
-    const heap = vi.fn<() => { usedMb: number; limitMb: number } | undefined>(() => ({
-      usedMb: 12.8,
-      limitMb: 4095.8
-    }));
-    ctx.link.api.heap = heap;
-
-    ctx.link.send("game.render", RENDER);
-    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
-
-    heap.mockReturnValue(undefined);
-    ctx.link.send("game.render", RENDER);
-    expect(ctx.state.heap).toBeUndefined();
-    expect(heap).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps the heap of the last good game.render value after a bad one", () => {
-    startTracker(ctx);
-    ctx.link.api.heap = () => ({ usedMb: 12.8, limitMb: 4095.8 });
-    ctx.link.send("game.render", RENDER);
-
-    ctx.link.api.heap = () => undefined;
-    ctx.link.send("game.render", { fps: "fast" });
-
-    expect(ctx.state.heap).toEqual({ usedMb: 12.8, limitMb: 4095.8 });
   });
 
   it("logs a shape error and keeps the last value", () => {

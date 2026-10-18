@@ -11,6 +11,7 @@ import { readHotReload } from "../rpc/shapes";
 import { expectReload } from "../status/reload";
 import type { HotReloadWaiter, LinkCtx, LinkState } from "../types";
 import { HOT_RELOAD_CONFIRM_MS } from "../types";
+import { notifyPublished } from "./published";
 
 /**
  * The answer of `{path}/hmr`: whether it was ok and the state its body carries.
@@ -18,8 +19,9 @@ import { HOT_RELOAD_CONFIRM_MS } from "../types";
 type HmrAnswer = { readonly ok: boolean; readonly state: HotReload | undefined };
 
 /**
- * Stores a new state and gives it, frozen, to every listener in subscription order. The same
- * state again changes nothing. A listener that throws is logged and the others still run.
+ * Stores a new state and gives it, frozen, to every listener in subscription order, then to the
+ * onPublished listeners of `hotReload`. The same state again changes nothing. A listener that
+ * throws is logged and the others still run.
  *
  * @param ctx - Domain context of link.
  * @param next - The state the hub sent or the route answered.
@@ -42,6 +44,7 @@ export function applyHotReload(ctx: LinkCtx, next: HotReload): void {
       );
     }
   }
+  notifyPublished(ctx, "hotReload", frozen);
 }
 
 /**

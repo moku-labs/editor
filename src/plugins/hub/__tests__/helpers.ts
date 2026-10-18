@@ -1,20 +1,28 @@
 /* eslint-disable unicorn/no-null -- null is a JSON value on the wire */
 import type { Mock } from "vitest";
 import { vi } from "vitest";
-import type { Require } from "../../../config";
+import type { Require, ServerEvents } from "../../../config";
 import type { FilesApi } from "../../files/types";
 import type { Json, Manifest, Message, Request as RpcRequest } from "../../registry/protocol";
 import { decode, encode, notification, toWireValue } from "../../registry/protocol";
+import { listenDevices } from "../device/listen";
+import type { EngineInfo } from "../protocol";
 import { createSocketHandler } from "../sockets/handler";
 import { createHubState } from "../state";
 import type {
   AgentConn,
   ConnKind,
+  DeviceServe,
+  DeviceServeOptions,
   HubConfig,
   HubCtx,
+  HubEvents,
   HubServer,
   HubSocket,
+  HubSocketData,
   HubWebSocketHandler,
+  PairConfirm,
+  PairRequest,
   ToolsConn
 } from "../types";
 
@@ -28,8 +36,17 @@ export const DEFAULT_CONFIG: HubConfig = {
   path: "/__editor",
   allowOrigins: [],
   callTimeoutMs: 5000,
-  silentAfterMs: 6000
+  silentAfterMs: 6000,
+  devicePort: 47_600,
+  deviceLan: false,
+  lanAddress: undefined,
+  deviceOrigins: ["tauri://localhost", "https://tauri.localhost", "http://tauri.localhost"],
+  pairing: "lan",
+  pairTimeoutMs: 60_000
 };
+
+/** The engine the fake files api answers. */
+export const ENGINE: EngineInfo = { id: "0.14.12+9c41e0", version: "0.14.12", dist: "9c41e0aa" };
 
 /** The token every harness starts with. */
 export const TOKEN = "t".repeat(43);
@@ -82,6 +99,8 @@ export function createLog() {
 export type FakeSocket = HubSocket & {
   readonly sent: string[];
   readonly closes: { code: number | undefined; reason: string | undefined }[];
+  /** The payload of every ping the hub sent (H4). */
+  readonly pings: string[];
   /** What send returns: 1 sent, -1 backpressure, 0 dropped. */
   result: number;
   /** Every sent message, decoded. */
@@ -103,12 +122,24 @@ export type FakeSocket = HubSocket & {
  * @returns The fake socket.
  */
 export function fakeSocket(kind: ConnKind, conn: number, page = false): FakeSocket {
+  return socketOf(page ? { kind, conn, page: true } : { kind, conn });
+}
+
+/**
+ * A recording socket with the upgrade's data (a device socket carries `device`).
+ *
+ * @param data - The socket data.
+ * @returns The fake socket.
+ */
+export function socketOf(data: HubSocketData): FakeSocket {
   const sent: string[] = [];
   const closes: { code: number | undefined; reason: string | undefined }[] = [];
+  const pings: string[] = [];
   const socket: FakeSocket = {
-    data: page ? { kind, conn, page: true } : { kind, conn },
+    data,
     sent,
     closes,
+    pings,
     result: 1,
     send(text: string): number {
       sent.push(text);
@@ -116,6 +147,10 @@ export function fakeSocket(kind: ConnKind, conn: number, page = false): FakeSock
     },
     close(code?: number, reason?: string): void {
       closes.push({ code, reason });
+    },
+    ping(payload?: string): number {
+      pings.push(payload ?? "");
+      return 1;
     },
     messages: () => sent.map(text => decode(text)),
     notes: (channel, method) =>
@@ -198,13 +233,23 @@ export function fakeFiles(): FakeFiles {
     find: vi.fn<FilesApi["find"]>(async key => [
       { path: "nodes/merge.ts", binding: "merge", key, line: 17, range: [17, 1, 24, 3], hash: "h1" }
     ]),
-    project: vi.fn<FilesApi["project"]>(() => ({ state: "off", reason: "not opened" }))
+    project: vi.fn<FilesApi["project"]>(() => ({ state: "off", reason: "not opened" })),
+    engine: vi.fn<FilesApi["engine"]>(() => ENGINE),
+    refreshEngine: vi.fn<FilesApi["refreshEngine"]>(async () => ENGINE)
   };
 }
 
+/** The events the hub emits. */
+type Emitted = Pick<ServerEvents, "hub:session"> & HubEvents;
+
+/**
+ * The hub emit as one signature a mock can take; it fits both overloads of `HubCtx["emit"]`.
+ */
+export type EmitMock = Mock<(name: keyof Emitted, payload: Emitted[keyof Emitted]) => void>;
+
 /** A hub ctx whose emit, log and files are mocks. */
 export type TestCtx = HubCtx & {
-  readonly emit: Mock<HubCtx["emit"]>;
+  readonly emit: EmitMock;
   readonly log: ReturnType<typeof createLog>;
   readonly files: FakeFiles;
 };
@@ -223,7 +268,7 @@ export function createCtx(overrides: Partial<HubConfig> = {}): TestCtx {
   return {
     config,
     state: createHubState({ config }),
-    emit: vi.fn<HubCtx["emit"]>(),
+    emit: vi.fn(),
     log: createLog(),
     require,
     files
@@ -238,12 +283,17 @@ export type Harness = {
   connect(kind: ConnKind): FakeSocket;
   /** Opens a tools connection with the page role (an editor page, `role=page`). */
   page(): FakeSocket;
+  /** Opens a device connection (a phone on a device listener) with its upgrade's device data. */
+  device(device: NonNullable<HubSocketData["device"]>): FakeSocket;
   /** Sends a message on a socket (handler.message with the encoded text). */
   send(socket: FakeSocket, message: Message): void;
   /** Closes a socket (handler.close). */
   close(socket: FakeSocket, code?: number): void;
-  /** Connects an agent and sends its hello; returns the socket and the session id. */
-  hello(manifest?: Manifest): { agent: FakeSocket; session: string };
+  /**
+   * Connects an agent and sends its hello (with `caps` when given); returns the socket and the
+   * session id.
+   */
+  hello(manifest?: Manifest, caps?: readonly string[]): { agent: FakeSocket; session: string };
   /** The registered agent conn of a socket. */
   agentConn(socket: FakeSocket): AgentConn;
   /** The registered tools conn of a socket. */
@@ -254,10 +304,16 @@ export type Harness = {
  * The hello notification of an agent.
  *
  * @param manifest - The manifest to send.
+ * @param caps - The capabilities it names (`["run-from"]`); none by default, like an older bridge.
  * @returns The notification.
  */
-export function helloOf(manifest: Manifest | Json = MANIFEST): Message {
-  return notification("game", "hello", { manifest: toWireValue(manifest) });
+export function helloOf(manifest: Manifest | Json = MANIFEST, caps?: readonly string[]): Message {
+  const params = { manifest: toWireValue(manifest) };
+  return notification(
+    "game",
+    "hello",
+    caps === undefined ? params : { ...params, caps: [...caps] }
+  );
 }
 
 /**
@@ -284,15 +340,20 @@ export function createHarness(overrides: Partial<HubConfig> = {}): Harness {
       handler.open(socket);
       return socket;
     },
+    device(device) {
+      const socket = socketOf({ kind: "agent", conn: ctx.state.nextConn++, device });
+      handler.open(socket);
+      return socket;
+    },
     send(socket, message) {
       handler.message(socket, encode(message));
     },
     close(socket, code = 1006) {
       handler.close(socket, code, "");
     },
-    hello(manifest = MANIFEST) {
+    hello(manifest = MANIFEST, caps) {
       const agent = harness.connect("agent");
-      harness.send(agent, helloOf(manifest));
+      harness.send(agent, helloOf(manifest, caps));
       const note = agent.notes("editor", "session")[0];
       const params = note !== undefined && "params" in note ? note.params : undefined;
       const id =
@@ -389,3 +450,138 @@ export function keysOf(value: unknown): string[] {
 
 /** A JSON null for tests. */
 export const NULL: Json = null;
+
+/** A device listener the fake serve started. */
+export type FakeDeviceServer = {
+  readonly port: number;
+  readonly hostname: string;
+  readonly stop: Mock<(closeActiveConnections?: boolean) => Promise<void>>;
+};
+
+/** A fake `Bun.serve` of the device listeners and what it was called with. */
+export type FakeServe = {
+  readonly serve: Mock<DeviceServe>;
+  readonly calls: DeviceServeOptions[];
+  readonly servers: FakeDeviceServer[];
+};
+
+/**
+ * A fake device-listener start: records the options and answers a server whose port is the
+ * configured one, or `port` for 0.
+ *
+ * @param port - The port a listener on port 0 gets.
+ * @returns The fake.
+ */
+export function fakeServe(port = 51_234): FakeServe {
+  const calls: DeviceServeOptions[] = [];
+  const servers: FakeDeviceServer[] = [];
+  const serve = vi.fn<DeviceServe>(options => {
+    calls.push(options);
+    const server: FakeDeviceServer = {
+      port: options.port === 0 ? port : options.port,
+      hostname: options.hostname,
+      stop: vi.fn(async () => undefined)
+    };
+    servers.push(server);
+    return server;
+  });
+  return { serve, calls, servers };
+}
+
+/** One question the recording confirm was asked, with its answer to settle. */
+export type Asked = {
+  readonly request: PairRequest;
+  readonly signal: AbortSignal;
+  readonly answer: PromiseWithResolvers<boolean>;
+};
+
+/** A pairing callback that records each question and waits for the test's answer. */
+export type RecordingConfirm = { readonly confirm: Mock<PairConfirm>; readonly asked: Asked[] };
+
+/**
+ * A recording pairing callback: each call is kept with an answer the test settles.
+ *
+ * @returns The callback and its questions.
+ */
+export function recordingConfirm(): RecordingConfirm {
+  const asked: Asked[] = [];
+  const confirm = vi.fn<PairConfirm>((request, signal) => {
+    const answer = Promise.withResolvers<boolean>();
+    asked.push({ request, signal, answer });
+    return answer.promise;
+  });
+  return { confirm, asked };
+}
+
+/** A started harness in device mode with its fakes. */
+export type DeviceHarness = Harness & RecordingConfirm & { readonly fake: FakeServe };
+
+/**
+ * A started harness with device mode on through fake listeners (the adb one on 47600 by default)
+ * and a recording confirm. The listening event and line are cleared.
+ *
+ * @param overrides - Config fields to change.
+ * @returns The harness.
+ */
+export async function createDeviceHarness(
+  overrides: Partial<HubConfig> = {}
+): Promise<DeviceHarness> {
+  const harness = createHarness(overrides);
+  const recording = recordingConfirm();
+  const fake = fakeServe();
+  await listenDevices(harness.ctx, { confirm: recording.confirm }, harness.handler, {
+    serve: fake.serve,
+    interfaces: () => ({})
+  });
+  harness.ctx.emit.mockClear();
+  harness.ctx.log.info.mockClear();
+  return { ...harness, ...recording, fake };
+}
+
+/** What a phone says it is in its `pair`, by default. */
+const PHONE_DEVICE: { [key: string]: Json } = {
+  model: " sm a266b ",
+  engine: "0.14.12+9c41e0",
+  build: "debug-1"
+};
+
+/**
+ * The `editor`/`pair` notification of a phone.
+ *
+ * @param code - The code it shows.
+ * @param device - What it says it is.
+ * @returns The notification.
+ */
+export function pairOf(code = "4821", device: { [key: string]: Json } = PHONE_DEVICE): Message {
+  return notification("editor", "pair", { code, device });
+}
+
+/**
+ * Pairs a phone over adb (confirmed at once under `pairing: "lan"`) and reads its `paired`.
+ *
+ * @param harness - A device harness.
+ * @param address - The phone's address.
+ * @returns The socket, the device id and its token.
+ */
+export function pairAdb(
+  harness: Harness,
+  address = "127.0.0.1"
+): { socket: FakeSocket; id: string; token: string } {
+  const socket = harness.device({ link: "adb", address });
+  harness.send(socket, pairOf());
+  const params = paramsOf(socket.notes("editor", "paired")[0]);
+  const id = params?.device;
+  const token = params?.token;
+  if (typeof id !== "string" || typeof token !== "string") throw new Error("not paired");
+  socket.clear();
+  return { socket, id, token };
+}
+
+/**
+ * Lets pending promise callbacks run (a confirm answer, a refresh); works under fake timers too.
+ *
+ * @returns After ten microtask turns.
+ */
+export async function flush(): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+}

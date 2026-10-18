@@ -7,8 +7,11 @@ The shell of the tools page: top bar (B1) with the game mark and its ⋯ menu, r
 palette (E1), toasts (F1), stale bar (F3) and the connecting and no-game cards (F4). It owns the
 single game iframe, the device presets, the per-viewer preferences (theme, density, preview per
 workspace, device and fold, Show taps, sound, Copy on select), the key map with the Esc unwinding,
-the overlay-in-game switch, the Hot reload switch, the tap ripples and the D-07 reload. It also
-ships the shared CSS layer every view uses (`styles/`).
+the overlay-in-game switch, the Hot reload switch, the tap ripples and the D-07 reload. With
+activeSource (spec 11 § 5.3) it shows the page's source: the source pill and its menu in the top
+bar, the disconnect notice under it, the paused veil over the local frame, and it starts the local
+preview on request (`startLocalPreview`). It also ships the shared CSS layer every view uses
+(`styles/`).
 
 The shell is built narrow first: it runs in a browser pane at a third (480 px) or half (720 px)
 of the screen. Below 900 px the top bar is compact: Hot reload stays as an icon and the rest
@@ -64,6 +67,11 @@ URL comes from the boot JSON (`link.boot()?.gameUrl`, else `"/"`), not from conf
 | `copyOnSelect` | `() => boolean` | The Copy on select preference (U5, D-70): what a click of gameView's element picker does. On: the pick writes the reference (crop, full frame, card) and copies its line. Off: the pick only selects the element and writes nothing. Persisted; `true` for a fresh viewer and for a stored record without the field. |
 | `setCopyOnSelect` | `(on) => void` | Sets and persists the preference; `onPrefs` listeners get the new `copyOnSelect` (the Copy Ref switch of gameView's game toolbar follows them). The same value again does nothing. No event: gameView reads `copyOnSelect()` at a pick. |
 | `onPrefs` | `(fn) => () => void` | Called after every theme, preview, device, sound or Copy on select change with `{ theme, previews, device, muted, copyOnSelect }`. |
+| `scenarios` | `() => ScenarioView` | `{ scenarios, chosen }`: the scenario names of `tests/scenarios/` (file stems, sorted) and the one the game frame starts from. A copy. Empty until the first listing and for a project without the folder. See [Scenarios](#scenarios-dev-only). |
+| `setScenario` | `(name: string \| undefined) => Promise<ReloadResult>` | Starts the game frame from a scenario (`?player=<name>`), or from the saved player with `undefined`: reloads the frame without restore and toasts "Game started from scenario <name>" / "Game started from the saved player" instead of the reload's own toast. Before the first mount it stores the choice and resolves `not_mounted`. A name not listed rejects `[moku-editor] Unknown scenario "<name>".` (`TypeError`). Never persisted; emits no `workspace:ran`. |
+| `refreshScenarios` | `() => Promise<ScenarioView>` | Lists `tests/scenarios/` again through `link.files.list`. Concurrent calls share one listing. A missing folder or a failed list gives no scenarios (debug `workspace:scenarios-failed`, no toast). |
+| `onScenario` | `(fn) => () => void` | Called with the new view after the list changed or a scenario was chosen. A throwing listener is logged as `workspace:scenario-listener-failed`. |
+| `startLocalPreview` | `() => Promise<void>` | W12. Mounts the one game frame when it is not mounted yet (the frame layer of the first `mount()`, docked by the current workspace's preview prefs; it does not show a hidden preview) and resolves once its session is listed (`link.ownSession()` answers); at once when it already is. Two calls in flight share one promise. A page without a game frame (the tools page of `moku-editor perf`: its device mode belongs to perf, `editor.devices` `mode.owner` "other") rejects and mounts nothing: `[moku-editor] workspace.startLocalPreview() needs a game frame.\n  This page shows a device only; open the tools page of moku-editor <game> to run the game here.` No session within 15 s rejects: `[moku-editor] The local preview did not start.\n  Check the game's console in the Console workspace; the frame is mounted at <url>.` onStop drops the wait and settles nothing. renderView's "Start local preview" buttons call it. |
 
 ```ts
 workspace.show("flow");
@@ -97,19 +105,25 @@ const off = workspace.onPrefs(prefs => rerender(prefs));
 The bar picks its layout from the window width and writes it as `data-layout` on
 `[data-ui="top-bar"]`. A window resize re-renders it.
 
-- **900 px and wider (`wide`)**: the game mark, game name, session chip, link pill, Pause, Step,
+- **900 px and wider (`wide`)**: the game mark, game name, source pill, session chip, the computer's engine
+  fingerprint (`span[data-part="engine"]`, mono, "engine 0.14.13+1ab7f2" from `link.engine()`;
+  nothing while it is unknown; hidden below 1100 px of window width), link pill, Pause, Step,
   the search box, the switches Preview (G), Overlay (O) and Hot reload (H) with visible labels,
   Registry (icon only; the counts are in its title, "Registry · 12 sources · 30 commands"),
-  theme. Under 1180 px Pause and Step show their icons only.
-- **Below 900 px (`compact`)**: the game mark, game name (hidden at 560 px and narrower), link
-  pill, Pause and Step as icons (the label is their accessible name, the title says the key), then
+  theme. The row always fits: under 1360 px Pause and Step show their icons only, the game name
+  drops its version and the source pill how the source is reached (its title keeps it); under
+  1140 px the source pill shows its dot only (the name stays its accessible name). The search box
+  gives up its room first: it is at its 88 px minimum before the game name shrinks.
+- **Below 900 px (`compact`)**: the game mark, game name (hidden at 560 px and narrower), source
+  pill (its name only), link pill, Pause and Step as icons (the label is their accessible name, the title says the key), then
   at the end the icon toggle Hot reload (`data-action="hot-reload"`, flame icon with a dot while
   on), a search icon and the ⋯ button (`data-action="more"`). The toggle carries `aria-pressed`;
   it is inert with the hint in its title when the bin does not own it. It is the one toggle of the
   bar at every compact width: `barToggles(width)` in `ui/TopBar.tsx` answers `["hot-reload"]`
   below 900 px and `[]` from there. The session chip is gone: the pill's tooltip names the session
   ("… · session s-7f3a · connected 22:41:07"), and with more than one session the pill opens the
-  session menu.
+  session menu. The game name's `title` carries the engine fingerprint ("merge-game 0.0.0 · engine
+  0.14.13+1ab7f2") once link knows it.
 - **The ⋯ menu** is a top-layer `role="menu"` popover. Rows: Game preview (G), Overlay in game
   (O), Hot reload (H), each with its state and its key (Hot reload is a row even though the bar
   shows it as an icon); then Registry (counts), Density (cycles auto → compact → comfortable) and
@@ -122,6 +136,59 @@ The bar picks its layout from the window width and writes it as `data-layout` on
 
 Every control keeps its size; only the game name and the wide search box shrink, and the search
 box clips its own content, so no control runs over another.
+
+### The source (spec 11 § 5.3 W8–W11)
+
+The page reads one source at a time, chosen by activeSource: the local preview (this page's game
+frame), a phone, or another game page. workspace shows it and routes every choice through
+activeSource, which pauses the local preview while a phone is the source and resumes it after.
+
+- **Source pill** (`[data-ui="source-pill"]`, `ui/SourcePill.tsx`): "Local preview" (neutral),
+  "<name> · by wire" / "<name> · on the network" for a phone (14 % accent tint), "<game> · another
+  page". The name is `activeSource.label().name` (the marketing name adb matched, else the model).
+  `data-kind` is `local`, `device` or `page`; the 8 px dot (`data-state`) is `live` (pulsing) while
+  the source's session is listed and its heartbeat is not silent, `away` otherwise. A click opens
+  the **source menu** (top layer, `[data-ui="source-menu"]`): Local preview ("Not started" and
+  inert while the frame has no session, "No game on this page" on the perf page), every linked
+  phone (`by wire · 127.0.0.1`), each with Use, and Connect device…, which shows Render and calls
+  `activeSource.openConnect()` (renderView opens its Connect panel). Esc closes it.
+- **Session menu**: a row of a phone calls `activeSource.useDevice`, the row of this page's own
+  frame `activeSource.useLocal`; only another game page goes to `link.choose` (before, every row
+  called `link.choose`, so a phone chosen there ran next to the local game).
+- **Disconnect notice** (`[data-ui="source-notice"]`, `ui/SourceNotice.tsx`): the shell grid's
+  second row, under the top bar, full width, in every workspace, while `activeSource.notice()`
+  holds (`role="status"`, `aria-live="polite"`; the region stays in the document and is 0 px high
+  when empty). The text with its first sentence bold, Reconnect (`activeSource.reconnect()`; "Use"
+  when the device is back, then its newest session is used if reconnect has nothing to rejoin),
+  Dismiss (`dismissNotice()`), and a 2 px timer line that shrinks to the notice's end, still and
+  dimmed while Reconnect waits. The notice goes at its `until` without an event: the region
+  repaints then on its own.
+- **Paused veil** (`[data-frame-veil]` in the frame overlay, `frame/veil.tsx`): while a phone is
+  the source and `activeSource.preview()` is `paused-by-source`, the local frame is covered:
+  "Paused" / "<name> is the source." / Use local preview (`useLocal()`). `unpausable` shows "Could
+  not pause the local preview" with the reason. With the local preview as the source there is no
+  veil, also while its resume is still in flight. The veil keeps its screen size at any frame
+  scale and takes the pointer.
+
+The pill, the notice and the veil repaint on `activeSource:changed` and on every session list
+(`link.onSessions`: a phone linking or leaving, the local preview's pause taking hold).
+
+### Scenarios (dev only)
+
+The engine dev page starts from a prepared save when its URL carries `?player=<name>`: the file
+`tests/scenarios/<name>.ts` of the game folder (engine `src/app/page.ts`). workspace lists that
+folder once the link's socket is open (the first `link:status` that is not `connecting` or
+`lost`), keeps the chosen name in its state and passes it to `link.frameUrl(url, { player })`
+(`taggedGameUrl`, the one place the frame URL is made): the first mount, the D-07 reload and the
+Hot reload switch's reload all keep it; Bun's own HMR reload keeps the frame's URL by itself.
+
+- The file rule is the engine's: every `.ts` file directly in the folder but `*.test.ts`,
+  `*.spec.ts`, `*.d.ts` and `index.ts`, by file stem, sorted (`scenarioNames`).
+- `setScenario(name)` reloads the frame without restore: a scenario plays on a fresh memory save
+  and a bookmark restored on top would undo it.
+- The choice is never stored: a reload of the tools page starts from the saved player.
+- A debug build carries no scenarios; the picker is a dev-server feature.
+- gameView's game toolbar shows the control over this api (spec 09 W5).
 
 ### The game mark (U1)
 
@@ -414,11 +481,12 @@ toasts "Game reloaded · state restored" once per restore; workspace does not re
 - Bindings of the active workspace win over global ones.
 - `keys.bind` throws `[moku-editor] Key "<combo>" is already bound in <scope>.` for a clash where neither binding has `when`.
 - Within one Esc layer, the latest registration is asked first.
-- workspace registers the Esc layers `palette`, `contextMenu` (the session menu and the ⋯ menu), `registry` and `stepPopover`. The views register the rest.
+- workspace registers the Esc layers `palette`, `contextMenu` (the session, source and ⋯ menus), `registry` and `stepPopover`. The views register the rest.
 
 ## Events
 
-workspace declares no plugin events. It uses global tools events from `src/config.ts`.
+workspace declares no plugin events. It uses global tools events from `src/config.ts` and hooks
+activeSource's per-plugin `activeSource:changed`.
 
 | Direction | Event | Payload | When |
 |---|---|---|---|
@@ -426,6 +494,7 @@ workspace declares no plugin events. It uses global tools events from `src/confi
 | emits | `workspace:ran` | `RanEvent` | A command the shell ran for the user settled. Origins `topbar`, `key`, `palette`. |
 | emits | `workspace:density` | `{ density: "compact" \| "comfortable" }` | The applied density changed: a choice, or `auto` crossing 820 px on a resize. |
 | hooks | `link:status` | `{ status, session? }` | Stores the status for the pill, stale bar and cards. Shows the frame spinner while the link reloads on purpose (U9). Runs a 1 s ticker while `silent` or `lost`. Closes the step popover when not live or paused. |
+| hooks | `activeSource:changed` | `SourceChange` | Repaints the paused veil, the source pill and the disconnect notice. |
 
 `RanEvent` = `{ id, input, origin, at }` plus `{ ok: true, result }` or `{ ok: false, error }`.
 
@@ -474,8 +543,8 @@ differ.
 
 | Kind | What |
 |---|---|
-| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`, `handle`. |
-| Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`; hooks `link:status`. |
+| `depends` | `linkPlugin`: `status`, `manifest`, `onManifest`, `onTap`, `run`, `sessions`, `session`, `choose`, `retry`, `boot`, `hotReload`, `onHotReload`, `setHotReload`, `handle`, `onSessions`, `ownSession`, `published("devices")`. `activeSourcePlugin` (after `linkPlugin`): `current`, `preview`, `label`, `notice`, `dismissNotice`, `reconnect`, `useDevice`, `useLocal`, `openConnect`. |
+| Global events | emits `workspace:changed`, `workspace:ran`, `workspace:density`; hooks `link:status`. Per-plugin: hooks `activeSource:changed`. |
 | Packages | `preact`, `preact/hooks`. Dev: `happy-dom` for the component tests. |
 
 ## Usage
@@ -502,9 +571,9 @@ workspace.keys.bind({ keys: "c", label: "Show where the game is", workspace: "fl
 | Phase | Does |
 |---|---|
 | `onInit` | Validates config, loads prefs, reads the OS theme, the density and the hash, registers built-in keys, Esc layers and palette Commands, and gives link the `device` and `show` request handlers. No DOM writes. |
-| `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples) and the `link.onHotReload` listener (the switch). No mount. |
+| `onStart` | Adds window listeners (keys, resize with the auto density and the top-bar layout, scroll), the `link.onManifest` listeners (palette, overlay re-apply; the restore toast), the `link.onTap` listener (ripples), the `link.onHotReload` listener (the switch), the `link.onEngine` listener (the top bar's fingerprint) and the `link.onSessions` listener (the veil, the source pill, the notice). No mount. |
 | `mount(el)` | Renders the shell, sets `data-theme` and `data-density` on `<html>`, attaches hosts, creates the frame layer once. |
-| `onStop` | Runs every cleanup (the request handlers of link among them), clears toast, ticker, reload and ripple timers, unrenders, removes the frame layer and the hosts. |
+| `onStop` | Runs every cleanup (the request handlers of link among them), clears toast, ticker, reload and ripple timers, forgets the scenario listeners, drops a pending `startLocalPreview` wait without settling it, unrenders, removes the frame layer and the hosts. A scenario listing that settles after stop changes nothing. |
 
 ## Integration notes
 
@@ -527,6 +596,14 @@ in `styles/tokens.css`. TypeScript names for them are in `../panels/shared/token
 - The browser may keep ⌘1–⌘6. Bare 1–6, the rail and the palette are the fallback.
 - A hidden iframe can be throttled by the browser. The link pill shows the frame number stop.
 - localStorage missing, full or corrupt: defaults and one warn. Nothing essential is stored. A record from before density, Show taps, sound and Copy on select loads them as their defaults.
+
+## Breaking changes (the active source, spec 11 § 5.3)
+
+- `depends` gains `activeSourcePlugin`: a tools composition with workspace must list
+  `activeSourcePlugin` after `linkPlugin` (the default tools core does).
+- The session menu no longer calls `link.choose` for a phone or for this page's own frame: it
+  calls `activeSource.useDevice` / `useLocal`.
+- `WorkspaceApi` gains `startLocalPreview()`; a hand-written full mock of it needs the member.
 
 ## Breaking changes (editor UI cleanup)
 

@@ -51,7 +51,7 @@ function serveError(problem: string, fix: string): Error {
  * isEditorKey("/__editor", "/__editor/hello"); // true
  * ```
  */
-function isEditorKey(path: string, key: string): boolean {
+export function isEditorKey(path: string, key: string): boolean {
   return key === path || key.startsWith(`${path}/`);
 }
 
@@ -64,7 +64,7 @@ function isEditorKey(path: string, key: string): boolean {
  * notFound().status; // 404
  * ```
  */
-function notFound(): Response {
+export function notFound(): Response {
   return new Response("not found", {
     status: 404,
     headers: { "content-type": "text/plain; charset=utf-8" }
@@ -89,14 +89,14 @@ function upgradeRoute(ctx: HubCtx): RouteHandler {
  *
  * @param ctx - Domain context of the hub.
  * @param routes - Editor routes, keyed under config.path.
- * @throws {Error} After serve(), on a key registered before, on `{path}/ws`, or on a key outside
- * the editor path.
+ * @throws {Error} After serve() or listenDevices(), on a key registered before, on `{path}/ws`, or
+ * on a key outside the editor path.
  */
 export function registerRoutes(ctx: HubCtx, routes: EditorRoutes): void {
   const { state, config } = ctx;
-  if (state.served) {
+  if (state.routesFrozen) {
     throw serveError(
-      "hub.addRoutes() ran after hub.serve()",
+      "hub.addRoutes() ran after hub.serve() or hub.listenDevices()",
       "Register editor routes in onInit, before the server starts"
     );
   }
@@ -193,6 +193,7 @@ export function mergeServeOptions(
     [`${config.path}/ws`]: upgradeRoute(ctx)
   };
   state.served = true;
+  state.routesFrozen = true;
 
   return { ...options, hostname: LOOPBACK, routes, fetch: options.fetch ?? notFound, websocket };
 }

@@ -117,4 +117,16 @@ describe("commandsHash", () => {
 
     expect(commandsHash(other)).toBe(commandsHash(manifestOf([TAP])));
   });
+
+  it("keeps today's hash for an allowed command (every dev page)", () => {
+    expect(commandsHash(manifestOf([{ ...TAP, allowed: true }]))).toBe("4f528e73");
+  });
+
+  it("changes when the build refuses a command, and with the reason", () => {
+    const readOnly = commandsHash(manifestOf([{ ...TAP, allowed: false, reason: "read-only" }]));
+    const devOnly = commandsHash(manifestOf([{ ...TAP, allowed: false, reason: "dev-only" }]));
+
+    expect(readOnly).not.toBe("4f528e73");
+    expect(devOnly).not.toBe(readOnly);
+  });
 });

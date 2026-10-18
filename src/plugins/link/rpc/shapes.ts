@@ -5,9 +5,13 @@
  * protocol's own parsers, re-exported under the reader names.
  */
 
+import type { SessionDevice } from "../../hub/protocol";
 import type {
+  BuildInfo,
+  BuildProfile,
   Changes,
   CommandDescriptor,
+  CommandRefusal,
   Effect,
   FileBinary,
   FileEntry,
@@ -18,6 +22,7 @@ import type {
   InputSchema,
   Json,
   Manifest,
+  OverlayMarker,
   RunResult,
   SessionInfo,
   SourceDescriptor,
@@ -59,6 +64,11 @@ const CHANGES: ReadonlySet<string> = new Set(["frame", "commit", "edge"]);
  * Every `effect` value of a command.
  */
 const EFFECTS: ReadonlySet<string> = new Set(["read", "route", "cosmetic", "cheat", "raw"]);
+
+/**
+ * Every build profile of a game page.
+ */
+const PROFILES: ReadonlySet<string> = new Set(["dev", "full", "read", "none"]);
 
 /**
  * The value as a JSON object, or undefined for null, arrays and primitives.
@@ -275,7 +285,86 @@ function readCommand(value: Json): CommandDescriptor | undefined {
   const common = readDescriptor(value);
   const effect = common?.object.effect;
   if (common === undefined || !isEffect(effect)) return undefined;
-  return { id: common.id, title: common.title, input: common.input, effect };
+
+  const command = { id: common.id, title: common.title, input: common.input, effect };
+  return { ...command, ...readOverlay(common.object), ...readVerdict(common.object) };
+}
+
+/**
+ * Reads the overlay marker of a command; any other value is dropped.
+ *
+ * @param object - The command object.
+ * @returns `{ overlay }`, or `{}`.
+ * @example
+ * ```ts
+ * readOverlay({ overlay: "toggle" }); // { overlay: "toggle" }
+ * readOverlay({ overlay: "slider" }); // {}
+ * ```
+ */
+function readOverlay(object: JsonObject): { overlay?: OverlayMarker } {
+  const { overlay } = object;
+  return overlay === "toggle" || overlay === "button" ? { overlay } : {};
+}
+
+/**
+ * Reads the build verdict of a command: `allowed` when it is a boolean, `reason` only with
+ * `allowed: false` and a known refusal. An older agent sends neither: the command reads as allowed.
+ *
+ * @param object - The command object.
+ * @returns `{ allowed, reason? }`, or `{}`.
+ * @example
+ * ```ts
+ * readVerdict({ allowed: false, reason: "read-only" }); // { allowed: false, reason: "read-only" }
+ * readVerdict({ allowed: true, reason: "read-only" }); // { allowed: true }
+ * ```
+ */
+function readVerdict(object: JsonObject): { allowed?: boolean; reason?: CommandRefusal } {
+  const allowed = flagOf(object, "allowed");
+  if (allowed === undefined) return {};
+
+  const { reason } = object;
+  return !allowed && (reason === "read-only" || reason === "dev-only")
+    ? { allowed, reason }
+    : { allowed };
+}
+
+/**
+ * Reads the build of a game page: a known profile, `id` and `engine` when they are text.
+ *
+ * @param value - The `build` member.
+ * @returns The BuildInfo, or undefined when absent or malformed.
+ * @example
+ * ```ts
+ * readBuild({ profile: "read", id: "debug-1", engine: 7 }); // { profile: "read", id: "debug-1" }
+ * readBuild({ profile: "release" }); // undefined
+ * ```
+ */
+function readBuild(value: Json | undefined): BuildInfo | undefined {
+  const object = objectOf(value);
+  const profile = object?.profile;
+  if (object === undefined || !isProfile(profile)) return undefined;
+
+  const id = textOf(object, "id");
+  const engine = textOf(object, "engine");
+  return {
+    profile,
+    ...(id === undefined ? {} : { id }),
+    ...(engine === undefined ? {} : { engine })
+  };
+}
+
+/**
+ * True for a build profile.
+ *
+ * @param value - A Json value.
+ * @returns Whether it is dev, full, read or none.
+ * @example
+ * ```ts
+ * isProfile("read"); // true
+ * ```
+ */
+function isProfile(value: Json | undefined): value is BuildProfile {
+  return typeof value === "string" && PROFILES.has(value);
 }
 
 /**
@@ -315,7 +404,8 @@ function readRestored(value: Json | undefined): Manifest["restored"] {
 
 /**
  * Reads a manifest (the hub validated it on hello; link checks it again before typing it). A
- * malformed `restored` entry is dropped; the manifest stays.
+ * malformed `restored` or `build` entry, overlay marker or build verdict is dropped; the manifest
+ * stays.
  *
  * @param value - The `manifest` result.
  * @returns The manifest, or undefined.
@@ -333,7 +423,16 @@ export function readManifest(value: Json): Manifest | undefined {
   if (sources === undefined || commands === undefined) return undefined;
 
   const restored = readRestored(object.restored);
-  const manifest = { game, page, embedded, sources, commands, ...(restored && { restored }) };
+  const build = readBuild(object.build);
+  const manifest = {
+    game,
+    page,
+    embedded,
+    sources,
+    commands,
+    ...(restored && { restored }),
+    ...(build && { build })
+  };
   if (object.panels === undefined) return manifest;
 
   const panels = listOf(object.panels, readPanel);
@@ -360,8 +459,83 @@ export function readHotReload(value: Json | undefined): HotReload | undefined {
 }
 
 /**
- * Reads one session: the five R1 fields. The hub's `heartbeat` readout and other keys are dropped;
- * the link computes silence itself from forwarded heartbeats.
+ * Text or null: a field the hub sends as `string | null`.
+ *
+ * @param object - A JSON object.
+ * @param key - The field.
+ * @returns The text, null, or undefined when the field is neither.
+ * @example
+ * ```ts
+ * textOrNull({ model: null }, "model"); // null
+ * ```
+ */
+function textOrNull(object: JsonObject, key: string): string | null | undefined {
+  // eslint-disable-next-line unicorn/no-null -- null is a JSON value on the wire
+  return object[key] === null ? null : textOf(object, key);
+}
+
+/**
+ * Reads the device of a device session (`SessionInfo.device`, spec 01 C8): its id, model, link
+ * kind, address, port, engine and build — any of them of the wrong type reads as no device — and
+ * the app id when it is text (an app id of another type drops only itself).
+ *
+ * @param value - The `device` member of a session.
+ * @returns The device, or undefined.
+ * @example
+ * ```ts
+ * readDevice({ id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: null, build: null });
+ * // { id: "d-7f3a", model: "SM-A266B", link: "adb", address: "127.0.0.1", port: 47600, engine: null, build: null }
+ * ```
+ */
+function readDevice(value: Json | undefined): SessionDevice | undefined {
+  const object = objectOf(value);
+  if (object === undefined) return undefined;
+
+  const id = textOf(object, "id");
+  const link = object.link === "adb" || object.link === "lan" ? object.link : undefined;
+  const address = textOf(object, "address");
+  const port = numberOf(object, "port");
+  const model = textOrNull(object, "model");
+  const engine = textOrNull(object, "engine");
+  const build = textOrNull(object, "build");
+  if (id === undefined || link === undefined || address === undefined || port === undefined) {
+    return undefined;
+  }
+  if (model === undefined || engine === undefined || build === undefined) return undefined;
+  const device: SessionDevice = { id, model, link, address, port, engine, build };
+  const appId = textOf(object, "appId");
+  return appId === undefined ? device : { ...device, appId };
+}
+
+/**
+ * Reads the hub's heartbeat readout of a session (`SessionInfo.heartbeat`): the frame and paused
+ * flag of its last heartbeat and the hub's silent flag. The hub re-sends the list when paused or
+ * silent flips, so activeSource reads from it whether the local preview was already paused
+ * (spec 11 § 4 B4, L9).
+ *
+ * @param value - The `heartbeat` member of a session.
+ * @returns The readout, frozen; undefined when absent or when a field has the wrong type.
+ * @example
+ * ```ts
+ * readHeartbeat({ frame: 1840, paused: true, silent: false }); // { frame: 1840, paused: true, silent: false }
+ * readHeartbeat({ frame: 1840, paused: "yes", silent: false }); // undefined
+ * ```
+ */
+function readHeartbeat(value: Json | undefined): SessionInfo["heartbeat"] {
+  const object = objectOf(value);
+  const frame = object && numberOf(object, "frame");
+  const paused = object && flagOf(object, "paused");
+  const silent = object && flagOf(object, "silent");
+  if (frame === undefined || paused === undefined || silent === undefined) return undefined;
+
+  return Object.freeze({ frame, paused, silent });
+}
+
+/**
+ * Reads one session: the five R1 fields, the hub's heartbeat readout (L9) and the device of a
+ * device session (spec 01 C8). A malformed readout or device is left out, never the session: it
+ * then reads as not yet beating, or as a browser session. Other keys are dropped. link's own
+ * status still comes from the forwarded heartbeats of the chosen session, not from the readout.
  *
  * @param value - A Json value.
  * @returns The session, or undefined.
@@ -381,7 +555,12 @@ function readSession(value: Json): SessionInfo | undefined {
   const connectedAt = numberOf(object, "connectedAt");
   if (id === undefined || game === undefined || page === undefined) return undefined;
   if (embedded === undefined || connectedAt === undefined) return undefined;
-  return { id, game, page, embedded, connectedAt };
+
+  const heartbeat = readHeartbeat(object.heartbeat);
+  const device = readDevice(object.device);
+  const base = { id, game, page, embedded, connectedAt };
+  const session = heartbeat === undefined ? base : { ...base, heartbeat };
+  return device === undefined ? session : { ...session, device };
 }
 
 /**

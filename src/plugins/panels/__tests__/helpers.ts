@@ -7,6 +7,7 @@ import type { LinkApi } from "../../link/types";
 import type { Json, LinkStatus, Manifest, RunResult } from "../../registry/protocol";
 import { workspacePlugin } from "../../workspace";
 import type { PaletteItem, WorkspaceApi, WorkspaceId } from "../../workspace/types";
+import { stopPanels } from "../lifecycle";
 import type { MountDeps } from "../mount";
 import { createPanelsState } from "../state";
 import type { PanelsCtx } from "../types";
@@ -147,6 +148,15 @@ export function createLinkMock(): LinkMock {
       notify: vi.fn(),
       handle: vi.fn(() => vi.fn()),
       project: () => undefined,
+      engine: () => undefined,
+      onEngine: () => stopNothing,
+      published: () => undefined,
+      onPublished: () => stopNothing,
+      onSessions: () => stopNothing,
+      onHeartbeat: () => stopNothing,
+      ownSession: () => undefined,
+      runIn: vi.fn(() => Promise.resolve(resultOf())),
+      callEditor: vi.fn(() => Promise.resolve(null)),
       files: {
         find: vi.fn(() => Promise.resolve([])),
         list: vi.fn(() => Promise.resolve([])),
@@ -299,8 +309,12 @@ export type TestCtx = Omit<PanelsCtx, "emit" | "log"> & {
   readonly workspace: WorkspaceMock;
 };
 
+/** Every ctx `createCtx` made since the last `stopCreatedCtxs()`. */
+const created: TestCtx[] = [];
+
 /**
- * A panels domain ctx with a real state; require answers the link and workspace mocks.
+ * A panels domain ctx with a real state; require answers the link and workspace mocks. Its panels
+ * are unmounted by `stopCreatedCtxs()` in the test file's afterEach.
  *
  * @returns The ctx.
  */
@@ -312,7 +326,7 @@ export function createCtx(): TestCtx {
     if (plugin === workspacePlugin) return workspace.api;
     throw new Error("unexpected require");
   }) as unknown as Require;
-  return {
+  const ctx: TestCtx = {
     config: {},
     state: createPanelsState({ config: {} }),
     emit: vi.fn() as unknown as EmitMock,
@@ -321,6 +335,17 @@ export function createCtx(): TestCtx {
     link,
     workspace
   };
+  created.push(ctx);
+  return ctx;
+}
+
+/**
+ * Stops every ctx `createCtx` made: unmounts every mounted panel, so its waiting timers (400 ms,
+ * 5 s) and watches go with the test. A panel left mounted on the real frame scheduler would draw
+ * after the test's happy-dom environment is gone ("document is not defined" in a later file).
+ */
+export function stopCreatedCtxs(): void {
+  for (const ctx of created.splice(0)) stopPanels({ state: ctx.state });
 }
 
 /**

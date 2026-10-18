@@ -2,7 +2,10 @@
 import type { Mock } from "vitest";
 import { vi } from "vitest";
 import type { AgentEvents } from "../../../config";
+import type { OutboxRun } from "../../recorder/types";
 import type {
+  BuildInfo,
+  CommandVia,
   Heartbeat,
   Json,
   Manifest,
@@ -20,6 +23,7 @@ import type {
   BridgeNet,
   CheckpointStorage,
   HelloResponse,
+  PageFlags,
   ReloadSeam,
   SocketLike,
   TapEvent,
@@ -188,12 +192,21 @@ export const MANIFEST: Manifest = {
 /** The envelope the fake registry answers for commands that run no door. */
 export const ENVELOPE: RunState = { path: "board/awaitIntent", frame: 12, tainted: false };
 
+/** The build of the fake registry: a plain --debug build on a phone. */
+export const BUILD: BuildInfo = {
+  profile: "read",
+  id: "debug-20261014T160000Z",
+  engine: "0.14.12+9c41e0"
+};
+
 /** A fake registry slice: manifest, source descriptors, commands, the clock and the envelope. */
 export type FakeRegistry = BridgeDeps["registry"] & {
   /** Command entries by id; empty unless a test adds one. */
   readonly commands: Map<string, CommandEntry>;
   /** What `clock()` answers: a running clock nobody holds, until a test sets another. */
   clockValue: Clock;
+  /** What `build()` answers. */
+  buildValue: BuildInfo;
 };
 
 /**
@@ -205,6 +218,7 @@ export function fakeRegistry(): FakeRegistry {
   const registry: FakeRegistry = {
     commands: new Map(),
     clockValue: { frame: 12, paused: false, held: false, reasons: [] },
+    buildValue: BUILD,
     manifest: () => MANIFEST,
     source: (id: string): SourceEntry | undefined => {
       const descriptor = SOURCES.find(source => source.id === id);
@@ -213,7 +227,8 @@ export function fakeRegistry(): FakeRegistry {
     },
     command: (id: string) => registry.commands.get(id),
     clock: () => registry.clockValue,
-    envelope: () => ENVELOPE
+    envelope: () => ENVELOPE,
+    build: () => registry.buildValue
   };
   return registry;
 }
@@ -332,6 +347,8 @@ export type FakeChannel = BridgeDeps["channel"] & {
   readonly holds: Map<string, Promise<void>>;
   /** Run answers per command id; missing → RAN. */
   readonly runs: Map<string, () => Promise<RunResult>>;
+  /** (id, via, client) of every run. */
+  readonly ran: { id: string; via: CommandVia | undefined; client: string | undefined }[];
   /** The beat heartbeat() returns. */
   beat: Heartbeat;
   /** The onHeartbeat listeners. */
@@ -358,6 +375,7 @@ export function fakeChannel(): FakeChannel {
     reads: [],
     holds: new Map(),
     runs: new Map(),
+    ran: [],
     beat: { frame: 12, paused: false, at: 1000 },
     listeners: new Set(),
     read: async (id, input) => {
@@ -380,7 +398,8 @@ export function fakeChannel(): FakeChannel {
         channel.watchers.delete(id);
       };
     },
-    run: (id, _input) => {
+    run: (id, _input, via, client) => {
+      channel.ran.push({ id, via, client });
       const answer = channel.runs.get(id);
       return answer === undefined ? Promise.resolve(RAN) : answer();
     },
@@ -437,6 +456,51 @@ export function fakeWindow(): FakeWindow {
   return target;
 }
 
+/** One line in the fake outbox: its log, its index in that log and its JSON text. */
+type OutboxLine = { readonly log: string; readonly index: number; readonly text: string };
+
+/** A fake recorder outbox: lines the test adds, `unsentRun` and `ack` as the recorder answers them. */
+export type FakeRecorder = BridgeDeps["recorder"] & {
+  readonly lines: OutboxLine[];
+  readonly unsentRun: Mock<(max: number) => OutboxRun | undefined>;
+  readonly ack: Mock<(log: string, next: number) => void>;
+  /** Adds `count` sample lines to `log`, numbered after its last line. */
+  add(log: string, count: number): void;
+};
+
+/** The log of the fake recorder. */
+export const LOG = "perf-20261014-1532-sm-a266b.jsonl";
+
+/**
+ * Builds the fake recorder: the oldest lines of one log per run, acked lines leave.
+ *
+ * @returns The fake.
+ */
+export function fakeRecorder(): FakeRecorder {
+  const lines: OutboxLine[] = [];
+  const counts = new Map<string, number>();
+  return {
+    lines,
+    unsentRun: vi.fn((max: number): OutboxRun | undefined => {
+      const first = lines[0];
+      if (first === undefined) return undefined;
+      const run = lines.filter(line => line.log === first.log).slice(0, max);
+      return { log: first.log, from: first.index, lines: run.map(line => line.text) };
+    }),
+    ack: vi.fn((log: string, next: number) => {
+      const kept = lines.filter(line => line.log !== log || line.index >= next);
+      lines.splice(0, lines.length, ...kept);
+    }),
+    add: (log, count) => {
+      const start = counts.get(log) ?? 0;
+      for (let index = start; index < start + count; index += 1) {
+        lines.push({ log, index, text: JSON.stringify({ v: 1, kind: "sample", t: index }) });
+      }
+      counts.set(log, start + count);
+    }
+  };
+}
+
 /** Deps whose parts are the fakes. */
 export type TestDeps = BridgeDeps & {
   readonly log: LogMock;
@@ -445,14 +509,24 @@ export type TestDeps = BridgeDeps & {
   readonly channel: FakeChannel;
   readonly registry: FakeRegistry;
   readonly reload: FakeReload;
+  readonly recorder: FakeRecorder;
+  readonly linkStorage: FakeStorage;
 };
 
 /** The default config of the tests. */
 export const CONFIG: BridgeConfig = {
   hello: "/__editor/hello",
   retryMs: 1000,
-  callTimeoutMs: 5000
+  callTimeoutMs: 5000,
+  device: undefined,
+  linesPerBatch: 200
 };
+
+/** The flags of a dev page: no editor address, no model, no user agent. */
+export const PAGE_FLAGS: PageFlags = { editor: undefined, model: undefined, userAgent: undefined };
+
+/** The LAN address of the device tests. */
+export const LAN = "192.168.1.5:47600";
 
 /**
  * Bridge deps over a fresh state and the fakes. The page is a browser page by default.
@@ -460,10 +534,11 @@ export const CONFIG: BridgeConfig = {
  * @param overrides - Config and page overrides.
  * @param overrides.config - Config fields.
  * @param overrides.page - The page probe.
+ * @param overrides.flags - The page flags.
  * @returns The deps.
  */
 export function createDeps(
-  overrides: { config?: Partial<BridgeConfig>; page?: BridgeDeps["page"] } = {}
+  overrides: { config?: Partial<BridgeConfig>; page?: BridgeDeps["page"]; flags?: PageFlags } = {}
 ): TestDeps {
   const config = { ...CONFIG, ...overrides.config };
   return {
@@ -473,7 +548,10 @@ export function createDeps(
     emit: vi.fn<(payload: AgentEvents["bridge:status"]) => void>(),
     registry: fakeRegistry(),
     channel: fakeChannel(),
+    recorder: fakeRecorder(),
     net: fakeNet(),
+    flags: overrides.flags ?? PAGE_FLAGS,
+    linkStorage: fakeStorage(),
     reload: fakeReload(),
     page: overrides.page ?? {
       href: "http://127.0.0.1:3000/game.html",
@@ -499,6 +577,47 @@ export function openDeps(overrides: Parameters<typeof createDeps>[0] = {}): {
   deps.state.socket = socket;
   deps.state.phase = "open";
   return { deps, socket };
+}
+
+/**
+ * Deps in device mode at an address (phase idle), nothing remembered.
+ *
+ * @param address - The address dialled.
+ * @param overrides - Config and page overrides, as for createDeps.
+ * @returns The deps.
+ */
+export function deviceDeps(
+  address = LAN,
+  overrides: Parameters<typeof createDeps>[0] = {}
+): TestDeps {
+  const deps = createDeps(overrides);
+  deps.state.mode = "device";
+  deps.state.address = address;
+  return deps;
+}
+
+/**
+ * The FakeSocket the bridge opened at an index.
+ *
+ * @param deps - The test deps.
+ * @param index - Which opened socket.
+ * @returns The socket.
+ */
+export function socketOf(deps: TestDeps, index = 0): FakeSocket {
+  const opened = deps.net.sockets[index];
+  if (opened === undefined) throw new Error(`no socket ${String(index)}`);
+  return opened.socket;
+}
+
+/**
+ * The text of a notification of the editor channel, as the hub sends it.
+ *
+ * @param method - The method.
+ * @param params - Its params.
+ * @returns The JSON text.
+ */
+export function editorNote(method: string, params: Json): string {
+  return encode({ jsonrpc: "2.0", channel: "editor", method, params });
 }
 
 /**
