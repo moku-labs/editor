@@ -284,9 +284,9 @@ const LEAK_ERRORS = 2;
 export function isLeak(baselines: readonly Baseline[], objects: ObjectSeries): boolean {
   const span = (baselines.at(-1)?.t ?? 0) - (baselines[0]?.t ?? 0);
   const slope = slopePerMinute(baselines) ?? 0;
-  const sure = slope - LEAK_ERRORS * slopeErrorPerMinute(baselines);
+  const surestSlope = slope - LEAK_ERRORS * slopeErrorPerMinute(baselines);
   const enoughBaselines = baselines.length >= LEAK_POINTS && span >= LEAK_SPAN_MS;
-  if (enoughBaselines && sure >= LEAK_MB_PER_MIN) return true;
+  if (enoughBaselines && surestSlope >= LEAK_MB_PER_MIN) return true;
   return growingCounters(objects).length > 0;
 }
 
@@ -432,10 +432,12 @@ export function baselineLine(baselines: readonly Baseline[]): Line | undefined {
   const last = baselines.at(-1);
   const trend = trendOf(baselines);
   if (first === undefined || last === undefined || trend === undefined) return undefined;
+
   const from = trend.mb + trend.perMs * (first.t - trend.t);
   const to = trend.mb + trend.perMs * (last.t - trend.t);
   const slope = trend.perMs * MINUTE_MS;
   const sign = slope >= 0 ? "+" : "−";
+
   return [
     "Baseline after GC ",
     strong(`${oneDecimal(from)} → ${oneDecimal(to)} MB`),
@@ -612,27 +614,6 @@ export function heapRangeLine(
 }
 
 /**
- * The GCs of a time range with the MB they freed: a device's CDP GCs, the local preview's GC events.
- *
- * @param input - The source's values.
- * @param from - The range's start, source clock.
- * @param to - Its end.
- * @returns "{n} GC(s), freed {mb} MB", or "No GC".
- * @example
- * ```ts
- * gcsInRangeText(memoryInputOf(mission), 78_000, 79_000); // "1 GC, freed 4.2 MB"
- * ```
- */
-export function gcsInRangeText(input: MemoryInput, from: number, to: number): string {
-  const { count, freed } =
-    memorySource(input) === "cdp"
-      ? seriesGcsIn(input.series.gcs, from, to)
-      : historyGcsIn(input.history, from, to);
-  if (count === 0) return "No GC";
-  return `${count} GC${count === 1 ? "" : "s"}, freed ${oneDecimal(freed)} MB`;
-}
-
-/**
  * The GCs of a GC series in a time range and the MB they freed.
  *
  * @param gcs - The GC series.
@@ -678,4 +659,25 @@ function historyGcsIn(
     freed += event.freedMb;
   }
   return { count, freed };
+}
+
+/**
+ * The GCs of a time range with the MB they freed: a device's CDP GCs, the local preview's GC events.
+ *
+ * @param input - The source's values.
+ * @param from - The range's start, source clock.
+ * @param to - Its end.
+ * @returns "{n} GC(s), freed {mb} MB", or "No GC".
+ * @example
+ * ```ts
+ * gcsInRangeText(memoryInputOf(mission), 78_000, 79_000); // "1 GC, freed 4.2 MB"
+ * ```
+ */
+export function gcsInRangeText(input: MemoryInput, from: number, to: number): string {
+  const { count, freed } =
+    memorySource(input) === "cdp"
+      ? seriesGcsIn(input.series.gcs, from, to)
+      : historyGcsIn(input.history, from, to);
+  if (count === 0) return "No GC";
+  return `${count} GC${count === 1 ? "" : "s"}, freed ${oneDecimal(freed)} MB`;
 }

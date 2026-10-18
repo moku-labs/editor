@@ -359,6 +359,28 @@ function valueAt(column: SeriesColumn, t: number): number {
   return value;
 }
 
+/** A share as a percent. */
+const PERCENT = 100;
+
+/**
+ * The texture change over the selection: "{a} → {b} MB", "unchanged", or undefined without a
+ * selection.
+ *
+ * @param input - The cards' input with the textures series.
+ * @returns The words.
+ */
+function textureChangeInSelection(
+  input: CardsInput & { readonly textures: SeriesColumn }
+): string | undefined {
+  const times =
+    input.selection === undefined ? undefined : selectionTimes(input.history, input.selection);
+  if (times === undefined) return undefined;
+  const before = valueAt(input.textures, times.from);
+  const after = valueAt(input.textures, times.to);
+  const unchanged = before === after || Number.isNaN(before);
+  return unchanged ? "unchanged" : `${oneDecimal(before)} → ${oneDecimal(after)} MB`;
+}
+
 /**
  * The Textures card: MB of the budget, the share of it and the texture count, and the change inside
  * the selection.
@@ -367,7 +389,7 @@ function valueAt(column: SeriesColumn, t: number): number {
  * @param input.assets - game.assets.
  * @param input.count - game.render.textures.
  * @param input.textures - The textures MB series.
- * @returns The card and the bar's share (0 to 1).
+ * @returns The card and the bar's share (0 to 1; null when there is no bar).
  * @example
  * ```ts
  * texturesCard({ ...input, assets, count: 40, textures: series.textures }).lines[0]; // [{ strong: "40" }, " textures, 68 % of budget"]
@@ -380,30 +402,25 @@ export function texturesCard(
     readonly textures: SeriesColumn;
   }
 ): CardView & { readonly share: number | null } {
+  // Nothing to show while waiting or without assets.
   const { assets } = input;
   if (input.waiting || assets === undefined) {
     // eslint-disable-next-line unicorn/no-null -- null: no bar
     return { value: DASH, unit: "MB", lines: [], inSelection: undefined, share: null };
   }
+
+  // The budget share and the texture count line.
   const share = assets.budgetMb > 0 ? assets.textureMb / assets.budgetMb : 0;
   const pct = `${Math.round(share * PERCENT)} % of budget`;
   const lines: Line[] = [
     input.count === undefined ? [pct] : [strong(String(input.count)), ` textures, ${pct}`]
   ];
-  let inSelection: string | undefined;
-  const times =
-    input.selection === undefined ? undefined : selectionTimes(input.history, input.selection);
-  if (times !== undefined) {
-    const before = valueAt(input.textures, times.from);
-    const after = valueAt(input.textures, times.to);
-    const unchanged = before === after || Number.isNaN(before);
-    inSelection = unchanged ? "unchanged" : `${oneDecimal(before)} → ${oneDecimal(after)} MB`;
-  }
+
   return {
     value: oneDecimal(assets.textureMb),
     unit: `MB of ${oneDecimal(assets.budgetMb)} MB`,
     lines,
-    inSelection,
+    inSelection: textureChangeInSelection(input),
     share: Math.min(1, share)
   };
 }
@@ -459,9 +476,6 @@ function chainInSelection(input: CardsInput): string | undefined {
   return `${chain.view ?? chain.kinds.join(" → ")} ${oneDecimal(chain.gpuMs)} ms over ${summary.frames} frames`;
 }
 
-/** A share as a percent. */
-const PERCENT = 100;
-
 /**
  * The typical number of passes of a drawn frame in view: the median count over the frames that ran
  * any pass, from the history's pass rows.
@@ -471,8 +485,11 @@ const PERCENT = 100;
  * @returns The count; null when no frame in view ran a pass.
  */
 function typicalPasses(history: PerfHistory, rows: ViewRows): number | null {
+  // The frames in view.
   const first = history.frame[rows.first] ?? 0;
   const last = history.frame[rows.end - 1] ?? -1;
+
+  // Count the passes of each frame (the pass rows are in frame order).
   const counts: number[] = [];
   let frame = -1;
   for (let pass = 0; pass < history.passCount; pass += 1) {
@@ -482,6 +499,8 @@ function typicalPasses(history: PerfHistory, rows: ViewRows): number | null {
     else counts.push(1);
     frame = passFrame;
   }
+
+  // The median count.
   counts.sort((a, b) => a - b);
   // eslint-disable-next-line unicorn/no-null -- null: no pass in view
   return counts[counts.length >> 1] ?? null;

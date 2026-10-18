@@ -69,6 +69,9 @@ export const SLIDE_TICKS = 3;
  */
 export const SLIDE_RUN_TICKS = 2;
 
+/** The slide's room, ms: `SLIDE_TICKS` ticks. */
+export const SLIDE_ROOM_TICKS_MS = SLIDE_TICKS * PAINT_MS;
+
 /** The largest change of the slide's speed toward its target: 20 % faster or slower. */
 const TRIM = 0.2;
 
@@ -123,7 +126,7 @@ export function startSlide(
   }
 
   // The data's time at the well's right edge with the canvas at 0, and the scale.
-  const leadMs = SLIDE_TICKS * PAINT_MS;
+  const leadMs = SLIDE_ROOM_TICKS_MS;
   const pxPerMs = lead / leadMs;
   const zeroMs = endMs - leadMs;
   // Two ticks behind the newest data: a slide at real time reaches it only at its own end (on the

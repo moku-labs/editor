@@ -1231,6 +1231,18 @@ function paintCaption(
 }
 
 /**
+ * Rebuilds the axis labels for a window of a number of seconds, oldest first.
+ *
+ * @param state - The painter state (its label cache).
+ * @param seconds - The seconds the window shows.
+ */
+function rebuildAxisText(state: GraphState, seconds: number): void {
+  state.axisWindowMs = seconds * SECOND_MS;
+  state.axisText.length = 0;
+  for (let second = seconds; second > 0; second -= 1) state.axisText.push(axisLabel(second));
+}
+
+/**
  * Step 11: the time axis — the oldest second at the left (`oldest`), on the wide graph one label a
  * second (at most 60); `now` is `paintNow`. The oldest second marks a place (the plot's left edge),
  * so a sliding plot layer leaves it to the fixed layer (Delta 2026-10-18: on the A26 it jumped at
@@ -1247,11 +1259,7 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, oldest
   const pxPerMs = (state.px1 - state.px0) / state.spanMs;
   const visibleMs = state.spanMs - lead / pxPerMs;
   const seconds = Math.min(Math.max(1, Math.round(visibleMs / SECOND_MS)), MAX_AXIS_SECONDS);
-  if (seconds * SECOND_MS !== state.axisWindowMs) {
-    state.axisWindowMs = seconds * SECOND_MS;
-    state.axisText.length = 0;
-    for (let second = seconds; second > 0; second -= 1) state.axisText.push(axisLabel(second));
-  }
+  if (seconds * SECOND_MS !== state.axisWindowMs) rebuildAxisText(state, seconds);
 
   // The oldest second at the left edge.
   const y = view.height - BASELINE_INSET;
@@ -1261,13 +1269,12 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, oldest
   g.textBaseline = "alphabetic";
   g.textAlign = "left";
   if (oldest) g.fillText(state.axisText[0] ?? "", px0 + lead + AXIS_INSET, y);
+  if (!view.wide) return;
 
   // The wide graph: every other second, centred on its time.
-  if (view.wide) {
-    g.textAlign = "center";
-    for (let second = seconds - 1; second > 0; second -= 1) {
-      g.fillText(state.axisText[seconds - second] ?? "", px1 - second * SECOND_MS * pxPerMs, y);
-    }
+  g.textAlign = "center";
+  for (let second = seconds - 1; second > 0; second -= 1) {
+    g.fillText(state.axisText[seconds - second] ?? "", px1 - second * SECOND_MS * pxPerMs, y);
   }
 }
 

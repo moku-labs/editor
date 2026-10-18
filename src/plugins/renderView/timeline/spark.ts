@@ -419,9 +419,22 @@ function yOfValue(layout: TimelineLayout, style: SparkStyle, value: number): num
   return plotBottom(layout) - share * layout.plot.h;
 }
 
+/** The view of the sparkline being painted (reused): its start and span, ms. */
+const VIEW = { startMs: 0, span: 1 };
+
+/** The alphas of a sparkline: resting columns, the reference line, the selection, the area, the cursor. */
+const REST_ALPHA = 0.2;
+const REFERENCE_ALPHA = 0.7;
+const SELECTION_ALPHA = 0.14;
+const AREA_ALPHA = 0.12;
+const CURSOR_ALPHA = 0.55;
+
+/** The width of a sparkline's line, px. */
+const LINE_WIDTH = 1.5;
+
 /**
  * Closes a run of columns down to the baseline (from its last column back to its first); nothing
- * when no run is open.
+ * when no run is open. Reads the view from `VIEW`.
  *
  * @param g - The context.
  * @param layout - The geometry.
@@ -545,19 +558,6 @@ function paintMarks(
   g.setLineDash(DASH.none);
 }
 
-/** The view of the sparkline being painted (reused): its start and span, ms. */
-const VIEW = { startMs: 0, span: 1 };
-
-/** The alphas of a sparkline: resting columns, the reference line, the selection, the area, the cursor. */
-const REST_ALPHA = 0.2;
-const REFERENCE_ALPHA = 0.7;
-const SELECTION_ALPHA = 0.14;
-const AREA_ALPHA = 0.12;
-const CURSOR_ALPHA = 0.55;
-
-/** The width of a sparkline's line, px. */
-const LINE_WIDTH = 1.5;
-
 /** The x range of the selection (reused). */
 const SELECTED = { left: 0, right: 0 };
 
@@ -583,55 +583,6 @@ function selectedSpan(
   SELECTED.left = xOf(layout, history.t[first] ?? 0, start, scene.span);
   SELECTED.right = xOf(layout, (history.t[last] ?? 0) + (history.ms[last] ?? 0), start, scene.span);
   return true;
-}
-
-/**
- * Paints a sparkline: the baseline, resting columns (the edge colour at 20 %), the reference line
- * (dashed `[3, 3]`, muted at 70 %), the selection band, the area (the tint at 12 %) and the line
- * (1.5 px), the trend (dashed `[4, 3]` in warn), the columns' marks (diamonds at `top + 4`) and the
- * shared cursor.
- *
- * @param g - The canvas context.
- * @param layout - The canvas's geometry (`sparkLayout`).
- * @param columns - The card's filled columns.
- * @param style - The scale, the reference and the colour.
- * @param scene - The view, the palette; `selection` and `hoverMs` from Mission control.
- * @param marks - The selection and the hovered time.
- * @param marks.history - The history (the selection's rows).
- * @param marks.selection - The selection; undefined for none.
- * @param marks.hoverMs - The source time under the pointer; undefined for none.
- */
-export function paintSpark(
-  g: PaintContext,
-  layout: TimelineLayout,
-  columns: SparkColumns,
-  style: SparkStyle,
-  scene: PaintScene,
-  marks: {
-    readonly history: PerfHistory;
-    readonly selection: FrameRange | undefined;
-    readonly hoverMs: number | undefined;
-  }
-): void {
-  VIEW.startMs = scene.endMs - scene.span;
-  VIEW.span = scene.span;
-  paintBaseline(g, layout, scene);
-
-  // The first and last columns reach past the plot: everything up to the cursor is clipped to it.
-  g.save();
-  g.beginPath();
-  g.rect(0, 0, layout.plot.w, layout.height);
-  g.clip();
-  paintRestedColumns(g, layout, columns, scene);
-  paintReference(g, layout, style, scene);
-  if (hasSelectedSpan(marks.history, layout, marks.selection, scene))
-    paintSelectionBand(g, layout, scene);
-  paintAreaAndLine(g, layout, columns, style, scene);
-  paintTrend(g, layout, style, scene);
-  paintMarks(g, layout, columns, scene);
-  g.restore();
-
-  if (marks.hoverMs !== undefined) paintCursor(g, layout, marks.hoverMs, scene);
 }
 
 /**
@@ -778,6 +729,55 @@ function paintCursor(
   g.lineTo(x, layout.height);
   g.stroke();
   g.globalAlpha = 1;
+}
+
+/**
+ * Paints a sparkline: the baseline, resting columns (the edge colour at 20 %), the reference line
+ * (dashed `[3, 3]`, muted at 70 %), the selection band, the area (the tint at 12 %) and the line
+ * (1.5 px), the trend (dashed `[4, 3]` in warn), the columns' marks (diamonds at `top + 4`) and the
+ * shared cursor.
+ *
+ * @param g - The canvas context.
+ * @param layout - The canvas's geometry (`sparkLayout`).
+ * @param columns - The card's filled columns.
+ * @param style - The scale, the reference and the colour.
+ * @param scene - The view and the palette.
+ * @param marks - The selection and the hovered time.
+ * @param marks.history - The history (the selection's rows).
+ * @param marks.selection - The selection; undefined for none.
+ * @param marks.hoverMs - The source time under the pointer; undefined for none.
+ */
+export function paintSpark(
+  g: PaintContext,
+  layout: TimelineLayout,
+  columns: SparkColumns,
+  style: SparkStyle,
+  scene: PaintScene,
+  marks: {
+    readonly history: PerfHistory;
+    readonly selection: FrameRange | undefined;
+    readonly hoverMs: number | undefined;
+  }
+): void {
+  VIEW.startMs = scene.endMs - scene.span;
+  VIEW.span = scene.span;
+  paintBaseline(g, layout, scene);
+
+  // The first and last columns reach past the plot: everything up to the cursor is clipped to it.
+  g.save();
+  g.beginPath();
+  g.rect(0, 0, layout.plot.w, layout.height);
+  g.clip();
+  paintRestedColumns(g, layout, columns, scene);
+  paintReference(g, layout, style, scene);
+  if (hasSelectedSpan(marks.history, layout, marks.selection, scene))
+    paintSelectionBand(g, layout, scene);
+  paintAreaAndLine(g, layout, columns, style, scene);
+  paintTrend(g, layout, style, scene);
+  paintMarks(g, layout, columns, scene);
+  g.restore();
+
+  if (marks.hoverMs !== undefined) paintCursor(g, layout, marks.hoverMs, scene);
 }
 
 /** The scale of a step painter: the value at the bottom and at the top of the plot. */

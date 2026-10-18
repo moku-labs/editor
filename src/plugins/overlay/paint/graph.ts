@@ -8,8 +8,7 @@
 import type { PerfWindowView } from "../../perf/protocol";
 import { meanGpu, rowOfFrame, spikeOrdinal, stepSpike } from "../../perf/protocol";
 import type { GraphCanvas, GraphSeam, OverlayCtx, OverlayState, Visitors } from "../types";
-import { PAINT_MS } from "../types";
-import { SLIDE_TICKS, slideAllowed, startSlide } from "./slide";
+import { SLIDE_ROOM_TICKS_MS, slideAllowed, startSlide } from "./slide";
 
 /** The largest device pixel ratio the backing store follows. */
 const MAX_DPR = 3;
@@ -91,7 +90,7 @@ function finiteMs(ms: number | undefined): number | undefined {
 }
 
 /** The slide's room past the well's right edge, ms (not the open slide's `SLIDE_MS`). */
-const SLIDE_ROOM_MS = SLIDE_TICKS * PAINT_MS;
+const SLIDE_ROOM_MS = SLIDE_ROOM_TICKS_MS;
 
 /**
  * The canvas's extra width of a paint: `SLIDE_TICKS` ticks at the scale where the visible width spans
@@ -106,7 +105,8 @@ const SLIDE_ROOM_MS = SLIDE_TICKS * PAINT_MS;
  */
 function slideLead(window: PerfWindowView, canvas: GraphCanvas, graph: GraphSeam): number {
   const span = window.endMs - window.startMs;
-  if (!canvas.motion || window.count === 0 || span <= SLIDE_ROOM_MS) return 0;
+  const hasNoRoom = !canvas.motion || window.count === 0 || span <= SLIDE_ROOM_MS;
+  if (hasNoRoom) return 0;
   // The visible width spans the window less the slide's room; the room is drawn at that scale.
   const lead = graph.msToPx(
     window,
@@ -145,7 +145,8 @@ export function createVisitors(state: OverlayState, graph: GraphSeam): Visitors 
       width !== painted.w || canvas.h !== painted.h || canvas.nextDpr !== canvas.dpr;
     const samePaint =
       window.version === painted.version && row === painted.row && width === painted.w;
-    if (samePaint && canvas.h === painted.h && canvas.nextDpr === painted.dpr) return;
+    const unchanged = samePaint && canvas.h === painted.h && canvas.nextDpr === painted.dpr;
+    if (unchanged) return;
 
     // The backing store, only when the painted size or the dpr changed.
     if (sizeChanged) {
