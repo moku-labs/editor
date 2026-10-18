@@ -126,20 +126,23 @@ export function startSlide(
   }
 
   // The data's time at the well's right edge with the canvas at 0, and the scale.
-  const leadMs = SLIDE_ROOM_TICKS_MS;
-  const pxPerMs = lead / leadMs;
-  const zeroMs = endMs - leadMs;
+  const pxPerMs = lead / SLIDE_ROOM_TICKS_MS;
+  const zeroMs = endMs - SLIDE_ROOM_TICKS_MS;
+
   // Two ticks behind the newest data: a slide at real time reaches it only at its own end (on the
   // A26 a target one tick behind made every slide hit the newest data halfway and slow to half
   // speed, a twitch each time the trim caught up).
   const durMs = SLIDE_RUN_TICKS * PAINT_MS;
   const target = endMs - durMs;
+
   // Carry on from what shows now; a first paint, or one too far off, starts on the target.
   const shown = edgeNow(state, now);
   const onCanvas = Number.isFinite(shown) && shown >= zeroMs && shown <= endMs;
   const from = onCanvas ? shown : target;
   const speed = 1 + Math.min(TRIM, Math.max(-TRIM, (target - from) / TRIM_SPAN_MS));
   const to = Math.min(endMs, from + speed * durMs);
+
+  // Remember the slide for the next paint.
   slide.px = lead;
   slide.at = now;
   slide.durMs = durMs;

@@ -1271,7 +1271,7 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, oldest
   if (oldest) g.fillText(state.axisText[0] ?? "", px0 + lead + AXIS_INSET, y);
   if (!view.wide) return;
 
-  // The wide graph: every other second, centred on its time.
+  // The wide graph: one label a second, centred on its time.
   g.textAlign = "center";
   for (let second = seconds - 1; second > 0; second -= 1) {
     g.fillText(state.axisText[seconds - second] ?? "", px1 - second * SECOND_MS * pxPerMs, y);

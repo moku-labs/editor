@@ -38,6 +38,26 @@ const MISSED_SHARE = 0.88;
 const MARK_R = 3.5;
 const MARK_Y = 4;
 
+/** The view of the sparkline being painted (reused): its start and span, ms. */
+const VIEW = { startMs: 0, span: 1 };
+
+/** The alphas of a sparkline: resting columns, the reference line, the selection, the area, the cursor. */
+const REST_ALPHA = 0.2;
+const REFERENCE_ALPHA = 0.7;
+const SELECTION_ALPHA = 0.14;
+const AREA_ALPHA = 0.12;
+const CURSOR_ALPHA = 0.55;
+
+/** The width of a sparkline's line, px. */
+const LINE_WIDTH = 1.5;
+
+/** The width of the trend and of the app's CPU step line, px. */
+const TREND_WIDTH = 1.25;
+
+/** The alphas of the Device load card: the app's CPU area, the other processes' (surfaceflinger). */
+const CPU_APP_ALPHA = 0.55;
+const CPU_FLINGER_ALPHA = 0.6;
+
 /**
  * The mark a sparkline column carries (spec 09 § M9): none, a GC the engine reported (a filled teal
  * diamond), a GC inferred from a heap drop (a hollow teal diamond, dashed), or a shader compile inside
@@ -419,19 +439,6 @@ function yOfValue(layout: TimelineLayout, style: SparkStyle, value: number): num
   return plotBottom(layout) - share * layout.plot.h;
 }
 
-/** The view of the sparkline being painted (reused): its start and span, ms. */
-const VIEW = { startMs: 0, span: 1 };
-
-/** The alphas of a sparkline: resting columns, the reference line, the selection, the area, the cursor. */
-const REST_ALPHA = 0.2;
-const REFERENCE_ALPHA = 0.7;
-const SELECTION_ALPHA = 0.14;
-const AREA_ALPHA = 0.12;
-const CURSOR_ALPHA = 0.55;
-
-/** The width of a sparkline's line, px. */
-const LINE_WIDTH = 1.5;
-
 /**
  * Closes a run of columns down to the baseline (from its last column back to its first); nothing
  * when no run is open. Reads the view from `VIEW`.
@@ -458,7 +465,7 @@ function closeRun(
 
 /**
  * The path of the columns: a line through each column's middle, broken at a gap; with `close`, each
- * run closed down to the baseline and filled.
+ * run closed down to the baseline and filled. Reads the view from `VIEW`.
  *
  * @param g - The context.
  * @param layout - The geometry.
@@ -514,7 +521,7 @@ function paintTrend(
   const start = scene.endMs - scene.span;
   g.globalAlpha = 1;
   g.strokeStyle = scene.palette.warn;
-  g.lineWidth = 1.25;
+  g.lineWidth = TREND_WIDTH;
   g.setLineDash(DASH.trend);
   g.beginPath();
   g.moveTo(0, yOfValue(layout, style, trend.value + trend.perMs * (start - trend.t)));
@@ -528,7 +535,7 @@ function paintTrend(
 
 /**
  * The marks of the columns: a diamond at the column's middle, `top + 4` — teal for a GC (hollow and
- * dashed when inferred), pick-blue for a compile.
+ * dashed when inferred), pick-blue for a compile. Reads the view from `VIEW`.
  *
  * @param g - The context.
  * @param layout - The geometry.
@@ -601,7 +608,7 @@ function paintBaseline(g: PaintContext, layout: TimelineLayout, scene: PaintScen
 }
 
 /**
- * The columns that only rested, in the edge colour at 20 %, each one column wide at its time.
+ * The columns that only rested, in the edge colour at 20 %, each one column wide at its time. Reads the view from `VIEW`.
  *
  * @param g - The context.
  * @param layout - The geometry.
@@ -903,17 +910,17 @@ export function paintCpuSteps(
   ALL[1] = load.cpuRenderer;
   ALL[2] = load.cpuFlinger;
   g.setLineDash(DASH.none);
-  g.globalAlpha = 0.55;
+  g.globalAlpha = CPU_APP_ALPHA;
   g.fillStyle = palette.src;
   paintSteps(g, layout, scene, APP, CPU_SCALE, true);
   g.fillStyle = palette.phase1;
   paintSteps(g, layout, scene, APP_RENDERER, CPU_SCALE, true);
-  g.globalAlpha = 0.6;
+  g.globalAlpha = CPU_FLINGER_ALPHA;
   g.fillStyle = palette.edge;
   paintSteps(g, layout, scene, ALL, CPU_SCALE, true);
   g.globalAlpha = 1;
   g.strokeStyle = palette.src;
-  g.lineWidth = 1.25;
+  g.lineWidth = TREND_WIDTH;
   paintSteps(g, layout, scene, APP, CPU_SCALE, false);
 }
 
@@ -947,12 +954,12 @@ export function paintGpuSteps(
   BUSY_LAYER[0] = load.gpuBusy;
   MHZ_LAYER[0] = load.gpuMhz;
   g.setLineDash(DASH.none);
-  g.globalAlpha = 0.12;
+  g.globalAlpha = AREA_ALPHA;
   g.fillStyle = palette.src;
   paintSteps(g, layout, scene, BUSY_LAYER, CPU_SCALE, true);
   g.globalAlpha = 1;
   g.strokeStyle = palette.src;
-  g.lineWidth = 1.5;
+  g.lineWidth = LINE_WIDTH;
   paintSteps(g, layout, scene, BUSY_LAYER, CPU_SCALE, false);
   MHZ_SCALE.min = range.minMhz ?? 0;
   MHZ_SCALE.max = range.maxMhz ?? Math.max(1, MHZ_SCALE.min * 2);

@@ -22,6 +22,9 @@ import { framePassGpu } from "./tooltip";
 import type { Line, Tag } from "./words";
 import { DASH, oneDecimal, strong } from "./words";
 
+/** A share as a percent. */
+const PERCENT = 100;
+
 /**
  * The tag colour of a card's headline.
  *
@@ -359,9 +362,6 @@ function valueAt(column: SeriesColumn, t: number): number {
   return value;
 }
 
-/** A share as a percent. */
-const PERCENT = 100;
-
 /**
  * The texture change over the selection: "{a} → {b} MB", "unchanged", or undefined without a
  * selection.
@@ -451,7 +451,7 @@ function chainLines(summary: PerfPassesSummary): Line[] {
     if (summary.tiler) {
       return chain.share === null
         ? []
-        : [[`${label} `, strong(`≈ ${Math.round(chain.share * 100)} %`)]];
+        : [[`${label} `, strong(`≈ ${Math.round(chain.share * PERCENT)} %`)]];
     }
     const gpu = chain.gpuMs;
     if (gpu === null) return [];
