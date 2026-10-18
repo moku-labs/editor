@@ -543,7 +543,7 @@ function drawn(calls: readonly Call[]) {
 }
 
 /** The texts a fixed layer draws over the plot: positions, not times. */
-const FIXED_TEXTS = ["now", "frame 121", "JS", "GPU", "idle"];
+const FIXED_TEXTS = ["now", "frame 121", "JS", "GPU", "idle", "−6 s"];
 
 describe("the layers (a plot canvas that slides under a fixed canvas that does not)", () => {
   it("'all' is today's output (bug: the strip's graph changing with the layer option)", () => {
@@ -572,10 +572,10 @@ describe("the layers (a plot canvas that slides under a fixed canvas that does n
     }
     const fixedTexts = fixed.map(text => text.text);
     expect(fixedTexts).toEqual(expect.arrayContaining([...FIXED_TEXTS, "16.7", "40"]));
-    expect(plot.map(text => text.text)).toEqual(["−6 s"]);
+    expect(plot.map(text => text.text)).toEqual([]);
   });
 
-  it("the fixed layer's texts stay where the slid plot ends; the time labels slide (bug: now, the caption or the legend jumping every tick)", () => {
+  it("the fixed layer's texts stay where the slid plot ends, the oldest second's label too (bug: now, the caption, the legend or '−6 s' jumping every tick on the A26)", () => {
     const window = windowOf(rows(300));
     const lead = 10;
     const all = drawn(
@@ -591,8 +591,7 @@ describe("the layers (a plot canvas that slides under a fixed canvas that does n
     const plot = drawn(
       paintOnce(window, { ...PHONE, width: PHONE.width + lead, leadPx: lead, layer: "plot" }).calls
     );
-    const oldest = all.find(text => text.text === "−6 s");
-    expect(plot).toEqual([oldest]);
+    expect(plot).toEqual([]);
   });
 
   it("the fixed layer leaves the plot visible: no well, grid, rows or flags (bug: the slide hidden under it)", () => {

@@ -1231,14 +1231,17 @@ function paintCaption(
 }
 
 /**
- * Step 11: the time axis — on the phone the oldest second at the left, on the wide graph one label a
- * second (at most 60); `now` is `paintNow`. Labels are rebuilt only when the window length changed.
+ * Step 11: the time axis — the oldest second at the left (`oldest`), on the wide graph one label a
+ * second (at most 60); `now` is `paintNow`. The oldest second marks a place (the plot's left edge),
+ * so a sliding plot layer leaves it to the fixed layer (Delta 2026-10-18: on the A26 it jumped at
+ * every paint). Labels are rebuilt only when the window length changed.
  *
  * @param g - The context.
  * @param view - The view.
  * @param state - The painter state.
+ * @param oldest - Draw the oldest second at the left edge.
  */
-function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState): void {
+function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState, oldest: boolean): void {
   // The labels, one a second, rebuilt only for a new window length (the lead's time left out).
   const lead = view.leadPx ?? 0;
   const pxPerMs = (state.px1 - state.px0) / state.spanMs;
@@ -1257,7 +1260,7 @@ function paintAxis(g: GraphContext2D, view: GraphView, state: GraphState): void 
   g.fillStyle = look.colours.ink3;
   g.textBaseline = "alphabetic";
   g.textAlign = "left";
-  g.fillText(state.axisText[0] ?? "", px0 + lead + AXIS_INSET, y);
+  if (oldest) g.fillText(state.axisText[0] ?? "", px0 + lead + AXIS_INSET, y);
 
   // The wide graph: every other second, centred on its time.
   if (view.wide) {
@@ -1494,6 +1497,7 @@ function paintFixed(
     paintReadout(g, window, view, state, layout, focus);
     paintCaption(g, window, view, state, layout, focus);
   }
+  paintAxis(g, view, state, true);
   paintNow(g, view, state);
   if (!view.wide) paintStackLegend(g, window, view, state);
 }
@@ -1558,7 +1562,7 @@ export function paintGraph(
     paintReadout(g, window, view, state, layout, focus);
     paintCaption(g, window, view, state, layout, focus);
   }
-  paintAxis(g, view, state);
+  paintAxis(g, view, state, all || over);
   if (!all && !over) return;
   paintNow(g, view, state);
   if (!view.wide) paintStackLegend(g, window, view, state);

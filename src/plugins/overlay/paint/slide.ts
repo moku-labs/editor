@@ -57,10 +57,17 @@ export function slideAllowed(
 }
 
 /**
- * The ticks of data a paint keeps past the well's right edge: the slide's room, so a late or
- * skipped paint still has data to slide into.
+ * The ticks of data a paint keeps past the well's right edge: the slide's room. The right edge
+ * shows the data `SLIDE_RUN_TICKS` ticks behind the newest, so one slide never runs out of data, and
+ * one more tick is kept for a late or skipped paint.
  */
-export const SLIDE_TICKS = 2;
+export const SLIDE_TICKS = 3;
+
+/**
+ * The ticks one slide lasts (and the delay behind the newest data the right edge aims at): two, so
+ * a paint that comes late still finds the graph moving.
+ */
+export const SLIDE_RUN_TICKS = 2;
 
 /** The largest change of the slide's speed toward its target: 20 % faster or slower. */
 const TRIM = 0.2;
@@ -89,7 +96,7 @@ function edgeNow(state: OverlayState, now: number): number {
  * picked by translateX. The slide keeps the well's right edge on a display time that runs at real
  * time across paints: the new canvas starts at the time the last slide shows now (so a paint never
  * jumps the graph back or forth when the data's end stepped unevenly), then runs for two ticks,
- * a little faster or slower toward one tick behind the newest data, and never past it. A lead of 0
+ * a little faster or slower toward two ticks behind the newest data, and never past it. A lead of 0
  * (reduced motion, no scale yet) only resets.
  *
  * @param state - Overlay state.
@@ -119,11 +126,14 @@ export function startSlide(
   const leadMs = SLIDE_TICKS * PAINT_MS;
   const pxPerMs = lead / leadMs;
   const zeroMs = endMs - leadMs;
-  const target = endMs - PAINT_MS;
+  // Two ticks behind the newest data: a slide at real time reaches it only at its own end (on the
+  // A26 a target one tick behind made every slide hit the newest data halfway and slow to half
+  // speed, a twitch each time the trim caught up).
+  const durMs = SLIDE_RUN_TICKS * PAINT_MS;
+  const target = endMs - durMs;
   // Carry on from what shows now; a first paint, or one too far off, starts on the target.
   const shown = edgeNow(state, now);
   const from = Number.isFinite(shown) && shown >= zeroMs && shown <= endMs ? shown : target;
-  const durMs = leadMs;
   const speed = 1 + Math.min(TRIM, Math.max(-TRIM, (target - from) / TRIM_SPAN_MS));
   const to = Math.min(endMs, from + speed * durMs);
   slide.px = lead;
