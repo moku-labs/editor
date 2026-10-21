@@ -320,7 +320,10 @@ The barrel `scene/index.ts` exports:
 | `rectSourceOf` | `(manifest) => "game.locate" \| "game.rect" \| undefined` | Where element rects are read: `game.locate` when listed (game 0.4), else `game.rect` (game 0.1); undefined when neither is (`RECT_SOURCE_IDS`). |
 | `drawnRect` | `(natural, fits) => PageRect` | The drawn rect through the fit chain. |
 | `transformedRect` | `(rect, parent, style, fit) => PageRect` | The drawn rect with the rest transform of the style on top (below). |
-| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost visible node at a point; skips alpha 0 and `visible: false`. |
+| `elementAt` | `(scene, point) => SceneNode \| undefined` | Topmost visible node at a point; skips alpha 0 and `visible: false`. The first of `elementsAt`. |
+| `elementsAt` | `(scene, point) => SceneNode[]` | Every visible node at a point, best first: the drawing nodes last painted first, then the layout-only ones. |
+| `isClippedUnder` | `(scene, node) => boolean` | An ancestor is a `scroll` or styled `overflow: "hidden"`: the node's natural rect may not be where it is drawn. |
+| `contains` | `(rect, point) => boolean` | Left and top edges in, right and bottom edges out. |
 | `isLayoutOnly` | `(node) => boolean` | A ui screen, column, row, stack or spacer with no fill, stroke, nine-slice or shape. `elementAt` looks through it; gameView's Reference proxies put it under the drawing nodes. |
 | `pageFromClient` / `clientFromPage` | `(point, box: FrameBoxLike) => point` | Tools page ↔ game page. |
 | `ancestorsOf` | `(scene, id) => readonly string[]` | Root first. |

@@ -12,7 +12,16 @@ export {
   toPage
 } from "./calibrate";
 export { drawnRect, transformedRect } from "./fits";
-export { ancestorsOf, clientFromPage, elementAt, isLayoutOnly, pageFromClient } from "./hit";
+export {
+  ancestorsOf,
+  clientFromPage,
+  contains,
+  elementAt,
+  elementsAt,
+  isClippedUnder,
+  isLayoutOnly,
+  pageFromClient
+} from "./hit";
 export { parseTextureManifest } from "./textures";
 export type {
   Calibration,
