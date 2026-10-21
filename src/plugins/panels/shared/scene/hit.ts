@@ -19,7 +19,7 @@ type Point = { readonly x: number; readonly y: number };
  * contains({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5 }); // true
  * ```
  */
-function contains(rect: PageRect, point: Point): boolean {
+export function contains(rect: PageRect, point: Point): boolean {
   return (
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
   );
@@ -51,13 +51,39 @@ export function isLayoutOnly(node: SceneNode): boolean {
 }
 
 /**
- * The last node in paint order that contains the point and draws or takes input (rule 6). An
- * invisible node (alpha 0 or `visible: false`, merge-game's glow over each cell at rest) is
- * skipped: the picker finds what is drawn under it. A layout-only node (see `isLayoutOnly`) is
- * looked through: it wins only where no other node contains the point. A node covering the whole
- * device that draws (a popup backdrop) contains every point, so it blocks everything painted
- * before it: a node painted after it wins where it contains the point, the backdrop wins
- * elsewhere.
+ * Every node that contains the point, in the order the picker prefers them (rule 6): the nodes
+ * that draw or take input, last painted first, then the layout-only ones (see `isLayoutOnly`),
+ * last painted first. An invisible node (alpha 0 or `visible: false`, merge-game's glow over each
+ * cell at rest) is left out: the picker finds what is drawn under it.
+ *
+ * @param scene - The scene.
+ * @param point - A point in page px (reference units when the scene is not calibrated).
+ * @param point.x - Page x.
+ * @param point.y - Page y.
+ * @returns The nodes, best first; empty when no placed node contains the point.
+ * @example
+ * ```ts
+ * elementsAt(scene, { x: 540, y: 990 }).map(node => node.id); // ["entity:1048628", "ui:boardScreen/board", …]
+ * ```
+ */
+export function elementsAt(scene: SceneSnapshot, point: Point): SceneNode[] {
+  const drawing: SceneNode[] = [];
+  const layout: SceneNode[] = [];
+  for (const id of scene.paintOrder.toReversed()) {
+    const node = scene.nodes.get(id);
+    if (node?.rect === undefined || !node.visible || !contains(node.rect, point)) continue;
+    (isLayoutOnly(node) ? layout : drawing).push(node);
+  }
+
+  return [...drawing, ...layout];
+}
+
+/**
+ * The last node in paint order that contains the point and draws or takes input (rule 6): the
+ * first of `elementsAt`. A layout-only node wins only where no other node contains the point. A
+ * node covering the whole device that draws (a popup backdrop) contains every point, so it blocks
+ * everything painted before it: a node painted after it wins where it contains the point, the
+ * backdrop wins elsewhere.
  *
  * @param scene - The scene.
  * @param point - A point in page px (reference units when the scene is not calibrated).
@@ -70,19 +96,28 @@ export function isLayoutOnly(node: SceneNode): boolean {
  * elementAt(settingsScene, { x: 980, y: 112 })?.id; // "ui:settingsScreen/settingsBackdrop"
  * ```
  */
-export function elementAt(
-  scene: SceneSnapshot,
-  point: { readonly x: number; readonly y: number }
-): SceneNode | undefined {
-  let layout: SceneNode | undefined;
-  for (const id of scene.paintOrder.toReversed()) {
-    const node = scene.nodes.get(id);
-    if (node?.rect === undefined || !node.visible || !contains(node.rect, point)) continue;
-    if (!isLayoutOnly(node)) return node;
-    layout ??= node;
-  }
+export function elementAt(scene: SceneSnapshot, point: Point): SceneNode | undefined {
+  return elementsAt(scene, point)[0];
+}
 
-  return layout;
+/**
+ * Tells whether a node sits inside a clipping ui node: a `scroll` (which also moves it by its
+ * offset) or a node styled `overflow: "hidden"`. `game.ui` gives natural rects only, so the rect
+ * of such a node may not be where it is drawn: the scroll's offset and the clip are not in it.
+ *
+ * @param scene - The scene.
+ * @param node - A scene node.
+ * @returns True when an ancestor scrolls or clips.
+ * @example
+ * ```ts
+ * isClippedUnder(scene, eventTileNode); // true: the board's strip is a scroll
+ * ```
+ */
+export function isClippedUnder(scene: SceneSnapshot, node: SceneNode): boolean {
+  return ancestorsOf(scene, node.id).some(id => {
+    const above = scene.nodes.get(id);
+    return above?.type === "scroll" || above?.style?.overflow === "hidden";
+  });
 }
 
 /**

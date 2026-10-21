@@ -6,8 +6,18 @@
  * off, D-70), and the two cross-view intents of the Element tab (`workspace:reveal`,
  * `workspace:open-file`, R4).
  */
+import { linkPlugin } from "../../link";
 import type { ElementRef, SceneNode, SceneSnapshot } from "../../panels/shared/scene";
-import { elementAt, pageFromClient, refId } from "../../panels/shared/scene";
+import {
+  contains,
+  elementAt,
+  elementsAt,
+  isClippedUnder,
+  pageFromClient,
+  rectSourceOf,
+  refId
+} from "../../panels/shared/scene";
+import { rectOf } from "../../panels/shared/scene/wire";
 import { showSidePanel } from "../../panels/shared/side-panel";
 import { workspacePlugin } from "../../workspace";
 import type { FrameBox } from "../../workspace/types";
@@ -153,6 +163,66 @@ function nodeIn(
 }
 
 /**
+ * Tells whether a node is drawn under a page point. The scene's rects are natural, so a node
+ * inside a scroll or a clip may be drawn elsewhere or cut away (F39: the board's strip scrolled to
+ * 318 draws its first tile at −228, its natural rect stays at 92.8). Such a keyed node is asked
+ * where it is drawn through the rect source (`game.locate` places it with the scroll's offset and
+ * cuts it by the clip once the engine has the F39 fix; an older engine answers the natural rect, which keeps the old pick); any other node, a game without the source
+ * or a failed read keeps the natural rect.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param scene - The scene the node is in.
+ * @param node - A node whose natural rect contains the point.
+ * @param point - The point in page px.
+ * @param point.x - Page x.
+ * @param point.y - Page y.
+ * @returns Resolves true when the node is drawn there.
+ */
+async function drawnAt(
+  ctx: GameViewCtx,
+  scene: SceneSnapshot,
+  node: SceneNode,
+  point: { readonly x: number; readonly y: number }
+): Promise<boolean> {
+  if (node.key === undefined || !isClippedUnder(scene, node)) return true;
+  const link = ctx.require(linkPlugin);
+  const source = rectSourceOf(link.manifest());
+  if (source === undefined) return true;
+  try {
+    const rect = rectOf(await link.read(source, { key: node.key }));
+    return rect !== undefined && contains(rect, point);
+  } catch (error) {
+    ctx.log.debug("gameView: pick locate failed", { key: node.key, message: messageOf(error) });
+    return true;
+  }
+}
+
+/**
+ * The node a click picks: the first node under the point, in the order `elementsAt` prefers,
+ * that is drawn there (`drawnAt`). Nothing without a calibrated scene or a frame box.
+ *
+ * @param ctx - Domain context of gameView.
+ * @param scene - The scene, undefined before the first build.
+ * @param box - The frame box, undefined while the frame is not mounted.
+ * @param client - The pointer in client px.
+ * @returns Resolves to the node, or undefined.
+ */
+async function pickedIn(
+  ctx: GameViewCtx,
+  scene: SceneSnapshot | undefined,
+  box: FrameBox | undefined,
+  client: ClientPoint
+): Promise<SceneNode | undefined> {
+  const hasCalibratedFrame = scene?.calibrated === true && box !== undefined && box.scale > 0;
+  if (!hasCalibratedFrame) return undefined;
+  const point = pageFromClient(client, box);
+  for (const node of elementsAt(scene, point)) {
+    if (await drawnAt(ctx, scene, node, point)) return node;
+  }
+  return undefined;
+}
+
+/**
  * The frame box now.
  *
  * @param ctx - Domain context of gameView.
@@ -203,8 +273,8 @@ export async function pickAt(ctx: GameViewCtx, client: ClientPoint): Promise<voi
   if (!state.picker.on) return;
 
   const { scene } = state;
-  const node = nodeIn(scene, box, client);
-  if (scene === undefined || node === undefined) return;
+  const node = await pickedIn(ctx, scene, box, client);
+  if (!state.picker.on || scene === undefined || node === undefined) return;
   selectElement(ctx, node.ref);
   state.picker = { on: false, hover: undefined };
   state.tab = "element";

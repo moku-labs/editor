@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildScene, type SceneSnapshot } from "../../../panels/shared/scene";
+import {
+  buildScene,
+  type PageRect,
+  type SceneNode,
+  type SceneSnapshot
+} from "../../../panels/shared/scene";
 import { errorCode, type Json, wireError } from "../../../registry/protocol";
 import { hideCard, showCard } from "../../capture/shot";
 import {
@@ -17,7 +22,15 @@ import {
 import { escapeClosers } from "../../keys";
 import { recalibrate } from "../../scene/calibrate";
 import { startSceneWatches } from "../../scene/watch";
-import { createCtx, flush, PNG, sceneCapture, type TestCtx, useScene } from "../helpers";
+import {
+  createCtx,
+  flush,
+  manifestOf,
+  PNG,
+  sceneCapture,
+  type TestCtx,
+  useScene
+} from "../helpers";
 
 const BOARD = sceneCapture("scene-board.txt");
 const SETTINGS = sceneCapture("scene-settings.txt");
@@ -208,6 +221,124 @@ describe("hoverAt and pickAt", () => {
     await pickAt(ctx, { x: -500, y: -500 });
     expect(ctx.state.picker.on).toBe(true);
     expect(ctx.state.selected).toBeUndefined();
+  });
+});
+
+/**
+ * One ui node of a hand-built scene, in page px.
+ *
+ * @param path - Its path; the parent is the path without its last part.
+ * @param type - The ui tag.
+ * @param rect - Its natural rect.
+ * @param style - Its style; a fill when left out, so the node draws.
+ * @returns The node.
+ */
+function uiNode(
+  path: string,
+  type: string,
+  rect: PageRect,
+  style?: Record<string, Json>
+): SceneNode {
+  const parts = path.split("/");
+  const parent = parts.length > 1 ? `ui:${parts.slice(0, -1).join("/")}` : undefined;
+  return {
+    id: `ui:${path}`,
+    ref: { kind: "ui", path },
+    name: parts.at(-1) ?? path,
+    type,
+    parent,
+    children: [],
+    rect,
+    refRect: rect,
+    texture: undefined,
+    key: parts.at(-1),
+    style: style ?? { fill: "#fff" },
+    visible: true,
+    entity: undefined
+  };
+}
+
+/**
+ * A Memory Missing's board in short (F39): the counter at x 650 to 800, then the strip, a 306 px
+ * window at x 300 over a 696 px track, scrolled to 318. The first event tile and its sheen lie at
+ * x 700 in the track's natural rect, over the counter; the scroll draws them at x 382.
+ *
+ * @returns The scene, calibrated.
+ */
+function stripScene(): SceneSnapshot {
+  const nodes = [
+    uiNode("board", "stack", { x: 0, y: 0, w: 1080, h: 400 }, {}),
+    uiNode("board/counter", "text", { x: 650, y: 0, w: 150, h: 120 }),
+    uiNode("board/strip", "scroll", { x: 300, y: 200, w: 306, h: 120 }, {}),
+    uiNode("board/strip/track", "row", { x: 300, y: 0, w: 696, h: 120 }, {}),
+    uiNode("board/strip/track/eventTile1", "button", { x: 700, y: 0, w: 116, h: 120 }),
+    uiNode("board/strip/track/eventTile1/eventTile1Sheen", "button", {
+      x: 700,
+      y: 0,
+      w: 116,
+      h: 120
+    })
+  ];
+  return {
+    frame: 1,
+    calibrated: true,
+    nodes: new Map(nodes.map(node => [node.id, node])),
+    roots: ["ui:board"],
+    paintOrder: nodes.map(node => node.id),
+    referencedTextures: new Set(),
+    entityCount: 0
+  };
+}
+
+describe("a pick inside a scroll (F39)", () => {
+  /** Where the engine draws the strip's tiles: scrolled by 318, at x 382. */
+  const drawn: Record<string, Json> = {
+    eventTile1: { x: 382, y: 0, w: 116, h: 120 },
+    eventTile1Sheen: { x: 382, y: 0, w: 116, h: 120 }
+  };
+
+  beforeEach(() => {
+    // No game.ui to read: the click picks from the hand-built scene there is.
+    ctx.link.values.delete("game.ui");
+    ctx.state.scene = stripScene();
+    ctx.workspace.box = { left: 0, top: 0, width: 1080, height: 400, scale: 1, docked: "stage" };
+    ctx.link.manifestValue = manifestOf(undefined, ["game.locate"]);
+    ctx.state.picker.on = true;
+  });
+
+  it("picks what is drawn under the click, not a scrolled tile whose natural rect is there", async () => {
+    // Bug caught: the strip stood on 318, a click on the counter picked eventTile1Sheen, whose
+    // natural rect still lies over the counter.
+    // eslint-disable-next-line unicorn/no-null -- the wire answers an element drawn nowhere with null.
+    ctx.link.values.set("game.locate", input => drawn[(input as { key: string }).key] ?? null);
+    await pickAt(ctx, { x: 720, y: 50 });
+    expect(ctx.state.selected).toEqual({ kind: "ui", path: "board/counter" });
+    expect(ctx.link.read).not.toHaveBeenCalledWith("game.locate", { key: "counter" });
+  });
+
+  it("picks the scrolled tile where it is drawn", async () => {
+    // eslint-disable-next-line unicorn/no-null -- the wire answers an element drawn nowhere with null.
+    ctx.link.values.set("game.locate", input => drawn[(input as { key: string }).key] ?? null);
+    // The tile's natural rect is not under x 400, so the scene finds the strip there.
+    await pickAt(ctx, { x: 400, y: 250 });
+    expect(ctx.state.selected).toEqual({ kind: "ui", path: "board/strip" });
+  });
+
+  it("keeps the natural pick on an engine whose locate answers the natural rect", async () => {
+    ctx.link.values.set("game.locate", { x: 700, y: 0, w: 116, h: 120 });
+    await pickAt(ctx, { x: 720, y: 50 });
+    expect(ctx.state.selected).toEqual({
+      kind: "ui",
+      path: "board/strip/track/eventTile1/eventTile1Sheen"
+    });
+  });
+
+  it("keeps the natural pick when the locate read fails", async () => {
+    await pickAt(ctx, { x: 720, y: 50 });
+    expect(ctx.state.selected).toEqual({
+      kind: "ui",
+      path: "board/strip/track/eventTile1/eventTile1Sheen"
+    });
   });
 });
 
