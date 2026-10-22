@@ -13,15 +13,13 @@
 import { chromium } from "@playwright/test";
 import { startEditor } from "./editor-server";
 
-/** A node of the sampling profile. */
-type ProfileNode = {
+/** What a profile frame is named by: the call frame of a sampling-profile node. */
+type CallFrameOf = {
   readonly callFrame: {
     readonly functionName: string;
     readonly url: string;
     readonly lineNumber: number;
   };
-  readonly selfSize: number;
-  readonly children: readonly ProfileNode[];
 };
 
 /** The bin index of the bench: a port of its own, clear of the e2e workers. */
@@ -48,7 +46,7 @@ const TOP = 25;
  * @param node - The profile node.
  * @returns E.g. `toWireValue @ editor-1a2b.js:517`.
  */
-function labelOf(node: ProfileNode): string {
+function labelOf(node: CallFrameOf): string {
   const { functionName, url, lineNumber } = node.callFrame;
   const file = url.split("/").at(-1)?.split("?")[0] || "(native)";
   return `${functionName || "(anon)"} @ ${file}:${lineNumber + 1}`;
@@ -116,7 +114,7 @@ try {
    * @param stack - The labels above it.
    * @param owner - The file of the nearest script frame above it.
    */
-  const walk = (node: ProfileNode, stack: readonly string[], owner: string): void => {
+  const walk = (node: typeof profile.head, stack: readonly string[], owner: string): void => {
     const label = labelOf(node);
     const file = node.callFrame.url === "" ? owner : node.callFrame.url;
     const next = [...stack, label];
@@ -132,7 +130,7 @@ try {
     }
     for (const child of node.children) walk(child, next, file);
   };
-  walk(profile.head as ProfileNode, [], "");
+  walk(profile.head, [], "");
 
   const rate = (bytes: number): string => `${(bytes / MB / seconds).toFixed(3)} MB/s`;
   console.log(
