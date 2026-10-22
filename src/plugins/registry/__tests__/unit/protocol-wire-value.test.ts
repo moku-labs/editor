@@ -1,5 +1,6 @@
 /* eslint-disable unicorn/no-null -- null is the wire value for "no input" and JSON null */
 import { describe, expect, it } from "vitest";
+import type { Json } from "../../protocol";
 import { ProtocolError, toWireValue } from "../../protocol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,5 +242,15 @@ describe("toWireValue", () => {
     expect(wire.a.b).not.toBe(inner.b);
     expect(input).toEqual({ a: { b: [1, 2] }, u: undefined });
     expect(Object.hasOwn(input, "u")).toBe(true);
+  });
+
+  it("hands a value it built back unchanged, at the top and inside a container (F56)", () => {
+    // An editor source converts its value, then the registry's guard converts it again: once a second
+    // per subscription, a second copy of the whole tree was the agent's largest idle garbage.
+    const wire = toWireValue({ a: { b: [1, 2] } });
+
+    expect(toWireValue(wire)).toBe(wire);
+    expect((toWireValue({ outer: wire }) as { outer: Json }).outer).toBe(wire);
+    expect(toWireValue({ a: { b: [1, 2] } })).not.toBe(wire);
   });
 });

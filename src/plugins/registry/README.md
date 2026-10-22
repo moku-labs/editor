@@ -149,7 +149,7 @@ descriptor like a door source and stores a guarded frozen copy with a fresh desc
 
 | Member | Behaviour |
 |---|---|
-| `read(raw)` | -32008 `not_installed` while the probe says so, without calling the owner; else the owner's read through `toWireValue`. A `ProtocolError` passes unchanged; any other throw logs `registry:source-failed` and becomes -32000 with the id. |
+| `read(raw)` | -32008 `not_installed` while the probe says so, without calling the owner; else the owner's read through `toWireValue`; a value the owner already passed through `toWireValue` is handed on as it is, not copied again (F56): a wire value is never changed once handed out. A `ProtocolError` passes unchanged; any other throw logs `registry:source-failed` and becomes -32000 with the id. |
 | `watch(raw, fn)` | -32008 the same way; else the owner's watch with a guarded listener: `fn` gets wire values, and a throw of the conversion or of `fn` is logged `registry:watch-failed` once per streak, never rethrown into the owner's timer. A synchronous throw of the owner's watch is mapped like `read`. |
 | probe | When the entry gives `probe`, the registry runs it at each manifest build: an answer lists the source `available: false` with that reason (one `registry:source-unavailable` info), `undefined` makes it available again, a throw counts as unavailable with its first line. |
 
@@ -319,7 +319,7 @@ Runtime-free, re-exported from `"."`. Its only import outside itself is the type
 | `hash.ts` | `commandsHash(manifest)` (D-37): commands sorted by `id`, the JSON of `[id, effect, input]` per command with `input` keys sorted (plus the `reason` as a 4th element for a command with `allowed: false`), joined with `\n`, FNV-1a 32-bit over the UTF-16 code units, 8 lowercase hex chars. Titles and sources do not count; an all-allowed list (every dev page) hashes as before. The hub stamps it on `SessionInfo.manifestHash`. |
 | `build.ts` | `refusalOf(profile, effect)`: the C1 table of "Build profile and allowed commands" (`"read-only"`, `"dev-only"` or `undefined`); `isAllowed(descriptor)`: true unless `allowed: false`, so an older agent's descriptor reads as allowed. |
 | `session-choice.ts` | `pickSession(sessions, requested?)`: the one session rule of a game request. The asked id, else the only session, else the one embedded session; `undefined` when none or several fit. An unknown asked id never falls back. Generic over `{ id, embedded }`, so it returns the caller's own type. The hub's `chooseSession` wraps it and throws -32003; the MCP bridge's `chooseSession` uses it as is. |
-| `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. |
+| `wire-value.ts` | `toWireValue`: `$map`, `$set`, `$error` tags; cycles, depth over 64, functions, symbols and bigint refused. Allocates only the result; the path of a refused value is built on refusal; a value it built is handed back as it is (F56). |
 | `messages.ts` | `encode`, `decode`, the builders (`request`, `notification`, `success`, `failure`) and the guards. |
 | `devices.ts` | The 21 device presets and their rules, shared by workspace and gameView: `DEVICES`, `DEVICE_GROUPS`, `DEFAULT_DEVICE`, `deviceById`, `presetOf`, `isDevicePresetId`, `screenOf`, `resolveDevice`. Types `DevicePresetId`, `Orientation`, `DeviceSize` are in `types.ts`. |
 | `overlay-host.ts` | `HOST_ATTRIBUTE`: the marker overlay sets on its host; the bridge's tap watch skips events whose path holds it. |

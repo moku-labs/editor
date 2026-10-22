@@ -116,7 +116,9 @@ export type RegistryConfig = {
 };
 
 /**
- * A closure-erased source: raw Json in, wire-safe Json out. Editor sources may give a probe.
+ * A closure-erased source: raw Json in, wire-safe Json out. Editor sources may give a probe. A
+ * value `read` returns or `watch` delivers is never changed once handed out: a value already passed
+ * through `toWireValue` is handed on as it is, not copied again (F56).
  */
 export type SourceEntry = {
   readonly descriptor: SourceDescriptor;
