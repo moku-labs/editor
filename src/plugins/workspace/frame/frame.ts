@@ -24,6 +24,7 @@ import type {
   WorkspaceState
 } from "../types";
 import { centreBox, clipInsets, clipPathOf, fitScale } from "./dock";
+import { syncInsets } from "./insets";
 import { reloadFrame } from "./reload";
 import { createVeil, syncVeil } from "./veil";
 
@@ -145,6 +146,8 @@ export function createFrameLayer(ctx: Pick<WorkspaceCtx, "state" | "require" | "
   iframe.setAttribute("allow", "autoplay; fullscreen");
   iframe.tabIndex = -1;
   iframe.src = taggedGameUrl(ctx);
+  // Every page the frame loads (a reload too) gets the safe insets of the screen in use.
+  iframe.addEventListener("load", () => syncInsets(state, screenSize(state).safe));
 
   // Attach once in document.body: an iframe that moves reloads its document.
   box.append(iframe, ensureOverlay(state));
@@ -167,6 +170,7 @@ export function removeFrameLayer(state: WorkspaceState): void {
   state.frame.overlay = undefined;
   state.frame.box = undefined;
   state.frame.stage = undefined;
+  state.frame.insets = undefined;
 }
 
 /**
@@ -250,7 +254,8 @@ function hideFrame(state: WorkspaceState, element: HTMLElement, iframe: HTMLIFra
 
 /**
  * Positions the frame over its target: one rect read per element, one transform and one clip
- * written. Before the first mount it does nothing.
+ * written; the game page gets the safe insets of the screen in use (`syncInsets`). Before the
+ * first mount it does nothing.
  *
  * @param ctx - Domain context of workspace.
  */
@@ -264,6 +269,7 @@ export function syncFrame(ctx: Pick<WorkspaceCtx, "state">): void {
   const size = screenSize(state);
   element.style.width = `${size.w}px`;
   element.style.height = `${size.h}px`;
+  syncInsets(state, size.safe);
 
   const target = dockTarget(state);
   if (target === undefined) {

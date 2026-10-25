@@ -1068,6 +1068,8 @@ export type FrameState = {
   zones: Map<PreviewWorkspace, PreviewZone>;
   /** The preview body the frame docks over outside Game; set by the Preview component. */
   previewBody: HTMLElement | undefined;
+  /** The game page and the safe insets it shows (`syncInsets`, E-I1); "" when it shows none. */
+  insets: { readonly doc: Document; readonly key: string } | undefined;
 };
 
 /**

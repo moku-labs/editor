@@ -303,6 +303,16 @@ corner on a side the clip cuts stays square: only the device's own corners are r
 
 The docked iframe has `tabIndex` 0, the hidden one -1.
 
+**Safe insets on the game page (E-I1).** In a browser `env(safe-area-inset-*)` is 0, so the frame
+hands the emulated device's insets to the game page itself. While the screen in use has safe
+insets, `:root` of the game page carries `--moku-device-safe-top`, `-right`, `-bottom` and
+`-left`, in CSS px of the emulated screen, for its orientation and fold (`resolveDevice`). A preset
+without insets (Android, foldables, tablets, desktop) has none of the four. Each change (a device,
+a turn, a fold) and each new page the frame loads sets them again, then the page gets the window
+event `moku-native:insets`, so the engine lays the game out again. The engine reads them through
+`var(--moku-device-safe-*, …)` in its `--moku-safe-*` chain. A re-dock with the same insets
+writes and sends nothing. A game page of another origin is left alone.
+
 ### The pinned preview
 
 The header is the handle: a drag on it moves the float and snaps it to the nearest corner;
