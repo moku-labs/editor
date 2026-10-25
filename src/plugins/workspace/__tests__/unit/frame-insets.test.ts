@@ -104,11 +104,25 @@ describe("syncInsets", () => {
 
   it("a page the frame loads again gets the insets again (bug: lost after a reload)", async () => {
     await mount("iphone-18-pro");
-    // A reload is a new document with nothing on its :root; the old page is forgotten.
-    iframe().contentDocument?.documentElement.style.removeProperty("--moku-device-safe-top");
-    ctx.state.frame.insets = { doc: document, key: "" };
+    // A reload brings a new document with nothing on its :root, while the frame still holds the
+    // insets it wrote on the old page.
+    const fresh = document.implementation.createHTMLDocument("game");
+    Object.defineProperty(iframe(), "contentDocument", { configurable: true, get: () => fresh });
     iframe().dispatchEvent(new Event("load"));
 
-    expect(shown()[0]).toBe("62px");
+    expect(fresh.documentElement.style.getPropertyValue("--moku-device-safe-top")).toBe("62px");
+  });
+
+  it("a game page of another origin is left alone (bug: a throw on every re-dock)", async () => {
+    await mount("iphone-18-pro");
+    Object.defineProperty(iframe(), "contentDocument", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("Blocked a frame with origin", "SecurityError");
+      }
+    });
+    ctx.state.device = { preset: "iphone-18-pro", orientation: "landscape" };
+
+    expect(() => syncFrame(ctx)).not.toThrow();
   });
 });

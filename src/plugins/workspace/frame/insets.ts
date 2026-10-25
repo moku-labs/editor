@@ -6,7 +6,7 @@
  * gets the window event `moku-native:insets`, so the engine lays the game out again. A game page
  * the tools page cannot reach (another origin) is left alone.
  */
-import type { WorkspaceState } from "../types";
+import type { DeviceSize, WorkspaceState } from "../types";
 
 /**
  * The window event the engine re-reads its safe insets on (the native shell sends it too).
@@ -21,12 +21,12 @@ const SIDES = ["top", "right", "bottom", "left"] as const;
 /**
  * The safe insets of a screen in CSS px.
  */
-type SafeInsets = {
-  readonly top: number;
-  readonly right: number;
-  readonly bottom: number;
-  readonly left: number;
-};
+type SafeInsets = DeviceSize["safe"];
+
+/**
+ * A page with no insets: what a new page shows before the first write.
+ */
+const NO_INSETS: SafeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
 /**
  * The CSS property of one side.
@@ -39,14 +39,14 @@ function propertyOf(side: (typeof SIDES)[number]): string {
 }
 
 /**
- * What the page shows for the insets, as one comparable text: empty when every side is 0.
+ * Whether two sets of insets are the same on every side.
  *
- * @param safe - The insets.
- * @returns The key.
+ * @param a - One set.
+ * @param b - The other.
+ * @returns True when every side is equal.
  */
-function keyOf(safe: SafeInsets): string {
-  const values = SIDES.map(side => safe[side]);
-  return values.every(value => value === 0) ? "" : values.join("/");
+function sameInsets(a: SafeInsets, b: SafeInsets): boolean {
+  return a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
 }
 
 /**
@@ -70,7 +70,7 @@ function frameDocument(iframe: HTMLIFrameElement): Document | undefined {
  * @param safe - The insets.
  */
 function writeInsets(root: HTMLElement, safe: SafeInsets): void {
-  const none = keyOf(safe) === "";
+  const none = sameInsets(safe, NO_INSETS);
   for (const side of SIDES) {
     if (none) root.style.removeProperty(propertyOf(side));
     else root.style.setProperty(propertyOf(side), `${safe[side]}px`);
@@ -85,12 +85,6 @@ function writeInsets(root: HTMLElement, safe: SafeInsets): void {
  *
  * @param state - Workspace state.
  * @param safe - The safe insets of the screen in use (`resolveDevice`).
- * @example
- * ```ts
- * syncInsets(state, { top: 62, right: 0, bottom: 34, left: 0 }); // iPhone 18 Pro, portrait
- * // game page: :root { --moku-device-safe-top: 62px; …-bottom: 34px; …-right: 0px; …-left: 0px }
- * syncInsets(state, { top: 0, right: 0, bottom: 0, left: 0 }); // Pixel 8: the four properties removed
- * ```
  */
 export function syncInsets(state: WorkspaceState, safe: SafeInsets): void {
   const iframe = state.frame.iframe;
@@ -99,11 +93,11 @@ export function syncInsets(state: WorkspaceState, safe: SafeInsets): void {
   if (doc === undefined || root === undefined || root === null) return;
 
   // A page that shows these insets already, or a fresh page that needs none, is left as it is.
-  const key = keyOf(safe);
-  const before = state.frame.insets?.doc === doc ? state.frame.insets.key : "";
-  state.frame.insets = { doc, key };
-  if (key === before) return;
+  const shown = state.frame.insets;
+  const before = shown?.doc === doc ? shown.safe : NO_INSETS;
+  if (sameInsets(safe, before)) return;
 
+  state.frame.insets = { doc, safe };
   writeInsets(root, safe);
   const view = doc.defaultView;
   if (view !== null) view.dispatchEvent(new view.Event(INSETS_EVENT));

@@ -311,7 +311,10 @@ without insets (Android, foldables, tablets, desktop) has none of the four. Each
 a turn, a fold) and each new page the frame loads sets them again, then the page gets the window
 event `moku-native:insets`, so the engine lays the game out again. The engine reads them through
 `var(--moku-device-safe-*, …)` in its `--moku-safe-*` chain. A re-dock with the same insets
-writes and sends nothing. A game page of another origin is left alone.
+writes and sends nothing. A game page of another origin is left alone. This is the one place
+the editor writes into the game page outside `@moku-labs/game/inspect` and `/control`: the CSS
+properties on `:root` and the `moku-native:insets` event are the page's own contract, the one the
+native shell also uses.
 
 ### The pinned preview
 
