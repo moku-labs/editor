@@ -10,6 +10,7 @@ import type { Require, ToolsEvents } from "../../config";
 import type { SourceChange } from "../activeSource/types";
 import type {
   DevicePresetId,
+  DeviceSize,
   DeviceSpec,
   HotReload,
   Json,
@@ -1068,6 +1069,8 @@ export type FrameState = {
   zones: Map<PreviewWorkspace, PreviewZone>;
   /** The preview body the frame docks over outside Game; set by the Preview component. */
   previewBody: HTMLElement | undefined;
+  /** The game page and the safe insets it shows (`syncInsets`, E-I1). */
+  insets: { readonly doc: Document; readonly safe: DeviceSize["safe"] } | undefined;
 };
 
 /**

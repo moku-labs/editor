@@ -80,7 +80,8 @@ export function createWorkspaceState(ctx: {
       stage: undefined,
       reload: undefined,
       zones: new Map(),
-      previewBody: undefined
+      previewBody: undefined,
+      insets: undefined
     },
     dom: { root: undefined, hosts: new Map(), cleanup: [] },
     listeners: new Set(),
