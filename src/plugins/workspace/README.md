@@ -328,6 +328,15 @@ aspect kept, never below the height of S. When the fitted width is below 96 px (
 in the 480 px pane), the float collapses to its header (`data-collapsed`): title, S/M/L, Open in
 Game and Hide. The body hides and the game frame with it.
 
+### Other tools pages of the game (F106)
+
+Two tools tabs on one origin drive one game, and its save lives in that origin's localStorage: a
+stale tab, its game still on old code, keeps writing a save of the old shape, and the other tabs
+load it. Each tools page says hello on the BroadcastChannel `moku-editor:tools-pages` when it
+starts (`peers.ts`); a page that hears a hello answers, and each page shows the toast "Another
+editor tab drives this game and its save. Close one: …" once for every other page it learns of.
+Without BroadcastChannel nothing is watched.
+
 ### Reload spinner (U9)
 
 The overlay holds one `<div data-frame-reloading aria-hidden="true">`, created with it. It shows
