@@ -1,8 +1,9 @@
 /**
  * @file overlay plugin — the safe area, by the same CSS contract the engine reads
- * (`var(--moku-safe-*, env(safe-area-inset-*, 0px))`): two probes in the shadow root sized by the
- * stylesheet, read with getComputedStyle, and per side the larger of the probe and perf's display
- * insets. Re-read on resize, on `moku-native:insets` and when a probe resizes; never per tick.
+ * (`var(--moku-safe-*, var(--moku-device-safe-*, env(safe-area-inset-*, 0px)))`; the native
+ * shell and the editor's device preset write `--moku-device-safe-*`): two probes in the shadow
+ * root sized by the stylesheet, read with getComputedStyle, and per side the larger of the probe
+ * and perf's display insets. Re-read on resize, on `moku-native:insets` and when a probe resizes; never per tick.
  */
 import { paintNow, withAgent } from "../paint/tick";
 import type { Insets, OverlayCtx } from "../types";

@@ -196,7 +196,7 @@ The window of perf is read only inside the visitors handed to `perf.readWindow`;
 
 The host is `position: fixed` with `data-dock`, and `--overlay-top`, `--overlay-side`, `--overlay-w`, `--overlay-h` on
 its inline style, written on a mode change, a drag end, a resize or an inset change. The window keeps 8 px from the top
-and bottom safe insets; the safe area is the larger of the `--moku-safe-*` / `env()` probes and perf's display insets,
+and bottom safe insets; the safe area is the larger of the `--moku-safe-*` / `--moku-device-safe-*` / `env()` probes and perf's display insets,
 re-read on `resize`, `moku-native:insets` and a probe resize. A drag moves the host by transform only; the release snaps
 to the nearer edge and writes the store. The grip is a button: arrow keys up and down move by 16 px, left and right
 pick the edge.

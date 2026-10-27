@@ -33,10 +33,10 @@ export const HOST = `
     pointer-events: none;
   }
   [data-safe-probe="start"] {
-    width: var(--moku-safe-left, env(safe-area-inset-left, 0px));
-    height: var(--moku-safe-top, env(safe-area-inset-top, 0px));
+    width: var(--moku-safe-left, var(--moku-device-safe-left, env(safe-area-inset-left, 0px)));
+    height: var(--moku-safe-top, var(--moku-device-safe-top, env(safe-area-inset-top, 0px)));
   }
   [data-safe-probe="end"] {
-    width: var(--moku-safe-right, env(safe-area-inset-right, 0px));
-    height: var(--moku-safe-bottom, env(safe-area-inset-bottom, 0px));
+    width: var(--moku-safe-right, var(--moku-device-safe-right, env(safe-area-inset-right, 0px)));
+    height: var(--moku-safe-bottom, var(--moku-device-safe-bottom, env(safe-area-inset-bottom, 0px)));
   }`;
