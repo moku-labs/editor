@@ -20,6 +20,7 @@ import { registerBuiltIns } from "./keys/builtins";
 import { dispatchKey } from "./keys/keymap";
 import { reapplyOverlay } from "./overlay";
 import { addPaletteItems, builtInCommands } from "./palette/items";
+import { watchPeers } from "./peers";
 import { osThemeChanged } from "./prefs/apply";
 import { refreshDensity, resolveDensity, viewportWidth } from "./prefs/density";
 import { loadPrefs } from "./prefs/store";
@@ -141,8 +142,9 @@ function listen(
 /**
  * onStart: window keydown (capture), resize (shell and its top-bar layout, frame, auto density),
  * capture scroll, the OS theme listener, `link.onManifest` (palette counts, everLive, overlay
- * re-apply; the restore toast), link's taps (ripples), link's hot reload state (the switch) and
- * link's session lists (the veil, the source pill, the notice). No shell mount here (R3).
+ * re-apply; the restore toast), link's taps (ripples), the other tools pages of this game (a
+ * toast), link's hot reload state (the switch) and link's session lists (the veil, the source
+ * pill, the notice). No shell mount here (R3).
  *
  * @param ctx - Domain context of workspace.
  */
@@ -203,6 +205,9 @@ export function startWorkspace(ctx: WorkspaceCtx): void {
 
   // Taps: a tap in the docked game draws a ripple over it.
   trackCleanup(state, watchTaps(ctx));
+
+  // Peers: another tools page of this game, and so of its save, shows a toast (F106).
+  trackCleanup(state, watchPeers(ctx));
 
   // Hot reload: the switch follows the server's state.
   trackCleanup(state, watchHotReload(ctx));
