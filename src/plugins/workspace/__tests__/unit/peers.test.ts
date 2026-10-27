@@ -36,12 +36,12 @@ function toasts(ctx: ReturnType<typeof createCtx>): string[] {
 }
 
 /**
- * Lets the channel deliver what was posted.
+ * Lets the channel deliver what was posted, for a test that expects nothing to happen.
  *
  * @returns Resolves after the messages arrived.
  */
 async function delivered(): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await new Promise(resolve => setTimeout(resolve, 50));
 }
 
 afterEach(() => {
@@ -56,25 +56,25 @@ describe("watchPeers", () => {
     expect(toasts(first)).toEqual([]);
 
     const second = page();
+
+    await vi.waitFor(() => {
+      expect(toasts(first)).toEqual([PEERS_TOAST]);
+      expect(toasts(second)).toEqual([PEERS_TOAST]);
+    });
+  });
+
+  it("a second hello of a page it knows adds no toast", async () => {
+    const first = page();
+    const other = new BroadcastChannel(PEERS_CHANNEL);
+    stops.push(() => other.close());
+
+    // page-b says hello twice: one toast for it.
+    other.postMessage({ kind: "hello", id: "page-b" });
+    other.postMessage({ kind: "hello", id: "page-b" });
+    await vi.waitFor(() => expect(toasts(first)).toEqual([PEERS_TOAST]));
     await delivered();
 
     expect(toasts(first)).toEqual([PEERS_TOAST]);
-    expect(toasts(second)).toEqual([PEERS_TOAST]);
-  });
-
-  it("names a page it already knows only once", async () => {
-    const first = page();
-    page();
-    await delivered();
-
-    // The same page says hello again, as after a reload of its frame: no second toast.
-    const other = new BroadcastChannel(PEERS_CHANNEL);
-    stops.push(() => other.close());
-    other.postMessage({ kind: "hello", id: "page-b" });
-    other.postMessage({ kind: "hello", id: "page-b" });
-    await delivered();
-
-    expect(toasts(first)).toEqual([PEERS_TOAST, PEERS_TOAST]);
   });
 
   it("ignores a message of another shape", async () => {
@@ -86,6 +86,15 @@ describe("watchPeers", () => {
     await delivered();
 
     expect(toasts(first)).toEqual([]);
+  });
+
+  it("works on a page that is no secure context, where randomUUID is missing (bug: onStart threw on a LAN address)", async () => {
+    const { getRandomValues } = globalThis.crypto;
+    vi.stubGlobal("crypto", { getRandomValues: getRandomValues.bind(globalThis.crypto) });
+    const first = page();
+    page();
+
+    await vi.waitFor(() => expect(toasts(first)).toEqual([PEERS_TOAST]));
   });
 
   it("watches nothing where BroadcastChannel is missing", () => {

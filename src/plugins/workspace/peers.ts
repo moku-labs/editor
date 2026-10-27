@@ -25,6 +25,18 @@ export const PEERS_TOAST =
 type PeerMessage = { readonly kind: "hello" | "here"; readonly id: string };
 
 /**
+ * A random id of this page. `crypto.getRandomValues`, not `randomUUID`: a tools page opened at a
+ * LAN address (`http://192.168.1.20:3000`) is no secure context, and there `randomUUID` is
+ * missing.
+ *
+ * @returns 32 hex characters.
+ */
+function pageId(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * Whether a message of the channel is a peer message from another page.
  *
  * @param data - The message data.
@@ -53,7 +65,7 @@ export function watchPeers(ctx: ToastCtx): () => void {
   if (typeof Channel !== "function") return () => {};
 
   const channel = new Channel(PEERS_CHANNEL);
-  const id = globalThis.crypto.randomUUID();
+  const id = pageId();
   const known = new Set<string>();
 
   // A hello asks the others to answer; every other page is named once.
