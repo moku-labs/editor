@@ -95,6 +95,10 @@ describe("structure", () => {
     expect(overlayCss.startsWith("@layer reset, tokens, components, utilities;")).toBe(true);
     expect(overlayCss).not.toMatch(/(^|[\s,{>+~])\.[a-z]/);
     expect(overlayCss).toContain(":host([hidden]) { display: none; }");
-    expect(overlayCss).toContain("var(--moku-safe-top, env(safe-area-inset-top, 0px))");
+    // Bug: the native shell writes the system insets as --moku-device-safe-*; without that link the
+    // overlay on a phone sat under the status bar.
+    expect(overlayCss).toContain(
+      "var(--moku-safe-top, var(--moku-device-safe-top, env(safe-area-inset-top, 0px)))"
+    );
   });
 });
