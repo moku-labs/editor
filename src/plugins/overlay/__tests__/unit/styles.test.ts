@@ -95,10 +95,15 @@ describe("structure", () => {
     expect(overlayCss.startsWith("@layer reset, tokens, components, utilities;")).toBe(true);
     expect(overlayCss).not.toMatch(/(^|[\s,{>+~])\.[a-z]/);
     expect(overlayCss).toContain(":host([hidden]) { display: none; }");
-    // Bug: the native shell writes the system insets as --moku-device-safe-*; without that link the
-    // overlay on a phone sat under the status bar.
-    expect(overlayCss).toContain(
-      "var(--moku-safe-top, var(--moku-device-safe-top, env(safe-area-inset-top, 0px)))"
-    );
+  });
+
+  it("every safe-area probe reads --moku-device-safe-* after --moku-safe-* (bug: the overlay under the status bar)", () => {
+    // The native shell writes the system insets as --moku-device-safe-*; a side without that link
+    // would read only env(), which an older WebView leaves at 0 under the bars.
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(overlayCss).toContain(
+        `var(--moku-safe-${side}, var(--moku-device-safe-${side}, env(safe-area-inset-${side}, 0px)))`
+      );
+    }
   });
 });
