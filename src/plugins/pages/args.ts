@@ -325,9 +325,10 @@ function e2eArgs(words: readonly string[]): BinArgs {
  * subcommand.
  *
  * @param argv - Arguments after the script name.
- * @returns `run` with html (left out for the engine page), port, root, hmr, preload and
- * servePlugins; `mcp`; `mcp-config`; `e2e` with the config and Playwright's words; `perf`,
- * `perf-mark`, `perf-summary` or `perf-compare`; `help`; or `error` with a message.
+ * @returns `run` with html (left out for the engine page), port, root, hmr, preload,
+ * servePlugins and packed (when given); `mcp`; `mcp-config`; `e2e` with the config and
+ * Playwright's words; `perf`, `perf-mark`, `perf-summary` or `perf-compare`; `help`; or `error`
+ * with a message.
  * @example
  * ```ts
  * parseBinArgs(["web/index.html", "--port", "0"]); // { kind: "run", html: "web/index.html", port: 0, root: ".", hmr: true, preload: [], servePlugins: [] }

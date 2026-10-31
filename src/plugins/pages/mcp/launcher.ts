@@ -99,8 +99,9 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * The command line of the bin: the prefix, the html, the port, the root, `--no-hmr` when hot
- * reload is off and `--packed` for the pack. The engine page `<root>/.moku/index.html` is left out: without an html the bin
- * writes the page again and re-runs itself under the page's bunfig (D-51).
+ * reload is off and `--packed` for the pack. The engine page `<root>/.moku/index.html` is left
+ * out: without an html the bin writes the page again and re-runs itself under the page's bunfig
+ * (D-51).
  *
  * @param command - The runtime and the bin script.
  * @param options - The launch options.
@@ -217,7 +218,7 @@ function ignore(): void {
 /**
  * Starts the bin detached with its output in `.moku/editor.log` and waits for its discovery file.
  *
- * @param options - Absolute html and root, port and hot reload.
+ * @param options - Absolute html and root, port, hot reload and the pack.
  * @param deps - Spawn, pid check, command prefix, clock and cancel.
  * @returns The child (owned by the bridge) and its live discovery record.
  * @throws {Error} `[moku-editor] …` when it exits, does not start in time or the bridge closes.

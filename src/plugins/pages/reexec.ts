@@ -245,7 +245,7 @@ export async function reexecBin(args: ServeArgs, deps: ReexecDeps): Promise<numb
  * process start. The child serves `<root>/.moku/index.html` as any re-spawned bin, in the root.
  *
  * @param page - The page the engine wrote: its HTML and its bunfig.
- * @param args - The `run` arguments of the engine page (root, port, hmr).
+ * @param args - The `run` arguments of the engine page (root, port, hmr, packed).
  * @param deps - Cwd, environment, command, spawn and signal handlers.
  * @returns The child's exit code.
  * @example

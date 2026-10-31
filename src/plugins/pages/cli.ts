@@ -55,7 +55,7 @@ export type { Started } from "./types";
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
-  "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…",
+  "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--packed]",
   "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--packed] [--help]",
   "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
