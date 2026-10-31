@@ -1,7 +1,7 @@
 /**
  * @file pages plugin — the arguments of `moku-editor [<game-html>] [--port 3000] [--root .]
- * [--no-hmr] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of the subcommands
- * `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` and
+ * [--no-hmr] [--packed] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of the subcommands
+ * `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]` and
  * `moku-editor mcp-config [<game-html>] [--port N]`. Without a game HTML file the bin serves the
  * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
  * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
@@ -40,7 +40,7 @@ const E2E_NO_CONFIG = "e2e needs the Playwright config: -c <file>";
 const CONFIG_JOINED = "--config=";
 
 /**
- * Parses argv strictly with the six flags of the bin; `--preload` and `--serve-plugin` repeat.
+ * Parses argv strictly with the seven flags of the bin; `--preload` and `--serve-plugin` repeat.
  *
  * @param argv - Arguments after the script name.
  * @returns The positionals and flag values.
@@ -59,6 +59,7 @@ function parse(argv: readonly string[]) {
       port: { type: "string", short: "p" },
       root: { type: "string", short: "r" },
       "no-hmr": { type: "boolean" },
+      packed: { type: "boolean" },
       preload: { type: "string", multiple: true },
       "serve-plugin": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" }
@@ -115,6 +116,20 @@ function failed(message: string): BinArgs {
  */
 function hasPageFlags(values: Parsed["values"]): boolean {
   return values.preload !== undefined || values["serve-plugin"] !== undefined;
+}
+
+/**
+ * The `packed` key of `--packed`; left out without the flag, as `html` is.
+ *
+ * @param values - The parsed flag values.
+ * @returns `{ packed: true }`, or nothing.
+ * @example
+ * ```ts
+ * packedKey(parse(["--packed"]).values); // { packed: true }
+ * ```
+ */
+function packedKey(values: Parsed["values"]): { packed?: true } {
+  return values.packed === true ? { packed: true } : {};
 }
 
 /**
@@ -181,7 +196,7 @@ function optionalGame(
 }
 
 /**
- * The arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`.
+ * The arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]`.
  *
  * @param parsed - The parsed argv; positionals[0] is "mcp".
  * @returns `mcp` args, or an error.
@@ -200,7 +215,7 @@ function mcpArgs(parsed: Parsed): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
-  return { kind: "mcp", ...game, root, hmr: values["no-hmr"] !== true };
+  return { kind: "mcp", ...game, root, hmr: values["no-hmr"] !== true, ...packedKey(values) };
 }
 
 /**
@@ -216,7 +231,8 @@ function mcpArgs(parsed: Parsed): BinArgs {
 function mcpConfigArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
   if (hasPageFlags(values)) return failed(SERVING_ONLY);
-  const hasServeFlags = values.root !== undefined || values["no-hmr"] !== undefined;
+  const hasServeFlags =
+    values.root !== undefined || values["no-hmr"] !== undefined || values.packed !== undefined;
   if (hasServeFlags) return failed("mcp-config takes only <game-html> and --port");
 
   const game = optionalGame(positionals.slice(1), values.port);
@@ -268,7 +284,8 @@ function runArgs(parsed: Parsed): BinArgs {
     root,
     hmr: values["no-hmr"] !== true,
     preload: values.preload ?? [],
-    servePlugins: values["serve-plugin"] ?? []
+    servePlugins: values["serve-plugin"] ?? [],
+    ...packedKey(values)
   };
 }
 

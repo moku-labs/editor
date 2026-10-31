@@ -7,6 +7,7 @@
  * re-spawned bin with that cwd (`reexec.ts`). Without a game HTML file, a moku-game folder gets
  * its page from the engine (`engine-page.ts`, B5) and is served from a bin re-run under the page's
  * bunfig; this bin, the parent, runs the engine's keys watch until that child exits (D-55).
+ * `--packed` serves `dist/assets` and watches no keys, and refuses a game with no pack.
  * `mcp` runs the stdio MCP bridge (`mcp/`, stdout for protocol frames only); `mcp-config`
  * prints the Claude Code setup; `e2e` runs a Playwright config once per project and spec file,
  * each on its own PORT (`e2e.ts`, D-52, D-53). `perf` measures phones (`perf/`): device mode with
@@ -30,6 +31,8 @@ import {
   gameFolderProblem,
   importGameCli,
   messageOf,
+  packedAssets,
+  packProblem,
   prepareEnginePage,
   watchEngineKeys
 } from "./engine-page";
@@ -53,8 +56,8 @@ export type { Started } from "./types";
  */
 const USAGE = [
   "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]…",
-  "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]",
-  "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]",
+  "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--packed] [--help]",
+  "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
   "       moku-editor e2e -c <playwright config> [playwright args…]",
   "       moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]",
@@ -66,7 +69,8 @@ const USAGE = [
   "  perf        phones over adb reverse (--lan: by pairing code): JSONL logs, heat, live lines, tools page on the port",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
-  "  --no-hmr    serve the game without hot reload (default: hot reload on)"
+  "  --no-hmr    serve the game without hot reload (default: hot reload on)",
+  "  --packed    serve dist/assets, no keys watch: new art shows after moku-game pack"
 ];
 
 /**
@@ -225,14 +229,22 @@ async function importGame(htmlPath: string, deps: CliDeps): Promise<object | und
  * @param port - The real port.
  * @param path - hub.path().
  * @param rootPath - The project root.
+ * @param packed - Whether the pack is served.
  */
-function printServing(ui: BrandConsole, port: number, path: string, rootPath: string): void {
+function printServing(
+  ui: BrandConsole,
+  port: number,
+  path: string,
+  rootPath: string,
+  packed: boolean
+): void {
   ui.lockup({ wordmark: "moku editor", label: "serve" });
   ui.box([
     `Game   http://127.0.0.1:${port}/`,
     `Tools  http://127.0.0.1:${port}${path}/`,
     `Root   ${rootPath}`
   ]);
+  if (packed) ui.info("packed build: new art shows after moku-game pack");
   ui.info("Ctrl+C to stop");
 }
 
@@ -318,6 +330,15 @@ async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
   const { ui } = deps;
   const htmlPath = resolve(args.html);
   const rootPath = resolve(args.root);
+  const packed = args.packed === true;
+
+  // A packed run serves the pack, so it needs one.
+  const noPack = packed ? packProblem(rootPath) : undefined;
+  if (noPack !== undefined) {
+    ui.error(noPack);
+    return { code: 1 };
+  }
+
   const bundle = await importGame(htmlPath, deps);
   if (bundle === undefined) return { code: 1 };
 
@@ -333,7 +354,7 @@ async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
       // forwards the browser console.
       development: { hmr: args.hmr, console: true },
       routes: { "/": bundle },
-      fetch: createStaticFetch(rootPath, editor.hub.guard)
+      fetch: createStaticFetch(packed ? packedAssets(rootPath) : rootPath, editor.hub.guard)
     });
     // A wait for Bun's bundler that was cut or failed is one warning; the restart goes on (D-57).
     game = createGameServer(options, (code, reason) => editor.hub.closeAll(code, reason), {
@@ -352,7 +373,7 @@ async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
   editor.pages.attachServer(options, next => game.restart(next));
   const port = game.current().port ?? args.port;
   const release = writeDiscoveryFile(editor, port, { rootPath, htmlPath }, ui);
-  printServing(ui, port, editor.hub.path(), rootPath);
+  printServing(ui, port, editor.hub.path(), rootPath, packed);
   return { code: 0, stop: stopper(editor, game, release) };
 }
 
@@ -391,12 +412,14 @@ function closeKeys(keys: KeysWatcher, ui: BrandConsole): void {
  * until the child exits. Only the real process re-runs, so unit seams without `deps.reexec` are
  * refused. This bin catches no signal before the spawn (`main`): a SIGINT or SIGTERM while the page
  * is written or the first scan runs ends the process, so no child is spawned and the watch, which
- * lives in this process, ends with it.
+ * lives in this process, ends with it. `--packed` starts no watch, and a game with no pack is
+ * refused before the page is written.
  *
  * @param args - The `run` arguments without a game HTML file.
  * @param deps - The bin deps.
  * @returns The child's exit code; 2 when the root is not a moku-game folder; 1 when the page
- * cannot be written, the keys watch cannot start, or there is no real process.
+ * cannot be written, the keys watch cannot start, `--packed` finds no pack, or there is no real
+ * process.
  */
 async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
   const { ui, reexec } = deps;
@@ -416,6 +439,13 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
     return { code: 2 };
   }
 
+  // A packed run serves the pack, so it needs one.
+  const noPack = args.packed === true ? packProblem(rootPath) : undefined;
+  if (noPack !== undefined) {
+    ui.error(noPack);
+    return { code: 1 };
+  }
+
   // The engine writes the page with the editor's agent; its error line is printed as is.
   const options = { preload: args.preload, servePlugins: args.servePlugins, cwd, main: Bun.main };
   const prepared = await prepareEnginePage(rootPath, options, {
@@ -428,7 +458,11 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
 
   // The engine's keys watch resolves after its first scan: generated/ is fresh before the child
   // serves. A failed scan is one warning and the bin goes on; a refused game is the error line.
-  const keys = await watchEngineKeys(rootPath, prepared.cli, message => ui.warn(message));
+  // A packed run watches no keys: it serves the pack.
+  const keys =
+    args.packed === true
+      ? undefined
+      : await watchEngineKeys(rootPath, prepared.cli, message => ui.warn(message));
   if (typeof keys === "string") {
     ui.error(keys);
     return { code: 1 };
@@ -439,7 +473,7 @@ async function runEngine(args: RunArgs, deps: CliDeps): Promise<Started> {
   try {
     return { code: await reexecEngine(prepared.page, args, reexec) };
   } finally {
-    closeKeys(keys, ui);
+    if (keys !== undefined) closeKeys(keys, ui);
   }
 }
 

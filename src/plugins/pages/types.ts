@@ -215,7 +215,7 @@ export type PagesHooks = {
 };
 
 /**
- * Arguments of `moku-editor [<game-html>] [--port 3000] [--root .] [--no-hmr] [--preload FILE]…
+ * Arguments of `moku-editor [<game-html>] [--port 3000] [--root .] [--no-hmr] [--packed] [--preload FILE]…
  * [--serve-plugin FILE]…`: serve the game. Without `html` the engine writes the page of the
  * moku-game folder at `root` (the engine page); the two lists feed only that page.
  *
@@ -239,6 +239,8 @@ export type RunArgs = {
   readonly preload: readonly string[];
   /** Every `--serve-plugin`, as given: Bun plugins the page bundles with (engine page only). */
   readonly servePlugins: readonly string[];
+  /** True with `--packed`: the game is served from `dist/assets`; left out without the flag. */
+  readonly packed?: true;
 };
 
 /**
@@ -252,8 +254,8 @@ export type RunArgs = {
 export type ServeArgs = RunArgs & { readonly html: string };
 
 /**
- * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]`: the stdio MCP
- * bridge. `html`, `port` and `hmr` only feed the bin the bridge starts when none runs; a live
+ * Arguments of `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]`: the
+ * stdio MCP bridge. `html`, `port`, `hmr` and `packed` only feed the bin the bridge starts when none runs; a live
  * `.moku/editor.json` under `root` wins.
  */
 export type McpArgs = {
@@ -266,6 +268,8 @@ export type McpArgs = {
   readonly root: string;
   /** False with `--no-hmr`. */
   readonly hmr: boolean;
+  /** True with `--packed`; left out without the flag. */
+  readonly packed?: true;
 };
 
 /**

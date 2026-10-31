@@ -183,6 +183,15 @@ describe("reexecBin", () => {
     );
   });
 
+  it("hands --packed on to the child", async () => {
+    await writeFile(join(root, "bunfig.toml"), BUNFIG);
+    const { deps, fake, spawn } = createDeps();
+    const running = reexecBin({ ...runArgs(), packed: true }, deps);
+    fake.exit(0);
+    await running;
+    expect(spawn.mock.calls[0]?.[0]).toContain("--packed");
+  });
+
   it("keeps hot reload on without --no-hmr and exits with the child's code", async () => {
     await writeFile(join(root, "bunfig.toml"), BUNFIG);
     const { deps, fake, spawn } = createDeps();
@@ -266,6 +275,20 @@ describe("reexecEngine (B5, D-51)", () => {
       ],
       { cwd: root, env: { PATH: "/bin", [REEXEC_ENV]: "1" } }
     );
+  });
+
+  it("hands --packed on to the child, and only when it was given", async () => {
+    const { deps, fake, spawn } = createDeps();
+    const running = reexecEngine(enginePage(), { ...engineArgs(true), packed: true }, deps);
+    fake.exit(0);
+    await running;
+    expect(spawn.mock.calls[0]?.[0]).toContain("--packed");
+
+    const plain = createDeps();
+    const unpacked = reexecEngine(enginePage(), engineArgs(true), plain.deps);
+    plain.fake.exit(0);
+    await unpacked;
+    expect(plain.spawn.mock.calls[0]?.[0]).not.toContain("--packed");
   });
 
   it("always re-runs, also when the cwd is the root; keeps hot reload on and answers the child's code", async () => {

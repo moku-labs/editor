@@ -85,6 +85,7 @@ The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`
 | `--root`, `-r` | `.` | The game folder, or the project root the editor reads and writes. |
 | `--port`, `-p` | `3000` | Port on 127.0.0.1. `0` picks a free port. |
 | `--no-hmr` | hot reload on | Serves the game without Bun hot reload. |
+| `--packed` | loose files | Serves `dist/assets` from `moku-game pack`, as `moku-game dev --packed` does: a big game loads far faster, there is no keys watch, and new art shows only after the next pack. No pack is an error. |
 | `--preload FILE` | | A file Bun preloads in the serving process. Repeatable. Engine page only. |
 | `--serve-plugin FILE` | | A Bun plugin the engine page bundles with, after the engine's hot plugin. Repeatable. Engine page only. |
 

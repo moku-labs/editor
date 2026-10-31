@@ -7,6 +7,8 @@
  * The same import gives `watchKeys` (game 0.13.1, D-54): the bin starts the engine's keys watch
  * with it after the page is written (`watchEngineKeys`, D-55), so `generated/` stays fresh while
  * the game is served. The bin then re-runs itself under the page's bunfig (`reexec.ts`, D-51).
+ * `--packed` serves what `moku-game pack` wrote to `dist/assets` and watches no keys, as
+ * `moku-game dev --packed` does (`packedAssets`, `packProblem`).
  */
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path/posix";
@@ -55,6 +57,16 @@ const EDITOR_PACKAGE = "@moku-labs/editor";
  * has no `scripts/`, so an installed editor never adds it.
  */
 const TREE_PLUGIN = "scripts/tree/bundle.ts";
+
+/**
+ * Where `moku-game pack` writes, relative to the game root.
+ */
+const PACK_FOLDER = "dist/assets";
+
+/**
+ * The manifest of a pack, in that folder.
+ */
+const PACK_MANIFEST = "manifest.json";
 
 /**
  * The engine's `preparePage` of `@moku-labs/game/cli`.
@@ -238,6 +250,38 @@ function isEditorManifest(manifestPath: string): boolean {
 export function gameFolderProblem(root: string): string | undefined {
   if (isGameFolder(root)) return undefined;
   return `[moku-editor] ${root} has no index.ts and config.ts: pass the game HTML file, or run in a moku-game folder`;
+}
+
+/**
+ * The folder `--packed` serves: what `moku-game pack` wrote.
+ *
+ * @param root - The absolute game root.
+ * @returns The absolute folder.
+ * @example
+ * ```ts
+ * packedAssets("/games/timber"); // "/games/timber/dist/assets"
+ * ```
+ */
+export function packedAssets(root: string): string {
+  return join(root, PACK_FOLDER);
+}
+
+/**
+ * Why a game cannot be served with `--packed`, or undefined when its pack is there. A pack is a
+ * `manifest.json` in `dist/assets`; the engine's `dev --packed` checks the same file.
+ *
+ * @param root - The absolute game root.
+ * @returns The `[moku-editor]` error text, or undefined.
+ * @example
+ * ```ts
+ * packProblem("/games/timber");
+ * // '[moku-editor] no packed build in "/games/timber/dist/assets".\n  Run "moku-game pack" first.'
+ * ```
+ */
+export function packProblem(root: string): string | undefined {
+  const assets = packedAssets(root);
+  if (isFile(join(assets, PACK_MANIFEST))) return undefined;
+  return `[moku-editor] no packed build in "${assets}".\n  Run "moku-game pack" first.`;
 }
 
 /**

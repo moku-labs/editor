@@ -1,14 +1,14 @@
 /**
  * @file pages/mcp — starts the moku-editor bin when none runs (M3): `moku-editor <html> --port
- * <port> --root <root> [--no-hmr]`, detached, stdout and stderr to `.moku/editor.log`, then waits
- * at most 15 s for its discovery file. Stops only a bin it started: SIGTERM, at most 2 s, then
- * SIGKILL.
+ * <port> --root <root> [--no-hmr] [--packed]`, detached, stdout and stderr to `.moku/editor.log`,
+ * then waits at most 15 s for its discovery file. Stops only a bin it started: SIGTERM, at most
+ * 2 s, then SIGKILL.
  *
  * The html `<root>/.moku/index.html` is the engine page (B5): the bin wrote it and served it from a
  * re-run under `--config=<root>/.moku/bunfig.toml` (D-51). The launcher leaves that html out, so
- * the bin starts in the engine form again (`moku-editor --port <port> --root <root> [--no-hmr]`),
- * writes the page and re-runs under the bunfig, with the hot plugin. The html form would serve the
- * page without it.
+ * the bin starts in the engine form again (`moku-editor --port <port> --root <root> [--no-hmr]
+ * [--packed]`), writes the page and re-runs under the bunfig, with the hot plugin. The html form
+ * would serve the page without it.
  */
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path/posix";
@@ -54,7 +54,7 @@ const LOG_MODE = 0o600;
 export const ENGINE_PAGE = ".moku/index.html";
 
 /**
- * What the bin is started with: absolute html and root, the port and hot reload. The html
+ * What the bin is started with: absolute html and root, the port, hot reload and the pack. The html
  * `<root>/.moku/index.html` starts the engine form.
  */
 export type LaunchOptions = {
@@ -62,6 +62,8 @@ export type LaunchOptions = {
   readonly port: number;
   readonly root: string;
   readonly hmr: boolean;
+  /** True to serve the pack; left out otherwise. */
+  readonly packed?: true;
 };
 
 /**
@@ -96,8 +98,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * The command line of the bin: the prefix, the html, the port, the root and `--no-hmr` when hot
- * reload is off. The engine page `<root>/.moku/index.html` is left out: without an html the bin
+ * The command line of the bin: the prefix, the html, the port, the root, `--no-hmr` when hot
+ * reload is off and `--packed` for the pack. The engine page `<root>/.moku/index.html` is left out: without an html the bin
  * writes the page again and re-runs itself under the page's bunfig (D-51).
  *
  * @param command - The runtime and the bin script.
@@ -112,7 +114,7 @@ function sleep(ms: number): Promise<void> {
  * ```
  */
 export function launchCommand(command: readonly string[], options: LaunchOptions): string[] {
-  const { html, port, root, hmr } = options;
+  const { html, port, root, hmr, packed } = options;
   const page = html === join(root, ENGINE_PAGE) ? [] : [html];
   return [
     ...command,
@@ -121,7 +123,8 @@ export function launchCommand(command: readonly string[], options: LaunchOptions
     String(port),
     "--root",
     root,
-    ...(hmr ? [] : ["--no-hmr"])
+    ...(hmr ? [] : ["--no-hmr"]),
+    ...(packed === true ? ["--packed"] : [])
   ];
 }
 

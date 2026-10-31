@@ -289,6 +289,81 @@ describe("startBin --no-hmr (R6)", () => {
   });
 });
 
+describe("startBin --packed (F128)", () => {
+  let packed: string;
+
+  beforeAll(async () => {
+    packed = await realpath(await mkdtemp(join(tmpdir(), "moku-cli-packed-")));
+    await mkdir(join(packed, "dist", "assets", "board"), { recursive: true });
+    await mkdir(join(packed, "generated"), { recursive: true });
+    await writeFile(join(packed, "index.html"), "<html></html>");
+    await writeFile(join(packed, "loose.png"), "loose");
+    await writeFile(join(packed, "generated", "manifest.json"), '{"from":"generated"}');
+    await writeFile(join(packed, "dist", "assets", "manifest.json"), '{"from":"pack"}');
+    await writeFile(join(packed, "dist", "assets", "board", "page-0.webp"), "page");
+  });
+
+  afterAll(async () => {
+    await rm(packed, { recursive: true, force: true });
+  });
+
+  /**
+   * Serves a folder on a free port, runs the check and stops the bin.
+   *
+   * @param flags - The flags after the html file.
+   * @param check - What to do with the game's URL and the printed lines.
+   */
+  async function serving(
+    flags: readonly string[],
+    check: (url: string, lines: readonly string[]) => Promise<void>
+  ): Promise<void> {
+    const { deps, lines } = createDeps();
+    const html = join(packed, "index.html");
+    const argv = [html, "--port", "0", "--root", packed, "--no-hmr", ...flags];
+    const { stop } = await startBin(argv, deps);
+    try {
+      const url = /Game\s+(http:\/\/\S+)/.exec(lines.join("\n"))?.[1];
+      await check(url ?? "", lines);
+    } finally {
+      await stop?.();
+    }
+  }
+
+  it("answers /manifest.json and the files from dist/assets, not from the game folder", async () => {
+    await serving(["--packed"], async url => {
+      const manifest = await fetch(`${url}manifest.json`);
+      const page = await fetch(`${url}board/page-0.webp`);
+      const loose = await fetch(`${url}loose.png`);
+      await expect(manifest.json()).resolves.toEqual({ from: "pack" });
+      expect(page.status).toBe(200);
+      expect(loose.status).toBe(404);
+    });
+  });
+
+  it("serves the game folder without the flag", async () => {
+    await serving([], async url => {
+      const manifest = await fetch(`${url}manifest.json`);
+      await expect(manifest.json()).resolves.toEqual({ from: "generated" });
+    });
+  });
+
+  it("says that new art needs a pack", async () => {
+    await serving(["--packed"], (_url, lines) => {
+      expect(lines.join("\n")).toContain("moku-game pack");
+      return Promise.resolve();
+    });
+  });
+
+  it("refuses a game with no pack: answers 1, names the command, starts nothing", async () => {
+    const { deps, lines } = createDeps();
+    const argv = [join(game, "index.html"), "--port", "0", "--root", game, "--packed"];
+    await expect(startBin(argv, deps)).resolves.toEqual({ code: 1 });
+    expect(lines.join("\n")).toContain(`no packed build in "${join(game, "dist", "assets")}"`);
+    expect(lines.join("\n")).toContain('Run "moku-game pack" first.');
+    expect(deps.importPage).not.toHaveBeenCalled();
+  });
+});
+
 describe("main", () => {
   it("resolves with the code and stops on SIGINT while serving", async () => {
     expect(await main(["--help"], createDeps().deps)).toBe(0);
@@ -813,6 +888,41 @@ describe("startBin engine page (B5)", () => {
       { cwd: moku, env: { [REEXEC_ENV]: "1" } }
     );
     expect(deps.importPage).not.toHaveBeenCalled();
+  });
+
+  describe("--packed (F128)", () => {
+    it("starts no keys watch and re-runs the child with the flag", async () => {
+      await mkdir(join(moku, "dist", "assets"), { recursive: true });
+      await writeFile(join(moku, "dist", "assets", "manifest.json"), "{}");
+      try {
+        const { deps, spawn, watchKeys, close } = engineDeps();
+        await expect(startBin(["--root", moku, "--packed"], deps)).resolves.toEqual({ code: 0 });
+        expect(watchKeys).not.toHaveBeenCalled();
+        expect(close).not.toHaveBeenCalled();
+        expect(spawn.mock.calls[0]?.[0]).toContain("--packed");
+      } finally {
+        await rm(join(moku, "dist"), { recursive: true, force: true });
+      }
+    });
+
+    it("refuses a game with no pack before the page is written", async () => {
+      const { deps, lines, spawn, importCli } = engineDeps();
+      await expect(startBin(["--root", moku, "--packed"], deps)).resolves.toEqual({ code: 1 });
+      expect(lines.join("\n")).toContain('Run "moku-game pack" first.');
+      expect(importCli).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it("refuses a dist/assets with no manifest: that is not a pack", async () => {
+      await mkdir(join(moku, "dist", "assets"), { recursive: true });
+      try {
+        const { deps, spawn } = engineDeps();
+        await expect(startBin(["--root", moku, "--packed"], deps)).resolves.toEqual({ code: 1 });
+        expect(spawn).not.toHaveBeenCalled();
+      } finally {
+        await rm(join(moku, "dist"), { recursive: true, force: true });
+      }
+    });
   });
 
   describe("keys watch (D-54, D-55)", () => {

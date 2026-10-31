@@ -237,9 +237,9 @@ Source in `page/`:
 ## Bin
 
 ```
-moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--port 3000] [--no-hmr]
-moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--help]
-moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]
+moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--port 3000] [--no-hmr] [--packed]
+moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--packed] [--help]
+moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]
 moku-editor mcp-config [<game-html>] [--port N]
 moku-editor e2e -c <playwright config> [playwright args…]
 moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]
@@ -253,6 +253,7 @@ moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jso
 | `--port` | `-p` | `3000` | Digits, 0 to 65535. `0` picks a free port. |
 | `--root` | `-r` | `.` | Project root the editor reads and writes; the moku-game folder of the engine page. Not empty. |
 | `--no-hmr` | | hot reload on | Serves the game without Bun HMR. Takes no value. |
+| `--packed` | | loose files | Serves what `moku-game pack` wrote to `dist/assets`, with no keys watch (see Packed mode). Takes no value. |
 | `--preload` | | none | A file Bun preloads in the serving process. Repeatable, kept in order. Engine page only. |
 | `--serve-plugin` | | none | A Bun plugin the engine page bundles with, after the engine's hot plugin. Repeatable, kept in order. Engine page only. |
 | `--help` | `-h` | | Prints usage, exit 0. |
@@ -271,6 +272,21 @@ A game written for `moku-game` (a folder with `index.ts` and `config.ts`, no `we
 6. The bin always re-runs itself (D-51): Bun reads `--config=` only at process start. `reexecEngine` (`reexec.ts`) spawns `[process.execPath, "--config=<root>/.moku/bunfig.toml", Bun.main, <root>/.moku/index.html, "--root", <root>, "--port", <port>]` (plus `--no-hmr`), with `cwd: root`, `MOKU_EDITOR_REEXEC=1`, detached, SIGINT/SIGTERM/SIGHUP forwarded, and exits with the child's code. The keys watch is closed in a `finally` around the child, so it stops when the child ends for any reason: its own exit, a forwarded Ctrl+C or SIGTERM, a crash, a throw of the spawn. A throw of `close()` is one warning and the child's code is still the exit code.
    Before the spawn this bin has no signal handlers of its own: `main` installs the early ones only for an html file. A SIGINT or SIGTERM while the page is written or the first scan runs takes the default action and ends the process at once, exit 130 (SIGINT) or 143 (SIGTERM). No child is spawned. The keys watch lives in this process, so it ends with it. The forwarders go on in the same tick as the spawn, so no signal falls between the two.
 7. The child serves `<root>/.moku/index.html` as any re-spawned bin (the html path below): the engine's hot plugin, `[serve.static]`, the dev define and the preloads come from that bunfig. The static fallback refuses dot segments, so `.moku/` is never served as files; the page is the `/` route bundle. The discovery file's `html` is `<root>/.moku/index.html`.
+
+### Packed mode
+
+`--packed` serves what `moku-game pack` wrote to `dist/assets`, the same rules as `moku-game dev --packed` in the engine (F128). A game with thousands of loose files waits for each one on the GPU; the pack loads them as a few pages.
+
+| What | With `--packed` |
+|---|---|
+| `/manifest.json` | `dist/assets/manifest.json`, never `generated/manifest.json`. |
+| Other paths | From `dist/assets` only, by the same rules as the game root (`static.ts`). A loose file of the game answers 404. |
+| Keys watch | Not started (`runEngine`). `generated/` stays as it is. |
+| No pack | With no `dist/assets/manifest.json` the bin prints `[moku-editor] no packed build in "<root>/dist/assets".` and `Run "moku-game pack" first.`, exits 1 and writes no page. |
+| Re-runs | Both `reexecEngine` and `reexecBin` hand the flag to the child. |
+| Code | Still served live: Bun hot reload works as usual. Only assets come from the pack. |
+
+The cost: new art shows only after `moku-game pack`; the bin says so when it starts. The tools page, the project index and every door keep reading the game root. `mcp --packed` hands the flag to the bin the bridge starts; a bin that already runs keeps the mode it has.
 
 ### bunfig.toml of the game root
 
@@ -297,8 +313,8 @@ A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywher
 
 | Subcommand | `BinArgs` | What it does |
 |---|---|---|
-| `mcp [<game-html>] [--port N] [--root DIR] [--no-hmr]` | `{ kind: "mcp", html?, port?, root, hmr }` | The stdio MCP server for Claude Code (`mcp/`). A live `.moku/editor.json` under `root` (default `.`) wins; `html`, `port` and `hmr` only feed the bin it starts when none runs. Without an html, a moku-game `root` (`index.ts` and `config.ts`) gets the engine page (D-63). `port` is absent unless `--port` is given. |
-| `mcp-config [<game-html>] [--port N]` | `{ kind: "mcp-config", html?, port? }` | Prints the `.mcp.json` snippet, a blank line and the `claude mcp add` line to stdout, verbatim, then exits 0. `--root` and `--no-hmr` are errors here. |
+| `mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]` | `{ kind: "mcp", html?, port?, root, hmr, packed? }` | The stdio MCP server for Claude Code (`mcp/`). A live `.moku/editor.json` under `root` (default `.`) wins; `html`, `port`, `hmr` and `packed` only feed the bin it starts when none runs. Without an html, a moku-game `root` (`index.ts` and `config.ts`) gets the engine page (D-63). `port` is absent unless `--port` is given. |
+| `mcp-config [<game-html>] [--port N]` | `{ kind: "mcp-config", html?, port? }` | Prints the `.mcp.json` snippet, a blank line and the `claude mcp add` line to stdout, verbatim, then exits 0. `--root`, `--no-hmr` and `--packed` are errors here. |
 | `e2e -c <playwright config> [playwright args…]` | `{ kind: "e2e", config, rest }` | `e2e.ts`, D-52, D-53: one Playwright process, so one fresh editor bin, per project and spec file, because Bun's dev server degrades after many hot reloads in one process. The plan comes from `bun x playwright test -c <config> --list --reporter=json --pass-with-no-tests <files> --project=<p>… <other> <listOnly>` (`listPlan`: projects in config order, files in list order, unnamed projects skipped), so the user's `--project`, files and `-g` narrow it. Each pair runs as `--project=<name> ^<rootDir>/<file>$ --pass-with-no-tests <other> <reporters>` (`fileFilter`, escaped, `/` separators) with `PORT` = `PORT` (else 4417) + its index, one after another, all of them. `splitRest` sorts the words: `--project X Y…` (variadic, up to the next `-` word or a path-like word, which is a file: a `/`, or `.ts`, `.tsx`, `.js`, `.mjs` at the end; so a project named like a path needs `--project=X`) or `--project=X`; files (a word not starting with `-` and not a flag's value); `--reporter` / `--add-reporter` (runs only); `--shard` / `--last-failed` (list only); the rest. After each run `ui.info("<project> · <file> · passed|failed (code N) · <s> s")`, at the end `ui.info("e2e: <n> runs · <failed> failed · <s> s")`. A failed run's line and a failing summary print as errors; a warning names the tests of an unnamed project that did not run. A `--list`, an empty plan or no named project runs once as given. Lock (`fileLock(cwd)`, seam `E2eDeps.lock`): before the CI install a run creates `.moku/e2e.lock` in the cwd with its pid (`wx`); while a live pid (`process.kill(pid, 0)`) holds it: "[moku-editor] another e2e run (pid N) holds .moku/e2e.lock: wait for it, or delete the file when no run is left", exit 1, nothing runs; a dead or unreadable pid is taken over; the file goes in a `finally`, only while it holds this pid; a `--list` takes no lock. `CI=true` installs Chromium first. Only `-c` / `--config` is read (missing: "[moku-editor] e2e needs the Playwright config: -c <file>", exit 2); exit: the first failing code, 1 when the list fails ("[moku-editor] could not list the tests of <config>: <reason>"), else 0. |
 
 Both take at most one `.html` positional and the same `--port` rule. Both refuse `--preload` and `--serve-plugin`: "--preload and --serve-plugin belong to the serving bin". `mcp-config` writes only what was given:
@@ -356,7 +372,7 @@ A bin killed with SIGKILL leaves the file behind. The bridge treats a dead pid a
 | `server.ts` | `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call`, `logging/setLevel`, `notifications/cancelled`. An `initialize` hands the MCP client's name to the editor link (`identify`): `clientInfo.title` when it has text (Claude Code: `"Claude Code"`), else `clientInfo.name`. |
 | `hub-client.ts` | `${ws}?token=…&kind=tools` with `Origin: http://127.0.0.1:<port>`. Sessions, heartbeats, the last `hotReload` and `project` the hub published (it replays both to a new connection right after `sessions`), game, files and editor requests, `watch`/`value`/`unwatch`, and `identify(name)`: the editor-channel notification `client { name }` that names the MCP client to the hub, which stamps it on the bridge's runs (`from: "mcp"`, `client`). The bridge is a plain tools client, never `role=page`. |
 | `discovery.ts` | Reads `.moku/editor.json`; `process.kill(pid, 0)` tells a live bin from a stale file. |
-| `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. The html `<root>/.moku/index.html` is left out: the engine form `moku-editor --port <port> --root <root> [--no-hmr]`. |
+| `launcher.ts` | Starts `moku-editor <html> --port <port> --root <root> [--no-hmr] [--packed]` detached, output in `.moku/editor.log` (0600), waits at most 15 s for its discovery file. The html `<root>/.moku/index.html` is left out: the engine form `moku-editor --port <port> --root <root> [--no-hmr] [--packed]`. |
 | `connection.ts` | The bin side: startup, the reconnect tries after a closed socket (at the close, then 1, 2 and 4 s apart; a connection dropped within 5 s counts as a failed try), start (the engine form in a moku-game root with no html known, D-63), stop only an owned bin. Reports each open and each lost connection (`onConnected`, `onDisconnected`). A connect that opens during the teardown is closed and not reported. `identify(name)` keeps the MCP client's name and tells it to the open connection and to every connection that opens later, so a bin restart does not leave the agent unnamed. |
 | `tools.ts` and `*-tools.ts` | The generic tool table. `schema.ts` checks arguments, `results.ts` builds content, `shapes.ts` reads hub answers. `editor-tools.ts` holds `askPage`: the one way a tool asks the editor page (`editor.device`, `editor.show`, `editor.node`) through the hub. |
 | `poll.ts` | Bounded polling: `pollFor` (the connection after the bin's restart) and `replayed` (a published value a call that just connected reads at most 300 ms later). |
@@ -490,7 +506,7 @@ What `main` (`cli.ts`) does:
 | 0 | Help, `mcp-config`, `mcp` after stdin ended or a SIGINT/SIGTERM, or serving |
 | child's code | A bin re-spawned in the game root, or re-run under the engine page's bunfig, ended |
 | 130, 143 | The engine form got SIGINT (130) or SIGTERM (143) before its child was spawned: the default signal action, no child, no keys watch left |
-| 1 | Runtime error: missing or bad HTML file, start failed, port in use; the engine page could not be written or its keys watch could not start |
+| 1 | Runtime error: missing or bad HTML file, start failed, port in use; the engine page could not be written or its keys watch could not start; `--packed` with no pack |
 | 2 | Bad arguments; without an html file, a root that is not a moku-game folder |
 
 ## The perf CLI
