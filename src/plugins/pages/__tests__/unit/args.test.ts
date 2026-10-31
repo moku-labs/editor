@@ -110,6 +110,22 @@ describe("parseBinArgs", () => {
   });
 });
 
+describe("parseBinArgs --packed (F128)", () => {
+  it("serves the pack with --packed, in the engine form and with an html file", () => {
+    expect(parseBinArgs(["--root", "game", "--packed"])).toMatchObject({
+      kind: "run",
+      root: "game",
+      packed: true
+    });
+    expect(parseBinArgs(["a.html", "--packed"])).toMatchObject({ html: "a.html", packed: true });
+  });
+
+  it("leaves the key out without --packed and refuses a value on it", () => {
+    expect("packed" in parseBinArgs(["a.html"])).toBe(false);
+    expect(parseBinArgs(["--packed=1"]).kind).toBe("error");
+  });
+});
+
 describe("parseBinArgs mcp (M2, M3)", () => {
   it("parses `mcp` alone: no html, no port, root . and hot reload on", () => {
     expect(parseBinArgs(["mcp"])).toEqual({ kind: "mcp", root: ".", hmr: true });
@@ -126,6 +142,16 @@ describe("parseBinArgs mcp (M2, M3)", () => {
       root: ".",
       hmr: true
     });
+  });
+
+  it("keeps --packed for the bin it starts, and leaves it out when not given", () => {
+    expect(parseBinArgs(["mcp", "--packed"])).toEqual({
+      kind: "mcp",
+      root: ".",
+      hmr: true,
+      packed: true
+    });
+    expect("packed" in parseBinArgs(["mcp"])).toBe(false);
   });
 
   it("leaves port out when --port is not given (discovery decides)", () => {
@@ -166,7 +192,8 @@ describe("parseBinArgs mcp-config (M8)", () => {
     [["mcp-config", "a.txt"], "ending in .html"],
     [["mcp-config", "--port", "99999"], "--port must be an integer 0-65535"],
     [["mcp-config", "--root", "game"], "mcp-config takes only <game-html> and --port"],
-    [["mcp-config", "--no-hmr"], "mcp-config takes only <game-html> and --port"]
+    [["mcp-config", "--no-hmr"], "mcp-config takes only <game-html> and --port"],
+    [["mcp-config", "--packed"], "mcp-config takes only <game-html> and --port"]
   ])("refuses %j", (argv, message) => {
     const result = parseBinArgs(argv);
     expect(result.kind === "error" && result.message).toContain(message);

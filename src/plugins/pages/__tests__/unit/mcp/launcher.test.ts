@@ -87,6 +87,11 @@ describe("launchCommand", () => {
     expect(launchCommand(["bun", "bin"], options(false)).at(-1)).toBe("--no-hmr");
   });
 
+  it("passes --packed only when the bridge was given it", () => {
+    expect(launchCommand(["bun", "bin"], { ...options(), packed: true })).toContain("--packed");
+    expect(launchCommand(["bun", "bin"], options())).not.toContain("--packed");
+  });
+
   it("starts the engine form, without the html, when the html is the root's engine page", () => {
     const engine = { html: join(root, ".moku", "index.html"), port: 4100, root, hmr: true };
 

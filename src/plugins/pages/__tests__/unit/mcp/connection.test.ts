@@ -163,6 +163,14 @@ describe("startup", () => {
     expect(children[0]?.signals).toEqual(["SIGTERM"]);
   });
 
+  it("starts the bin with --packed when the bridge got it (F128)", async () => {
+    makeGameFolder();
+    const { editor, spawn } = link({ packed: true });
+    await editor.start();
+    expect(spawn.mock.calls[0]?.[0]).toContain("--packed");
+    await editor.shutdown();
+  });
+
   it("starts the engine form on port 3000 and with --no-hmr when the bridge got no port and no hot reload", async () => {
     makeGameFolder();
     const { editor, spawn } = link({ hmr: false });

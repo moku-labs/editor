@@ -145,8 +145,24 @@ export function reexecRoot(
 }
 
 /**
+ * The flags a re-spawned bin keeps: `--no-hmr` when hot reload is off, `--packed` when it serves
+ * the pack.
+ *
+ * @param args - The `run` arguments.
+ * @returns The flag words.
+ * @example
+ * ```ts
+ * keptFlags({ kind: "run", port: 0, root: ".", hmr: false, preload: [], servePlugins: [], packed: true });
+ * // ["--no-hmr", "--packed"]
+ * ```
+ */
+function keptFlags(args: RunArgs): string[] {
+  return [...(args.hmr ? [] : ["--no-hmr"]), ...(args.packed === true ? ["--packed"] : [])];
+}
+
+/**
  * The bin arguments of the child: absolute html and root (the child's cwd is the root), the port,
- * and `--no-hmr` when hot reload is off.
+ * and the flags it keeps.
  *
  * @param args - The `run` arguments.
  * @param cwd - The parent's cwd, the base of relative paths.
@@ -159,8 +175,7 @@ export function reexecRoot(
  * ```
  */
 function childArgv(args: ServeArgs, cwd: string, root: string): string[] {
-  const words = [resolve(cwd, args.html), "--port", String(args.port), "--root", root];
-  return args.hmr ? words : [...words, "--no-hmr"];
+  return [resolve(cwd, args.html), "--port", String(args.port), "--root", root, ...keptFlags(args)];
 }
 
 /**
@@ -230,7 +245,7 @@ export async function reexecBin(args: ServeArgs, deps: ReexecDeps): Promise<numb
  * process start. The child serves `<root>/.moku/index.html` as any re-spawned bin, in the root.
  *
  * @param page - The page the engine wrote: its HTML and its bunfig.
- * @param args - The `run` arguments of the engine page (root, port, hmr).
+ * @param args - The `run` arguments of the engine page (root, port, hmr, packed).
  * @param deps - Cwd, environment, command, spawn and signal handlers.
  * @returns The child's exit code.
  * @example
@@ -248,8 +263,7 @@ export function reexecEngine(page: PreparedPage, args: RunArgs, deps: ReexecDeps
   const bin = deps.command.slice(1);
 
   // Build the bin arguments, then run.
-  const words = [page.html, "--root", root, "--port", String(args.port)];
-  const binArgs = args.hmr ? words : [...words, "--no-hmr"];
+  const binArgs = [page.html, "--root", root, "--port", String(args.port), ...keptFlags(args)];
   return runChild([...bun, `--config=${page.bunfig}`, ...bin, ...binArgs], root, deps);
 }
 

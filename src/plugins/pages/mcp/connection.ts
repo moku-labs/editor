@@ -358,7 +358,8 @@ async function launchNow(
   // Start the bin; shutdown can abort the start through the controller.
   const controller = new AbortController();
   state.launchAbort = controller;
-  const options = { html: resolve(html), port, root, hmr: args.hmr };
+  const packed = args.packed === true ? { packed: args.packed } : {};
+  const options = { html: resolve(html), port, root, hmr: args.hmr, ...packed };
   const { child, bin } = await launchEditor(options, { ...deps, signal: controller.signal });
 
   // The bin is ours until its process exits; then connect, unless shutdown began.
