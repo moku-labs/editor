@@ -327,13 +327,13 @@ describe("a press on a toggle with choices", () => {
     ]);
   });
 
-  it("a tap runs on a refused build (it runs nothing)", async () => {
+  it("a refused build runs nothing on a tap", async () => {
     const octx = mood(true, "calm", { allowed: false, reason: "read-only" });
     await pressCommand(octx, "garden.mood", "storm");
     expect(octx.channel.runs).toEqual([]);
   });
 
-  it("a tap while the switch is in flight starts a second run (one flight per command)", async () => {
+  it("a tap while the switch is in flight starts no second run", async () => {
     const octx = mood(true, "calm");
     const answers: ((value: RunResult) => void)[] = [];
     octx.channel.answer = () => new Promise(resolve => answers.push(resolve));

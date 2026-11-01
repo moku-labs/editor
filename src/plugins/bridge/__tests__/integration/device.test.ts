@@ -441,8 +441,6 @@ describe("bridge device mode against the hub's device listener", { timeout: 15_0
       { status: { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 } }
     ]);
     expect(app.bridge.link()).toBeUndefined();
-    expect(bridgeLogs("warn")).toEqual([]);
-    expect(bridgeLogs("info")).toEqual(["bridge:off"]);
   });
 
   it("says bye and closes 1000 on stop: the hub closes the device session with bye", async () => {

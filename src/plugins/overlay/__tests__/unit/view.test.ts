@@ -500,7 +500,7 @@ describe("the Game, Record and Link tabs", () => {
     expect(octx.channel.runs).toEqual([]);
   });
 
-  it("the choices stay live while the press is in flight (disabled until it settles)", async () => {
+  it("the choices are disabled while the press is in flight", async () => {
     moodCard();
     const answers: ((value: RunResult) => void)[] = [];
     octx.channel.answer = () => new Promise(resolve => answers.push(resolve));
