@@ -57,6 +57,24 @@ describe("registry types", () => {
     expectTypeOf(boss).toExtend<DoorCommand>();
   });
 
+  // Bug: a function property type in place of the method type refuses a game's narrower app, and
+  // every door toggle with choices would need a cast.
+  it("takes a game's choice(app: GameLike) on a DoorCommand without a cast", () => {
+    const mood = {
+      id: "garden.mood",
+      title: "Mood",
+      input: { on: "boolean", choice: "string" },
+      effect: "cosmetic",
+      overlay: "toggle",
+      choices: ["calm", "storm"],
+      value: (app: GameLike) => app.time.isPaused(),
+      choice: (app: GameLike) => (app.time.isPaused() ? "calm" : "storm"),
+      run: () => true
+    } as const;
+
+    expectTypeOf(mood).toExtend<DoorCommand>();
+  });
+
   it("refuses an unknown overlay marker on a DoorCommand", () => {
     const slider = {
       id: "garden.glow",

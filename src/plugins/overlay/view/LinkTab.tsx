@@ -1,7 +1,7 @@
 /**
  * @file overlay plugin — the Link tab (C6, F3): the four mode keys, the computer address with
  * Connect / Pair (an `overlay:connect` intent, never a bridge call), the pairing code, the STALE
- * caution, the live box with the engine line, the last-seen line, the no-bridge note.
+ * caution, the live box with the engine line, the last-seen line, the no-bridge or no-link note.
  */
 import type { VNode } from "preact";
 import type { OverlayActions } from "../actions";

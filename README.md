@@ -756,6 +756,7 @@ The engine builds the release page plus the editor's page agent (`@moku-labs/edi
 Control on `--debug` comes with engine 0.15.1 (`--debug=full` is its alias). On 0.15.0 `--debug` had no control: it ran `read` and `cosmetic` commands only, and `--debug=full` added control.
 
 - `--editor host:port` (default `127.0.0.1:47600`, which `adb reverse` maps to the computer) is where the bridge dials; the engine bakes it into `__MOKU_GAME_EDITOR__`. The engine takes a host of `[\w.-]+` or a bracketed IPv6 (`[fe80::1]:47600`); the bridge dials DNS names, IPv4 and bracketed IPv6, so a host it cannot dial (one with `_`) is warned `bridge:bad-address` and the default is used. An address picked on the overlay's Link tab is remembered on the phone and wins over the build's.
+- `__MOKU_GAME_EDITOR__ = "off"` is a store-signed test build with no editor: the bridge opens no socket and never retries, the overlay and commands keep working, and the Link tab says there is no link.
 - A native debug build is a second Android app, `<appId>.debug`, installed beside the store app. The collector prefers it for the system frames when it is installed (`moku-editor perf` takes the app id from `native.identifier` of the game's `config.ts`).
 - The overlay's Game tab greys a command the build refuses ("needs a debug build of a newer engine, or without --debug=read"); a refused run answers -32009 `read_only`. `game.capture` is a `read` command, so screenshots work on every debug build.
 
@@ -772,7 +773,7 @@ The game decides when the overlay shows; the editor ships no gesture and no debu
 - **Pill**: fps now, the spikes of the last 6 s, the link light and REC. A tap opens the card.
 - **Card**: docked to the left or right edge, dragged by its grip and snapped inside the safe area; the device remembers place, mode and tab. Four tabs:
   - **Frames**: the frame graph of the last 6 s with the cause of every spike (gpu, upload, compile, long frame, js, gc?, gap), prev / next spike keys, the counters (drawn / loop fps with the rate, `54 / 60 @120`; the p90 frame; GPU; device; heap; passes, draws and texture MB), a More disclosure and the spike record. The header names the engine fingerprint and the build, and shows **STALE** when the phone's engine differs from the computer's.
-  - **Game**: only the commands the game marked in its `.dev` module, `overlay: "toggle"` (a switch with its value) or `overlay: "button"`.
+  - **Game**: only the commands the game marked in its `.dev` module, `overlay: "toggle"` (a switch with its value) or `overlay: "button"`. A toggle may also carry `choices` and `choice(app)` (with `choice: "string"` in its `input`): the choices sit under the switch, the current one marked; a tap on one runs `{ on: value, choice }`, a tap on the switch `{ on: !value, choice: current }`.
   - **Record**: the device log: off until someone records ("Nothing is saved until you record."), start, stop, mark, who started it ("started here", "started from the editor", "started by an agent (Claude)"), the files, share, remove.
   - **Link**: the device link the bridge reports (no computer, connecting with the pairing code, live over adb or the LAN) and Connect / Pair to another `host:port`.
 - `editor.overlay { mode: "hidden" | "pill" | "card" }` switches it from the tools page or MCP.
@@ -1185,7 +1186,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | bridge | `hello` | `"/__editor/hello"` | Hello route: same-origin path or absolute URL. |
 | bridge | `retryMs` | `1000` | First reconnect delay; doubles up to 30 s, ±20 % jitter. |
 | bridge | `callTimeoutMs` | `5000` | Deadline of one `read` or `run`, and of one `perf.ack`. |
-| bridge | `device` | `undefined` | Device mode at this computer address (`host:port`, `[v6]:port`). `undefined`: page mode on a served page; device mode with `__MOKU_GAME_EDITOR__` or on a native page, at the remembered address, else the build's, else `"127.0.0.1:47600"`. |
+| bridge | `device` | `undefined` | Device mode at this computer address (`host:port`, `[v6]:port`). `undefined`: page mode on a served page; device mode with `__MOKU_GAME_EDITOR__` or on a native page, at the remembered address, else the build's, else `"127.0.0.1:47600"`. `__MOKU_GAME_EDITOR__ = "off"` wins over it: no link at all. |
 | bridge | `linesPerBatch` | `200` | Most log lines in one `perf.lines` message, 1 to 1000. |
 | capture | `maxDurationMs` | `20000` | Longest series accepted. |
 | capture | `minIntervalMs` | `16` | Shortest series interval accepted. |

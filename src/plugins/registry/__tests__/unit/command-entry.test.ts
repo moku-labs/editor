@@ -359,3 +359,123 @@ describe("commandEntry value()", () => {
     expect(log.warn).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * A game toggle with three choices whose choice(app) is the given function.
+ *
+ * @param choice - Its choice(app).
+ * @returns The command.
+ */
+const moods = (choice: (app: unknown) => unknown): DoorCommand => ({
+  ...toggle(() => true),
+  input: { on: "boolean", choice: "string" },
+  choices: ["calm", "storm", "dusk"],
+  // boundary of the test: a choice(app) that may answer anything
+  choice: app => choice(app) as string
+});
+
+describe("commandEntry choice()", () => {
+  it("answers the toggle's choice(app), asked of the game app at each call", () => {
+    let mood = "calm";
+    const asked: unknown[] = [];
+    const entry = commandEntry(
+      game.app,
+      moods(app => {
+        asked.push(app);
+        return mood;
+      }),
+      log
+    );
+
+    expect(entry.choice?.()).toBe("calm");
+    mood = "dusk";
+    expect(entry.choice?.()).toBe("dusk");
+    expect(asked).toEqual([game.app, game.app]);
+  });
+
+  it("answers undefined and warns once per streak for a throw, a number and a string outside the list", () => {
+    let answer: () => unknown = failingGlow;
+    const entry = commandEntry(
+      game.app,
+      moods(() => answer()),
+      log
+    );
+
+    expect(entry.choice?.()).toBeUndefined();
+    expect(entry.choice?.()).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenLastCalledWith("registry:value-failed", {
+      id: "test.glow",
+      message: "no glow"
+    });
+
+    answer = () => "calm";
+    expect(entry.choice?.()).toBe("calm");
+    answer = () => 3;
+    expect(entry.choice?.()).toBeUndefined();
+    expect(entry.choice?.()).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledTimes(2);
+    expect(log.warn).toHaveBeenLastCalledWith("registry:value-failed", {
+      id: "test.glow",
+      message: "choice(app) answered number, not a string"
+    });
+
+    answer = () => "calm";
+    expect(entry.choice?.()).toBe("calm");
+    answer = () => "gale";
+    expect(entry.choice?.()).toBeUndefined();
+    expect(entry.choice?.()).toBeUndefined();
+    expect(log.warn).toHaveBeenCalledTimes(3);
+    expect(log.warn).toHaveBeenLastCalledWith("registry:value-failed", {
+      id: "test.glow",
+      message: 'choice(app) answered "gale", not one of the choices'
+    });
+  });
+
+  it("reads against the list of the manifest: a door's later push stays outside it", () => {
+    const door = { ...moods(() => "gale"), choices: ["calm", "storm"] };
+    const entry = commandEntry(game.app, door, log);
+
+    door.choices.push("gale");
+
+    expect(entry.descriptor.choices).toEqual(["calm", "storm"]);
+    expect(entry.choice?.()).toBeUndefined();
+  });
+
+  it("keeps two streaks: a failing value() hides no failing choice(), a good one ends no streak of it", () => {
+    let valueFails = true;
+    const door = {
+      ...moods(() => "gale"),
+      value: () => {
+        if (valueFails) throw new Error("no glow");
+        return true;
+      }
+    };
+    const entry = commandEntry(game.app, door, log);
+
+    entry.value?.();
+    entry.choice?.();
+    expect(log.warn).toHaveBeenCalledTimes(2);
+
+    valueFails = false;
+    entry.value?.();
+    entry.choice?.();
+    expect(log.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("exists only on a toggle with choices: never on a button, a plain toggle or an empty list", () => {
+    const choosing = moods(() => "calm");
+
+    expect(commandEntry(game.app, choosing, log).choice).toBeTypeOf("function");
+    expect(commandEntry(game.app, { ...choosing, overlay: "button" }, log).choice).toBeUndefined();
+    expect(commandEntry(game.app, { ...choosing, overlay: undefined }, log).choice).toBeUndefined();
+    expect(commandEntry(game.app, { ...choosing, choices: [] }, log).choice).toBeUndefined();
+    expect(
+      commandEntry(
+        game.app,
+        toggle(() => true),
+        log
+      ).choice
+    ).toBeUndefined();
+  });
+});

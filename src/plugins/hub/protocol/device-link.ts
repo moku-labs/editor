@@ -40,6 +40,13 @@ export const DEVICE_UNPAIRED_CODE = 4401;
 export const DEVICE_UNPAIRED_REASON = "unpaired";
 
 /**
+ * A build with no editor link at all: the value of `__MOKU_GAME_EDITOR__` in a store-signed test
+ * build (a contract with the engine), and the `reason` of the bridge's lost status there. It lives
+ * here because the overlay reads it and may not import the bridge.
+ */
+export const LINK_OFF = "off";
+
+/**
  * Params of the device→hub editor-channel notification `pair`: the code the phone shows, and what
  * it is.
  *

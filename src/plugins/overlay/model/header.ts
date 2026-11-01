@@ -4,12 +4,13 @@
  */
 import { isLoopback, parseAddress } from "../../hub/protocol";
 import type { PerfSecond, PerfStatus } from "../../perf/protocol";
-import type { BuildInfo, BuildProfile } from "../../registry/protocol";
+import type { BuildInfo } from "../../registry/protocol";
 import type { LinkPayload } from "../types";
-import { COLOUR, shortDuration } from "./format";
+import { COLOUR, profileText, shortDuration } from "./format";
+import { isLinkOff } from "./link";
 import type { EngineLineView, HeaderView, LinkLegend } from "./types";
 
-/** The legend of a phone with no computer, or of a build without the bridge. */
+/** The legend of a phone with no computer, or of a build without the bridge or the link. */
 const NO_PC: LinkLegend = { kind: "none", text: "NO PC", colour: COLOUR.ink };
 
 /** The header's word for a resting screen, and the unit of its fps. */
@@ -17,19 +18,9 @@ const IDLE_WORD = "idle";
 const FPS_WORD = "fps";
 
 /**
- * The profile texts of the engine line.
- */
-const PROFILE_TEXT: Readonly<Record<BuildProfile, string>> = {
-  dev: "dev page",
-  full: "debug, full control",
-  read: "debug, read-only",
-  none: "no agent flags"
-};
-
-/**
- * The link legend of the header and the pill: no bridge or no computer → NO PC; a dev page (no
- * device link) → DEV, green while live or paused; connecting → ADB or LAN by the address, amber;
- * adb / lan → green.
+ * The link legend of the header and the pill: no bridge, no link in the build or no computer →
+ * NO PC; a dev page (no device link) → DEV, green while live or paused; connecting → ADB or LAN by
+ * the address, amber; adb / lan → green.
  *
  * @param payload - The last `bridge:status`.
  * @param hasBridge - Whether the bridge is composed.
@@ -40,7 +31,7 @@ const PROFILE_TEXT: Readonly<Record<BuildProfile, string>> = {
  * ```
  */
 export function linkLegend(payload: LinkPayload | undefined, hasBridge: boolean): LinkLegend {
-  if (!hasBridge) return NO_PC;
+  if (!hasBridge || isLinkOff(payload)) return NO_PC;
 
   const link = payload?.link;
   if (link === undefined) {
@@ -81,20 +72,6 @@ export function linkLegend(payload: LinkPayload | undefined, hasBridge: boolean)
 export function isStale(engine: string | undefined, payload: LinkPayload | undefined): boolean {
   const editorEngine = payload?.link?.editorEngine;
   return typeof engine === "string" && typeof editorEngine === "string" && engine !== editorEngine;
-}
-
-/**
- * The profile text of the engine line.
- *
- * @param profile - The build profile.
- * @returns The text.
- * @example
- * ```ts
- * profileText("read"); // "debug, read-only"
- * ```
- */
-export function profileText(profile: BuildProfile): string {
-  return PROFILE_TEXT[profile];
 }
 
 /**

@@ -33,7 +33,7 @@
  * | bridge | hello | "/__editor/hello" |
  * | bridge | retryMs | 1000 |
  * | bridge | callTimeoutMs | 5000 |
- * | bridge | device | undefined: page mode on a served page; device mode with `__MOKU_GAME_EDITOR__` (`--editor`) or on a native page, at the remembered address, else the build's, else "127.0.0.1:47600" |
+ * | bridge | device | undefined: page mode on a served page; device mode with `__MOKU_GAME_EDITOR__` (`--editor`) or on a native page, at the remembered address, else the build's, else "127.0.0.1:47600"; `__MOKU_GAME_EDITOR__ === "off"`, a store-signed test build, wins over all of it: no link |
  * | bridge | linesPerBatch | 200 |
  * | capture | maxDurationMs | 20000 |
  * | capture | minIntervalMs | 16 |

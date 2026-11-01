@@ -31,6 +31,8 @@ createApp({ pluginConfigs: { registry: { game: app, modules: [mergeDev], name: "
 | Bad id, input kind, `changes` or `effect` | `[moku-editor] Registry id "<id>" is not a dotted name.` and the kind, changes, effect messages |
 | A command's `overlay` is not `toggle` or `button` | `TypeError`: `[moku-editor] Command "<id>" has an unknown overlay "<value>".` |
 | An overlay toggle without `value(app)` | `TypeError`: `[moku-editor] Command "<id>" is an overlay toggle without value(app).` |
+| An overlay button with `choices` | `TypeError`: `[moku-editor] Command "<id>" is an overlay button with choices.` |
+| An overlay toggle with `choices` whose `input` has no `choice` of kind `string` or `string?` | `TypeError`: `[moku-editor] Command "<id>" has choices and no string choice in its input.` |
 
 Order in the manifest: door entries, then modules in config order, then `editor.toggles` (only when
 the game has an overlay toggle), then editor sources and commands in `add` order.
@@ -44,7 +46,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 |---|---|---|
 | `manifest()` | `Manifest` | Frozen. Descriptors only, cached until the next `add`. `game`, `page`, `embedded` are read at call time. `panels` is omitted. Each build probes the door sources and the editor sources with a probe first (see "Sources the game does not have"). Every command carries `allowed` (and `reason` when refused); the manifest carries `build`. |
 | `source(id)` | `SourceEntry \| undefined` | Door, module, registry or editor source. `undefined` for an unknown id. The caller maps it to -32601 `unknown_id`. |
-| `command(id)` | `CommandEntry \| undefined` | Door, module or editor command. An overlay toggle's entry has `value()`. |
+| `command(id)` | `CommandEntry \| undefined` | Door, module or editor command. An overlay toggle's entry has `value()`, and `choice()` when the toggle has `choices`. |
 | `add(entry)` | `void` | Adds an editor command (`descriptor`, `run`) or an editor source (`descriptor`, `read`, `watch`, `probe?`; told apart by `read`). Call it in `onInit`. |
 | `envelope()` | `RunState` | `{ path, frame, tainted }` for editor commands that run no door. |
 | `clock()` | `Clock` | `{ frame, paused, held, reasons }` from the game clock and its pause stack. The channel heartbeat reads `frame` and `paused`; the reload checkpoint reads `held`. |
@@ -86,9 +88,10 @@ registry.clock(); // { frame: 1840, paused: true, held: true, reasons: ["backgro
 | `SourceEntry.read` | `(raw: Json) => Json` | Availability, `checkInput`, the door read, `toWireValue`. `null` means no input. |
 | `SourceEntry.watch` | `(raw: Json, fn: (value: Json) => void) => () => void` | Checks availability and the input now. Delivers on the next frame, not at once. Returns the door's unsubscribe (idempotent). |
 | `SourceEntry.probe?` | `() => string \| undefined` | Editor sources only, given to `add`: why the source is not available now. The registry runs it at each manifest build; the stored copy has none. |
-| `CommandEntry.descriptor` | `CommandDescriptor` | Fresh frozen `{ id, title, input, effect, overlay?, allowed, reason? }`. |
+| `CommandEntry.descriptor` | `CommandDescriptor` | Fresh frozen `{ id, title, input, effect, overlay?, choices?, allowed, reason? }`. |
 | `CommandEntry.run` | `(raw: Json, via?: CommandVia, client?: string) => Promise<RunResult>` | Async. Never throws synchronously. Door and module commands go through the game's `run` (dev guard, cheat journal). `via` names who ran it for `registry:command` (absent: `"local"`); `client` is the MCP client's name the hub stamped, passed only with `via: "mcp"`. The registry's wrappers hand both to the entry, so an editor command added with `add` (the recorder's `editor.record`) reads who started it. An entry written with two parameters (or one) stays assignable and ignores them. |
 | `CommandEntry.value?` | `() => boolean \| undefined` | Overlay toggles of the game only: `door.value(game)` now; `undefined` when it threw or answered no boolean. |
+| `CommandEntry.choice?` | `() => string \| undefined` | Overlay toggles with `choices` only: `door.choice(game)` now; `undefined` when it threw, answered no string, or answered a string outside `choices`. |
 
 A watch never throws into the game's frame loop. A door read error, a `toWireValue` error or a
 listener error is caught and logged once per streak. The next good delivery ends the streak.
@@ -139,6 +142,42 @@ module sources. Its read answers `{ [id]: boolean | null }` for every toggle in 
 ```ts
 app.registry.command("garden.glow")?.value?.(); // true
 app.registry.source("editor.toggles")?.read(null); // { "garden.glow": true, "garden.fog": null }
+```
+
+A door or module toggle may also carry `choices` and `choice(app)`, which the overlay draws under
+the switch. Both are structural: they need no engine type.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `DoorCommand.choices?` | `readonly string[]` | The values under the switch. Missing or empty: a plain toggle. |
+| `DoorCommand.choice?` | `(app) => string` | The current one, as a method type like `value`, so a game's `(app: GameLike) => string` fits. |
+| `CommandDescriptor.choices?` | `readonly string[]` | A fresh frozen copy of the list, right after `overlay`. A missing or empty list adds no key, so an older engine's descriptor keeps its bytes. |
+
+The overlay runs such a toggle with `{ on, choice }`, and the input check refuses an unknown key or
+another kind, so the toggle must declare `choice` in its `input`, of kind `string` or `string?`. The
+registry refuses it at build otherwise, and refuses `choices` on a button.
+
+The entry's `choice()` and `value()` share one guarded reader. A throw, an answer that is not a
+string, or a string outside `choices` gives `undefined` and one `registry:value-failed` warn per
+streak, and the next good read ends the streak. Each read has its own streak, so a failing `value()`
+hides no failing `choice()`. The list is taken when the entry is built, like the descriptor's copy:
+a read never accepts a value the manifest does not list.
+
+```ts
+const mood: DoorCommand = {
+  id: "garden.mood",
+  title: "Mood",
+  input: { on: "boolean", choice: "string" },
+  effect: "cosmetic",
+  overlay: "toggle",
+  choices: ["calm", "storm", "dusk"],
+  value: () => true,
+  choice: () => "calm",
+  run: (_app, { on, choice }) => ({ on, choice })
+};
+app.registry.command("garden.mood")?.choice?.(); // "calm"
+app.registry.command("garden.mood")?.descriptor.choices; // ["calm", "storm", "dusk"]
+await app.registry.command("garden.mood")?.run({ on: true, choice: "dusk" });
 ```
 
 ### Editor sources
@@ -229,7 +268,7 @@ Logs (`ctx.log.warn`, payload `{ id, message }`, unless noted):
 | `registry:watch-failed` | A watch failed inside a frame. Once per streak. |
 | `registry:source-unavailable` | Info, payload `{ id, reason }`: the probe found a door or editor source not available. Once per source while it stays so. |
 | `registry:command-refused` | Info, payload `{ id, reason: "read-only" \| "dev-only" }`: the build refused a command (-32009). |
-| `registry:value-failed` | An overlay toggle's `value(app)` threw or answered no boolean. Once per streak. |
+| `registry:value-failed` | An overlay toggle's `value(app)` threw or answered no boolean, or its `choice(app)` threw, answered no string, or answered a string outside `choices`. Once per streak, per read. |
 | `registry:emit-failed` | A hook of `registry:command` threw; the caller's result is unchanged. |
 
 ## Events
@@ -297,7 +336,7 @@ const mergeDev: DevModule = { commands: [addCoins, refillEnergy] };
 | `channel` | `source`, `command`, `clock` (heartbeat and `status()`). Maps an unknown id to -32601. `run(id, input, via)` passes `via` to the entry. |
 | `bridge` | `manifest` (sent in `hello`), `source` (watch over the wire). Runs a hub `run` with `via: "bridge"`. Depends on `registryPlugin` and `channelPlugin`. |
 | `capture` | `add` for `editor.capture`, `editor.series`, `editor.seriesStop`; `command`; `envelope`. |
-| `overlay` | `add` for `editor.overlay`; `manifest` (the Game tab's overlay commands, `allowed`, `reason`), `command(id).value()`, `build`; `envelope`. Runs with `via: "overlay"`. |
+| `overlay` | `add` for `editor.overlay`; `manifest` (the Game tab's overlay commands, `choices`, `allowed`, `reason`), `command(id).value()`, `command(id).choice()`, `build`; `envelope`. Runs with `via: "overlay"`. |
 | `perf` | `game` (the renderer monitor), `add` for the `editor.perf.*` sources with a probe. |
 | `recorder` | `add`; hooks `registry:command` (one `command` line per run). |
 
@@ -389,7 +428,7 @@ allowed, no overlay commands, build unknown"; an older hub ignores the new field
 | `BuildProfile` | `"dev" \| "full" \| "read" \| "none"`. |
 | `BuildInfo` | `{ profile, id?, engine?, appId? }`, all readonly. |
 | `CommandVia` | `"overlay" \| "bridge" \| "tools" \| "mcp" \| "local"`: who ran a command. The bridge turns the hub's `from` into `"tools"` or `"mcp"`; `"bridge"` is a hub that does not say who. Agent-side only, never on the wire. |
-| `CommandDescriptor` | Gains `overlay?`, `allowed?` and `reason?`. This registry always writes `allowed`, writes `reason` only with `allowed: false`, `overlay` only when set. |
+| `CommandDescriptor` | Gains `overlay?`, `choices?`, `allowed?` and `reason?`. This registry always writes `allowed`, writes `reason` only with `allowed: false`, `overlay` only when set, `choices` only when the list has a value. |
 | `Manifest.build?` | The page's `BuildInfo`. |
 | `ErrorReason`, `errorCode` | `"read_only"`, `readOnly: -32009`: a command the page's build refuses, not retryable; `"dev_only"`, `devOnly: -32009` (the same code): a command a page without the dev or debug flag refuses. |
 

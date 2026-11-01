@@ -138,10 +138,10 @@ export type BridgeConfig = {
 export type Phase = "idle" | "connecting" | "pairing" | "open" | "lost" | "stopped";
 
 /**
- * How the bridge reaches the hub: "page" (same-origin hello, a page the dev server served) or
- * "device" (dial an address, pair).
+ * How the bridge reaches the hub: "page" (same-origin hello, a page the dev server served),
+ * "device" (dial an address, pair) or "off" (a store-signed test build: it never does).
  */
-export type BridgeMode = "page" | "device";
+export type BridgeMode = "page" | "device" | "off";
 
 /**
  * The credentials the hub gave this device for one address (`paired`). Never logged.
@@ -164,7 +164,7 @@ export type RememberedLinks = {
  * device.
  */
 export type PageFlags = {
-  /** `__MOKU_GAME_EDITOR__` when a non-empty string. */
+  /** `__MOKU_GAME_EDITOR__` when a non-empty string: a computer address, or `LINK_OFF`. */
   readonly editor: string | undefined;
   /** The native shell's device model when present. */
   readonly model: string | undefined;
@@ -334,9 +334,9 @@ export type BridgeState = {
    * newer connect opens nothing and fails nothing.
    */
   dial: number;
-  /** Decided at start; switched to "device" by connect() and overlay:connect. */
+  /** Decided at start; switched to "device" by connect() and overlay:connect, unless the build is off. */
   mode: BridgeMode;
-  /** Device mode: the `host:port` dialled (normalized); undefined in page mode. */
+  /** Device mode: the `host:port` dialled (normalized); undefined in page mode and in off. */
   address: string | undefined;
   /**
    * Device mode: the addresses tried in turn while none answers (Delta 2026-10-18): the address it
@@ -378,13 +378,17 @@ export type BridgeApi = {
   /**
    * The link status: connecting before the socket opens, live or paused from the channel
    * heartbeat while open, lost with the reason and the retry delay after a failure, lost
-   * "stopped" after stop. Never `silent` or `empty`: those are tools-side kinds.
+   * "stopped" after stop, lost "off" (`LINK_OFF`) from start on in a build with no link. Never
+   * `silent` or `empty`: those are tools-side kinds.
    *
    * @returns A fresh LinkStatus.
    * @example
    * ```ts
    * // A dev entry shows the editor link next to the fps counter.
    * app.bridge.status(); // { kind: "connecting" } right after start, then { kind: "live", frame: 12 }
+   *
+   * // A store-signed test build, __MOKU_GAME_EDITOR__ === "off".
+   * app.bridge.status(); // { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 }
    * ```
    */
   status(): LinkStatus;
@@ -404,7 +408,8 @@ export type BridgeApi = {
    * code while the computer has not confirmed), live over adb (a loopback address) or live over the
    * LAN. The same object the last `bridge:status` carried as `link`, as a fresh copy.
    *
-   * @returns The link, or undefined in page mode (a page the dev server served).
+   * @returns The link, or undefined in page mode (a page the dev server served) and in a build
+   *   with no link.
    * @example
    * ```ts
    * // A debug build on a phone, waiting for the person to type the code on the computer.
@@ -417,11 +422,13 @@ export type BridgeApi = {
    * on the device, closes the current socket (1000 "switch") and connects now with the failure
    * streak reset. Remembered credentials for that address are used; without them the bridge pairs.
    * The same as the event `overlay:connect { address }`. Calling it with the address that is
-   * already live does nothing.
+   * already live does nothing, and so does any call in a build with no link
+   * (`__MOKU_GAME_EDITOR__ === "off"`), before or after start.
    *
    * @param address - `host:port`, e.g. "192.168.1.5:47600"; `[v6]:port` for IPv6.
    * @throws {TypeError} `[moku-editor] bridge.connect needs host:port, got "<address>".` for an
-   *   address `parseAddress` refuses (argument validation); nothing changes then.
+   *   address `parseAddress` refuses (argument validation); nothing changes then. Never in a build
+   *   with no link.
    * @example
    * ```ts
    * // The phone moves from the USB cable to the office Wi-Fi.

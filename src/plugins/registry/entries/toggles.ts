@@ -1,7 +1,7 @@
 /**
  * @file registry plugin — overlay toggles of the game (engine spec 12 H4.4): the guarded `value()`
- * of a toggle's entry, and the source `editor.toggles` that answers every toggle's state over the
- * wire, for a tools page that draws the switches.
+ * and `choice()` of a toggle's entry, and the source `editor.toggles` that answers every toggle's
+ * state over the wire, for a tools page that draws the switches.
  */
 import type { Log } from "@moku-labs/common/browser";
 import type { CommandEntry, DoorCommand, DoorSource, GameLike } from "../types";
@@ -11,6 +11,62 @@ import { firstLine, messageOf } from "./failures";
  * The id of the registry-built source of the overlay toggles.
  */
 export const TOGGLES_ID = "editor.toggles";
+
+/**
+ * One read of a toggle: how to ask the door, which answer is good and what a bad one is called.
+ */
+type ToggleRead<Answer> = {
+  /** Asks the door. */
+  ask(): unknown;
+  /** True for a good answer. */
+  isGood(answer: unknown): answer is Answer;
+  /** The warn's message for a bad answer. */
+  refusal(answer: unknown): string;
+};
+
+/**
+ * The one guarded reader behind `value()` and `choice()`: a throw or a bad answer gives `undefined`
+ * and one `registry:value-failed` warn per streak; the next good read ends the streak (the overlay
+ * paints at most 4 times a second). Each call has its own streak, so one failing read hides no other.
+ *
+ * @param id - The command id.
+ * @param log - The registry log.
+ * @param toggleRead - What to read.
+ * @returns The guarded read.
+ */
+function guardedRead<Answer>(
+  id: string,
+  log: Log.LogApi,
+  toggleRead: ToggleRead<Answer>
+): () => Answer | undefined {
+  let failing = false;
+
+  /**
+   * Logs the first failure of a streak.
+   *
+   * @param message - What went wrong.
+   * @returns Undefined, the value of a failed read.
+   */
+  const fail = (message: string): undefined => {
+    if (!failing) log.warn("registry:value-failed", { id, message });
+    failing = true;
+    return undefined;
+  };
+
+  return () => {
+    let answer: unknown;
+    try {
+      answer = toggleRead.ask();
+    } catch (error) {
+      return fail(firstLine(messageOf(error)));
+    }
+
+    if (!toggleRead.isGood(answer)) return fail(toggleRead.refusal(answer));
+
+    failing = false;
+    return answer;
+  };
+}
 
 /**
  * The guarded `value()` of an overlay toggle: it asks `door.value(game)`. A throw or an answer
@@ -27,34 +83,45 @@ export function toggleValue(
   door: DoorCommand,
   log: Log.LogApi
 ): () => boolean | undefined {
-  let failing = false;
+  return guardedRead(door.id, log, {
+    ask: () => door.value?.(game),
+    isGood: (answer): answer is boolean => typeof answer === "boolean",
+    refusal: answer => `value(app) answered ${typeof answer}, not a boolean`
+  });
+}
 
-  /**
-   * Logs the first failure of a streak.
-   *
-   * @param message - What went wrong.
-   * @returns Undefined, the value of a failed read.
-   */
-  const fail = (message: string): undefined => {
-    if (!failing) log.warn("registry:value-failed", { id: door.id, message });
-    failing = true;
-    return undefined;
-  };
+/**
+ * The guarded `choice()` of an overlay toggle with choices, the twin of `toggleValue`: it asks
+ * `door.choice(game)`. A throw, an answer that is not a string or a string outside `door.choices`
+ * gives `undefined` and one `registry:value-failed` warn per streak of its own, so a failing
+ * `value()` hides no failing `choice()`. The list is taken when the entry is built, like the
+ * descriptor's copy: a read never accepts a value the manifest does not list.
+ *
+ * @param game - The game app.
+ * @param door - The toggle command.
+ * @param log - The registry log.
+ * @returns The choice function of the entry.
+ * @example
+ * ```ts
+ * const mood: DoorCommand = { ...glow, choices: ["calm", "storm"], choice: () => "gale" };
+ * choiceValue(app, mood, log)(); // undefined: "gale" is not one of the choices, one warn
+ * ```
+ */
+export function choiceValue(
+  game: GameLike,
+  door: DoorCommand,
+  log: Log.LogApi
+): () => string | undefined {
+  const choices: ReadonlySet<unknown> = new Set(door.choices);
 
-  return () => {
-    let value: unknown;
-    try {
-      value = door.value?.(game);
-    } catch (error) {
-      return fail(firstLine(messageOf(error)));
-    }
-
-    if (typeof value !== "boolean")
-      return fail(`value(app) answered ${typeof value}, not a boolean`);
-
-    failing = false;
-    return value;
-  };
+  return guardedRead(door.id, log, {
+    ask: () => door.choice?.(game),
+    isGood: (answer): answer is string => typeof answer === "string" && choices.has(answer),
+    refusal: answer =>
+      typeof answer === "string"
+        ? `choice(app) answered "${answer}", not one of the choices`
+        : `choice(app) answered ${typeof answer}, not a string`
+  });
 }
 
 /**

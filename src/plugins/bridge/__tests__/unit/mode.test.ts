@@ -6,7 +6,8 @@ import { DEFAULT_DEVICE_ADDRESS } from "../../types";
 import { CONFIG, LAN, PAGE_FLAGS } from "../helpers";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// resolveMode: the four rows (first match wins) and the address precedence.
+// resolveMode: the off flag, the four rows (first match wins) and the address
+// precedence.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Nothing remembered on the device. */
@@ -36,6 +37,17 @@ afterEach(() => {
 });
 
 describe("resolveMode", () => {
+  it.each([
+    ["a remembered address", { remembered: REMEMBERED }],
+    ["config.device", { config: { ...CONFIG, device: LAN } }],
+    ["a native page", { href: "tauri://localhost/index.html" }],
+    ["all three", { remembered: REMEMBERED, config: { ...CONFIG, device: LAN }, href: undefined }]
+  ])("step 1: the off flag wins over %s", (_name, input) => {
+    const flags = { ...PAGE_FLAGS, editor: "off" };
+
+    expect(resolveMode(inputOf({ ...input, flags }))).toEqual({ mode: "off", address: undefined });
+  });
+
   it("row 1: a debug build dials the address its build wrote", () => {
     expect(resolveMode(inputOf({ flags: { ...PAGE_FLAGS, editor: BUILT } }))).toEqual({
       mode: "device",

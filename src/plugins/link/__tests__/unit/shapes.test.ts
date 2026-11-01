@@ -219,6 +219,65 @@ describe("readManifest", () => {
     expect(readManifest({ ...good, build: "dev" })).not.toHaveProperty("build");
   });
 
+  it("keeps the choices of a command with a known marker", () => {
+    // Bug: a door's choices never reach the panels that read the manifest through link.
+    const good = toObject(manifestOf());
+    const base = {
+      id: "garden.mode",
+      title: "Mode",
+      input: { on: "boolean", choice: "string" },
+      effect: "cosmetic",
+      choices: ["calm", "storm"]
+    };
+    const toggle = { ...base, overlay: "toggle" };
+    const button = { ...base, id: "garden.pick", overlay: "button" };
+
+    expect(readManifest({ ...good, commands: [toggle, button] })?.commands).toStrictEqual([
+      toggle,
+      button
+    ]);
+  });
+
+  it("drops malformed choices and keeps the command with its marker", () => {
+    // Bug: a malformed manifest reaches a panel, which draws a chip per character or a number.
+    const good = toObject(manifestOf());
+    const base = {
+      id: "garden.mode",
+      title: "Mode",
+      input: { on: "boolean", choice: "string" },
+      effect: "cosmetic",
+      overlay: "toggle"
+    };
+
+    const read = readManifest({
+      ...good,
+      commands: [
+        { ...base, choices: "calm" },
+        { ...base, choices: ["calm", 3] },
+        { ...base, choices: [] }
+      ]
+    });
+
+    expect(read?.commands).toStrictEqual([base, base, base]);
+  });
+
+  it("drops choices next to an unknown or a missing marker", () => {
+    // Bug: a command the overlay does not show carries a list nothing reads or checks.
+    const good = toObject(manifestOf());
+    const base = { id: "garden.mode", title: "Mode", input: {}, effect: "cosmetic" };
+    const choices = ["calm", "storm"];
+
+    const read = readManifest({
+      ...good,
+      commands: [
+        { ...base, overlay: "slider", choices },
+        { ...base, choices }
+      ]
+    });
+
+    expect(read?.commands).toStrictEqual([base, base]);
+  });
+
   it("rejects bad descriptors", () => {
     const good = toObject(manifestOf());
     expect(readManifest({ ...good, game: 3 })).toBeUndefined();

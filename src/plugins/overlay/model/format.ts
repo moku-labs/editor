@@ -1,7 +1,8 @@
 /**
- * @file overlay plugin — pure formatting of the numbers and times the overlay prints, and the
- * colour tokens the view models name.
+ * @file overlay plugin — pure formatting of the numbers, times and build profile the overlay
+ * prints, and the colour tokens the view models name.
  */
+import type { BuildProfile } from "../../registry/protocol";
 
 /**
  * The colour tokens of the stylesheet (styles/tokens.ts) as `--c` values.
@@ -15,6 +16,30 @@ export const COLOUR = {
   live: "var(--live)",
   budget: "var(--budget)"
 } as const;
+
+/**
+ * The profile texts of the engine line.
+ */
+const PROFILE_TEXT: Readonly<Record<BuildProfile, string>> = {
+  dev: "dev page",
+  full: "debug, full control",
+  read: "debug, read-only",
+  none: "no agent flags"
+};
+
+/**
+ * The profile text of the engine line.
+ *
+ * @param profile - The build profile.
+ * @returns The text.
+ * @example
+ * ```ts
+ * profileText("read"); // "debug, read-only"
+ * ```
+ */
+export function profileText(profile: BuildProfile): string {
+  return PROFILE_TEXT[profile];
+}
 
 /** The no-break space that groups digits. */
 const NBSP = " ";

@@ -27,10 +27,29 @@ export function describeSource(source: SourceDescriptor): SourceDescriptor {
 }
 
 /**
- * A fresh frozen command descriptor `{ id, title, input, effect, overlay?, allowed, reason? }`:
- * the overlay marker when the command has one (never `value`: a function is not JSON), `allowed`
- * always, and `reason` only when the build refuses the command. An `allowed` or `reason` the given
- * descriptor carries is dropped: the registry owns them.
+ * The `choices` key of a command descriptor: a fresh frozen copy of the list, or no key for a
+ * missing or empty one, so a command without choices keeps the bytes of an older engine's descriptor.
+ *
+ * @param choices - The command's list.
+ * @returns `{ choices }`, or `{}`.
+ * @example
+ * ```ts
+ * choicesKey(["calm", "storm"]); // { choices: ["calm", "storm"] }, a frozen copy
+ * choicesKey([]); // {}
+ * ```
+ */
+function choicesKey(choices: readonly string[] | undefined): { choices?: readonly string[] } {
+  if (choices === undefined || choices.length === 0) return {};
+
+  return { choices: Object.freeze([...choices]) };
+}
+
+/**
+ * A fresh frozen command descriptor `{ id, title, input, effect, overlay?, choices?, allowed, reason? }`:
+ * the overlay marker when the command has one (never `value` or `choice`: a function is not JSON),
+ * a frozen copy of `choices` when the list has a value, `allowed` always, and `reason` only when
+ * the build refuses the command. An `allowed` or `reason` the given descriptor carries is dropped:
+ * the registry owns them.
  *
  * @param command - A door command or any command descriptor.
  * @param refusal - Why this page's build refuses it; absent when it runs (an editor command).
@@ -52,6 +71,7 @@ export function describeCommand(
     input: Object.freeze({ ...command.input }),
     effect: command.effect,
     ...(command.overlay === undefined ? {} : { overlay: command.overlay }),
+    ...choicesKey(command.choices),
     allowed: refusal === undefined,
     ...(refusal === undefined ? {} : { reason: refusal })
   });

@@ -86,6 +86,36 @@ export const TABS = `
     [data-command][data-state="refused"] [data-part="name"] span { color: var(--ink-2); }
     [data-command][data-state="refused"] [data-part="state"] { border-color: var(--rule); color: var(--disabled-ink); }
     [data-command][data-state="busy"] { cursor: progress; }
+    [data-part="choices"] {
+      --c: var(--measured);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 5px;
+      cursor: pointer;
+    }
+    [data-part="choices"][data-state="off"] { --c: var(--caution); }
+    [data-part="choices"][data-state="refused"] { --c: var(--disabled-ink); cursor: not-allowed; }
+    [data-part="choices"][data-state="busy"] { cursor: progress; }
+    [data-choice] {
+      flex: 1 0 auto;
+      min-width: 44px;
+      max-width: 100%;
+      height: 44px;
+      padding: 0 10px;
+      overflow: hidden;
+      border: 1px solid var(--c);
+      border-radius: 3px;
+      background: var(--legend-ground);
+      color: var(--c);
+      font: 600 12px/1 var(--font-cond);
+      letter-spacing: .06em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+      cursor: inherit;
+    }
+    [data-choice][data-current] { background: var(--c); color: var(--legend-ground); }
     [data-part="game-note"] {
       display: flex;
       align-items: flex-start;

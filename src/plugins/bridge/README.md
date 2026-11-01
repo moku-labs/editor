@@ -7,12 +7,14 @@ A game's dev entry, and the page agent of a debug build, add it. It is exported 
 `@moku-labs/editor/agent` as `bridgePlugin`; its types as `Bridge`. It depends on `registry`,
 `channel` and `recorder` (it pulls the recorder's log; the recorder never imports the bridge).
 
-It runs in one of two modes, decided at start (see [Device mode](#device-mode)):
+It runs in one of three modes, decided at start (see [Device mode](#device-mode)):
 
 - **Page mode**: a page the dev server served. Everything below (hello, socket, requests, taps,
   checkpoint) is page mode.
 - **Device mode**: a debug build on a phone with no dev server. It dials a computer address on the
   hub's device listener, pairs by a code, and ships the recorder's log.
+- **Off**: a store-signed test build. It never opens a socket; the registry, the channel and the
+  overlay keep working (see [Mode and address](#mode-and-address)).
 
 What it does:
 
@@ -103,15 +105,27 @@ At start the bridge reads `localStorage["moku-editor:link"]` and decides (first 
 
 | # | Condition | Mode | Address |
 |---|---|---|---|
-| 1 | `__MOKU_GAME_EDITOR__` is a non-empty string (a debug build, `--editor host:port`) | device | remembered last ?? `device` ?? the build's address |
-| 2 | config `device` is set | device | remembered last ?? `device` |
-| 3 | a page URL that is not http(s) (`tauri://localhost` on iOS, `file:`), the native WebView's own host (`http://tauri.localhost` on Android), or no page URL with a `hello` that is not an absolute http(s) URL | device | remembered last ?? `127.0.0.1:47600` |
-| 4 | otherwise (a page the dev server served; also a page without a URL whose `hello` names its server: a headless agent in Bun) | page | none |
+| 1 | `__MOKU_GAME_EDITOR__ === "off"` (a store-signed test build) | off | none |
+| 2 | `__MOKU_GAME_EDITOR__` is any other non-empty string (a debug build, `--editor host:port`) | device | remembered last ?? `device` ?? the build's address |
+| 3 | config `device` is set | device | remembered last ?? `device` |
+| 4 | a page URL that is not http(s) (`tauri://localhost` on iOS, `file:`), the native WebView's own host (`http://tauri.localhost` on Android), or no page URL with a `hello` that is not an absolute http(s) URL | device | remembered last ?? `127.0.0.1:47600` |
+| 5 | otherwise (a page the dev server served; also a page without a URL whose `hello` names its server: a headless agent in Bun) | page | none |
 
 The remembered address wins: the person chose it on the device after the build was made. An address
 `parseAddress` refuses is skipped; a build address it refuses is warned about once
 (`bridge:bad-address`), because the engine's `--editor` rule (`[\w.-]+` hosts) is wider than ours.
-`connect(address)` and `overlay:connect` always switch to device mode, also on a dev page.
+`connect(address)` and `overlay:connect` always switch to device mode, also on a dev page, except
+in `off`.
+
+**No link (`off`).** A store-signed test build has no editor. The build writes
+`__MOKU_GAME_EDITOR__ = "off"` (`LINK_OFF` of `hub/protocol`, a contract with the engine), and step 1
+wins over all the rest: a remembered address, config `device` and a native page do not matter. The
+bridge goes to phase `lost`, publishes one `bridge:status`, `{ status: { kind: "lost", reason: "off",
+lastFrame, retryInMs: 0 } }` with no `link` (the overlay never sees `connecting`), logs `bridge:off`
+at info and stops there: no heartbeat, visibility, tap or reload listener, no checkpoint, no socket,
+no fetch, no timer. `connect()` and `overlay:connect` do nothing, before or after start. They read
+the flag, not the mode, so a `connect()` before start cannot turn the build into device mode, and
+`connect()` does not check its address here, so it does not throw.
 
 ### Connect sequence
 
@@ -306,10 +320,10 @@ tool `editor_clock`.
 
 | Member | Signature | Result |
 |---|---|---|
-| `status` | `status(): LinkStatus` | `{ kind: "connecting" }` before start and while connecting. `{ kind: "live" \| "paused", frame }` while open, from `channel.heartbeat()`. `{ kind: "lost", reason, lastFrame, retryInMs }` while lost (`retryInMs` is 0 when no retry is scheduled). `{ kind: "lost", reason: "stopped", lastFrame, retryInMs: 0 }` after stop. Never `silent` or `empty`: those are tools-side states. |
+| `status` | `status(): LinkStatus` | `{ kind: "connecting" }` before start and while connecting. `{ kind: "live" \| "paused", frame }` while open, from `channel.heartbeat()`. `{ kind: "lost", reason, lastFrame, retryInMs }` while lost (`retryInMs` is 0 when no retry is scheduled). `{ kind: "lost", reason: "stopped", lastFrame, retryInMs: 0 }` after stop. `{ kind: "lost", reason: "off", lastFrame, retryInMs: 0 }` from start on in `off`. Never `silent` or `empty`: those are tools-side states. |
 | `session` | `session(): string \| undefined` | The session id from the hub's `editor`/`session` notification after `hello`. `undefined` before it arrives and after the socket closes. |
-| `link` | `link(): DeviceLink \| undefined` | Device mode: `{ mode: "none" \| "connecting" \| "adb" \| "lan", address, pairing?: { code }, editorEngine?, seenAt? }`, a fresh copy. `adb` is an open socket at a loopback address, `lan` at any other. `undefined` in page mode. |
-| `connect` | `connect(address: string): void` | Switches to device mode at `address`, remembers it, closes the current socket (1000 `switch`) and dials now with the streak reset. The live address does nothing. A bad address throws a `TypeError` (`[moku-editor] bridge.connect needs host:port, got "<address>".`) and changes nothing. |
+| `link` | `link(): DeviceLink \| undefined` | Device mode: `{ mode: "none" \| "connecting" \| "adb" \| "lan", address, pairing?: { code }, editorEngine?, seenAt? }`, a fresh copy. `adb` is an open socket at a loopback address, `lan` at any other. `undefined` in page mode and in `off`. |
+| `connect` | `connect(address: string): void` | Switches to device mode at `address`, remembers it, closes the current socket (1000 `switch`) and dials now with the streak reset. The live address does nothing. A bad address throws a `TypeError` (`[moku-editor] bridge.connect needs host:port, got "<address>".`) and changes nothing. In `off` it does nothing at all, before or after start, a bad address included. |
 
 ```ts
 editor.bridge.status(); // { kind: "live", frame: 1840 }
@@ -324,6 +338,7 @@ Lost reasons:
 | `no page URL for <hello>` (relative `hello` and no page URL) | no |
 | `pairing refused` (device mode) | no |
 | `no socket URL for <address>` (device mode, a `hello` that is not a URL) | no |
+| `off` (a store-signed test build, `LINK_OFF`) | no |
 | `hello unreachable` | yes |
 | `hello <status>` (404: no editor server, 403: not same-origin) | yes |
 | `hello answered without ws and token` | yes |
@@ -336,7 +351,7 @@ Lost reasons:
 
 | Event | Direction | Payload | When |
 |---|---|---|---|
-| `bridge:status` | emitted | `{ status: LinkStatus; session?: string; link?: DeviceLink }` | At start (`connecting`), on every change of the status kind, on every session change, in device mode on every change of the link's mode, address, pairing code or computer engine, and while linked at most once per `SEEN_EMIT_MS` for `seenAt` alone. A frame change alone does not emit. `session` is left out when there is none; `link` in page mode. |
+| `bridge:status` | emitted | `{ status: LinkStatus; session?: string; link?: DeviceLink }` | At start (`connecting`; in `off` lost with reason `off`, and that is the only one), on every change of the status kind, on every session change, in device mode on every change of the link's mode, address, pairing code or computer engine, and while linked at most once per `SEEN_EMIT_MS` for `seenAt` alone. A frame change alone does not emit. `session` is left out when there is none; `link` in page mode. |
 | `overlay:connect` | hooked (global) | `{ address }` | The overlay's Link tab asks for another computer. A bad address: warn `bridge:bad-address`, nothing else. Otherwise the same as `connect(address)`. |
 | `recorder:status` | hooked (the recorder's, through `depends`) | `RecorderStatusEvent` | Ships the pending log lines; the bridge reads none of its numbers. |
 
@@ -384,7 +399,7 @@ hooks: () => ({ "bridge:status": ({ status, session }) => showDot(status.kind, s
 | Phase | What happens |
 |---|---|
 | `onInit` | `initBridge`: `checkConfig` (`hello` non-empty, `retryMs` and `callTimeoutMs` whole numbers of at least 100, `device` a `host:port` when set, `linesPerBatch` 1–1000), then `registry.add` of `editor.reload` and `editor.clock`, in that order. A duplicate id throws at `createApp`. |
-| `onStart` | `startBridge`: reads the remembered links, decides the mode and the address, publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. In page mode a stored checkpoint is restored first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. |
+| `onStart` | `startBridge`: reads the remembered links, decides the mode and the address, publishes `connecting`, listens to `channel.onHeartbeat`, to `visibilitychange`, to `pointerdown` on the window and to Bun's `bun:beforeFullReload`. In page mode a stored checkpoint is restored first; then it connects without awaiting. `app.start()` resolves even when no editor server answers. In `off` it stops after the mode: it publishes lost `off` and logs `bridge:off`, nothing else. |
 | `onStop` | `stopBridge`: phase `stopped`, clears the retry timer, every deadline and the ack deadline of a batch in flight, removes the listeners and a pending `editor.reload`, ends every subscription, clears the session. An open socket gets `bye` and close 1000. A socket that is not open yet is closed. A hello fetch still in flight opens nothing. |
 
 Heartbeat tick, only while open: send the beat (always, even when congested), update the status,
@@ -405,6 +420,7 @@ Log events:
 | Event | Level | When |
 |---|---|---|
 | `bridge:connected` | info | Socket open. `{ url }` is the hello origin and path, or `ws://<address>{path}/ws` in device mode. |
+| `bridge:off` | info | Start of a store-signed test build (`__MOKU_GAME_EDITOR__ === "off"`): no link, once. |
 | `bridge:no-computer` | info, then debug | Device mode, the first failure of a streak before the page ever linked. `{ address, retryInMs }`. |
 | `bridge:try-address` | debug | Device mode, a dial that never opened moved the next one to the next candidate. `{ address }`. |
 | `bridge:paired` | info | The computer confirmed this phone. `{ address }`. |
@@ -431,8 +447,8 @@ Log events:
 | agent to hub, device mode | `pair PairParams` (first on a socket without credentials), `perf.lines PerfLinesParams` (channel `editor`) |
 | hub to agent, device mode | `paired PairedParams`, `perf.ack PerfAckParams` (channel `editor`) |
 
-The device-link types and `parseAddress` / `isLoopback` come from `../hub/protocol`
-(runtime-free), never from the hub plugin.
+The device-link types, `LINK_OFF` and `parseAddress` / `isLoopback` come from `../hub/protocol`
+(runtime-free), never from the hub plugin. `off` has no wire at all.
 
 - `sub` is a safe integer of at least 0, else -32602 with field `sub`.
 - Another method, or another channel than `game`, answers -32601 `unknown method …`.

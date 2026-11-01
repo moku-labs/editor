@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { COLOUR } from "../../model/format";
-import {
-  engineLine,
-  headerView,
-  isStale,
-  linkLegend,
-  pillLabel,
-  profileText
-} from "../../model/header";
+import { COLOUR, profileText } from "../../model/format";
+import { engineLine, headerView, isStale, linkLegend, pillLabel } from "../../model/header";
 import type { LinkPayload } from "../../types";
 import { secondOf } from "../helpers";
 
@@ -37,6 +30,20 @@ describe("linkLegend", () => {
       colour: COLOUR.ink
     });
     expect(linkLegend(undefined, true).colour).toBe(COLOUR.ink);
+  });
+
+  it("a build with no link reads DEV on a tester's phone (it reads NO PC)", () => {
+    const off: LinkPayload = {
+      status: { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 }
+    };
+    expect(linkLegend(off, true)).toEqual({ kind: "none", text: "NO PC", colour: COLOUR.ink });
+  });
+
+  it("a dev page that lost its server reads as a build with no link (any other reason stays DEV)", () => {
+    const lost: LinkPayload = {
+      status: { kind: "lost", reason: "socket_closed", lastFrame: 9, retryInMs: 1000 }
+    };
+    expect(linkLegend(lost, true).text).toBe("DEV");
   });
 
   it("a connecting LAN address shows ADB (it reads LAN; a loopback reads ADB)", () => {

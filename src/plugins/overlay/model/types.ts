@@ -163,6 +163,11 @@ export type FramesView = {
 export type ToastView = { readonly text: string; readonly tone: "info" | "error" };
 
 /**
+ * One choice under a toggle on the Game tab.
+ */
+export type GameChoice = { readonly value: string; readonly current: boolean };
+
+/**
  * One row of the Game tab.
  */
 export type GameRow = {
@@ -175,6 +180,8 @@ export type GameRow = {
   readonly pressed: boolean | undefined;
   readonly disabled: boolean;
   readonly title: string | undefined;
+  /** The choices under the switch, with the row's `disabled` and `title`. No key without them. */
+  readonly choices?: readonly GameChoice[];
 };
 
 /**

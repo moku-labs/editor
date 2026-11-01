@@ -166,6 +166,26 @@ describe("linkTabView", () => {
     expect(tab.live).toEqual({ title: "Live via the dev server", text: "" });
     expect(tab.address).toBeUndefined();
   });
+
+  it('a build with no link says "Live via the dev server" on a tester\'s phone (NO PC lit, no address, no live box, no seen line, the note)', () => {
+    const tab = view({
+      payload: { status: { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 } }
+    });
+    expect(tab.keys.map(key => [key.word, key.lit])).toEqual([
+      ["NO PC", true],
+      ["CONNECTING", false],
+      ["ADB", false],
+      ["LAN", false]
+    ]);
+    expect(tab.address).toBeUndefined();
+    expect(tab.live).toBeUndefined();
+    expect(tab.seen).toBeUndefined();
+    expect(tab.note).toBe("This test build has no editor link.");
+  });
+
+  it("a linked phone shows a note about no link (the note is only for a build without one)", () => {
+    expect(view().note).toBeUndefined();
+  });
 });
 
 describe("connectLink", () => {

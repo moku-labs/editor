@@ -1,14 +1,13 @@
 /**
  * @file overlay plugin — the Link tab's view model (C6, F3): the mode keys, the address row, the
- * pairing box, the STALE caution, the live box and the seen line. Pure.
+ * pairing box, the STALE caution, the live box, the seen line and a build with no link. Pure.
  */
 import type { DeviceLink } from "../../hub/protocol";
-import { isLoopback, parseAddress } from "../../hub/protocol";
+import { isLoopback, LINK_OFF, parseAddress } from "../../hub/protocol";
 import type { RecorderStatusEvent } from "../../recorder/types";
 import type { BuildInfo } from "../../registry/protocol";
 import type { LinkPayload } from "../types";
-import { COLOUR, groupDigits, hourMinute, secondsBetween } from "./format";
-import { profileText } from "./header";
+import { COLOUR, groupDigits, hourMinute, profileText, secondsBetween } from "./format";
 import type { AddressRow, LinkTabView, ModeKey } from "./types";
 
 /** The hint under a bad address. */
@@ -19,6 +18,9 @@ const PLACEHOLDER = "192.168.1.5:47600";
 
 /** The note of an agent without the bridge. */
 const NO_BRIDGE = "This build has no editor link (the bridge is not in the agent).";
+
+/** The note of a store-signed test build, whose bridge never dials. */
+const NO_LINK = "This test build has no editor link.";
 
 /** The four mode keys: kind, word, sub line, colour. */
 const MODES: readonly (readonly [ModeKey["kind"], string, string, string])[] = [
@@ -43,6 +45,21 @@ export function isLive(mode: DeviceLink["mode"]): boolean {
 }
 
 /**
+ * True in a build with no editor link: the bridge's status is lost with the reason `LINK_OFF`.
+ *
+ * @param payload - The last `bridge:status`.
+ * @returns Whether this build never reaches a computer.
+ * @example
+ * ```ts
+ * isLinkOff({ status: { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 } }); // true
+ * ```
+ */
+export function isLinkOff(payload: LinkPayload | undefined): boolean {
+  const status = payload?.status;
+  return status?.kind === "lost" && status.reason === LINK_OFF;
+}
+
+/**
  * Checks the address field: `host:port`, normalized.
  *
  * @param text - The field.
@@ -57,16 +74,16 @@ export function checkAddress(text: string): string | undefined {
 }
 
 /**
- * The mode keys: the current one lit (NO PC without a bridge, none on a dev page); LAN outlined
- * as the candidate while connecting to a non-loopback address.
+ * The mode keys: the current one lit (NO PC when the build can reach no computer, none on a dev
+ * page); LAN outlined as the candidate while connecting to a non-loopback address.
  *
  * @param payload - The last `bridge:status`.
- * @param hasBridge - Whether the bridge is composed.
+ * @param canLink - Whether the build can reach a computer: a bridge, and not a build with no link.
  * @returns The keys.
  */
-function modeKeys(payload: LinkPayload | undefined, hasBridge: boolean): ModeKey[] {
+function modeKeys(payload: LinkPayload | undefined, canLink: boolean): ModeKey[] {
   const link = payload?.link;
-  const current = hasBridge ? link?.mode : "none";
+  const current = canLink ? link?.mode : "none";
   const host = link === undefined ? undefined : parseAddress(link.address)?.host;
   const lanCandidate = current === "connecting" && host !== undefined && !isLoopback(host);
   return MODES.map(([kind, word, sub, colour]) => ({
@@ -187,10 +204,14 @@ export function linkTabView(input: {
   readonly now: number;
 }): LinkTabView {
   const { payload, hasBridge } = input;
+  // A build with no link has a bridge, but reads as one that can reach nothing: NO PC, no live box.
+  const off = isLinkOff(payload);
+  const canLink = hasBridge && !off;
   const link = hasBridge ? payload?.link : undefined;
   const editorEngine = link?.editorEngine;
+  const note = off ? NO_LINK : NO_BRIDGE;
   return {
-    keys: modeKeys(payload, hasBridge),
+    keys: modeKeys(payload, canLink),
     address: addressRow(payload, hasBridge, input.draft),
     error: input.error,
     pairing: link?.pairing?.code,
@@ -198,9 +219,9 @@ export function linkTabView(input: {
       input.stale && editorEngine !== undefined
         ? { phone: input.build.engine ?? "unknown", computer: editorEngine }
         : undefined,
-    live: liveBoxOf(link, hasBridge && link === undefined, input.rec, input.now),
+    live: liveBoxOf(link, canLink && link === undefined, input.rec, input.now),
     engineInline: link !== undefined && isLive(link.mode),
     seen: seenOf(link, input.build),
-    note: hasBridge ? undefined : NO_BRIDGE
+    note: canLink ? undefined : note
   };
 }

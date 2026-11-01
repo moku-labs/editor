@@ -75,3 +75,31 @@ describe("describeCommand", () => {
     expect("reason" in descriptor).toBe(false);
   });
 });
+
+describe("describeCommand choices", () => {
+  it("copies choices right after overlay, never choice(app); a door's later push changes nothing", () => {
+    const choices = ["calm", "storm"];
+    const descriptor = describeCommand({ ...glow, choices, choice: () => "calm" }, undefined);
+
+    choices.push("gale");
+
+    expect(Object.keys(descriptor)).toEqual([
+      "id",
+      "title",
+      "input",
+      "effect",
+      "overlay",
+      "choices",
+      "allowed"
+    ]);
+    expect(descriptor.choices).toEqual(["calm", "storm"]);
+    expect(Object.isFrozen(descriptor.choices)).toBe(true);
+  });
+
+  it("gives the bytes of a plain toggle for a missing and for an empty list: an older manifest keeps its shape", () => {
+    const plain = JSON.stringify(describeCommand(glow, undefined));
+
+    expect(JSON.stringify(describeCommand({ ...glow, choices: undefined }, undefined))).toBe(plain);
+    expect(JSON.stringify(describeCommand({ ...glow, choices: [] }, undefined))).toBe(plain);
+  });
+});

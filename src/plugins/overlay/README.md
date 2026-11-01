@@ -69,7 +69,7 @@ Constants in `types.ts`: `PAINT_MS` 250 (the tick), `SLIDE_MS` 120, `TOAST_MS` 3
 | `toggle()` | Hidden → the last visible mode (the card by default); pill or card → hidden. |
 | `isOpen()` | True for the pill and the card. |
 | `mode()` | `"hidden"`, `"pill"` or `"card"`. |
-| `commands()` | The game's commands marked `overlay: "toggle" \| "button"`, in manifest order, a toggle's value read now, `allowed` and the refusal `reason`. Empty: no Game tab. |
+| `commands()` | The game's commands marked `overlay: "toggle" \| "button"`, in manifest order, a toggle's value read now, `allowed` and the refusal `reason`; a toggle's `choices` and its current `choice` (undefined when `choice(app)` failed), no key without them. Empty: no Game tab. |
 
 ```ts
 editor.overlay.open({ mode: "pill" });
@@ -106,7 +106,7 @@ await link.run("editor.overlay", { mode: "pill" });
 // { value: { mode: "pill" }, state: { path: "garden/boss", frame: 4812, tainted: false } }
 ```
 
-## Game and Record tabs
+## Game, Record and Link tabs
 
 **Game.** A row's `allowed` comes from the registry's build profile (`refusalOf(profile, effect)`): a `--debug` build of
 an engine that includes control (`__MOKU_GAME_CONTROL__`, profile `full`) allows every marked command, so nothing is
@@ -121,6 +121,23 @@ that (its `--debug` had no control) or a deliberate `--debug=read` build; the wo
 | The toast of a press refused -32009 `read_only` | `{title} needs a debug build of a newer engine.` |
 
 `CONTROL_ENGINE` (`model/game.ts`) is the engine release whose `--debug` includes control: the pinned engine, `0.15.1`.
+
+A toggle with `choices` draws them right under its switch, the current one marked: a group of its own, because a button
+cannot hold a button. The chips wrap at the card's width, and they are disabled and titled with the row, so a refused
+build greys them together and a press in flight holds them too: the busy set is keyed by command id, so a choice and the
+switch share one flight. An older engine's manifest has no `choices` and draws as before.
+
+| Press | Runs | Mark and toast |
+|---|---|---|
+| A choice | `{ on: value, choice: tapped }` | `{title} {tapped}` |
+| The switch, with choices | `{ on: !value, choice: current }`; `choices[0]` when `choice(app)` failed | `{title} on` / `{title} off` |
+| The switch, without choices | `{ on: !value }` | `{title} on` / `{title} off` |
+| A button | `{}` | `{title}` |
+
+**Link.** A build with no link (`__MOKU_GAME_EDITOR__ === "off"`, a store-signed test build) has a bridge that never
+dials. `isLinkOff(payload)` (`model/link.ts`) reads it from `bridge:status`: lost with the reason `LINK_OFF`. The header
+and the pill read `NO PC`, not `DEV`. The tab lights `NO PC` with no address row, no live box and no seen line, and notes
+`This test build has no editor link.` The overlay, its commands and the device log work as on any other build.
 
 **Record.** The recorder starts no log by itself. Idle, the top row reads `OFF` with `Nothing is saved until you
 record.` / `The editor or an agent can start it too.` Start calls `recorder.start({ by: "phone" })`, so the tools page
@@ -167,14 +184,14 @@ once), `overlay:fonts-unavailable` (debug).
 
 | Kind | Name | Used for |
 |---|---|---|
-| `depends` | `registryPlugin` | `add` (`editor.overlay`), `envelope`, `manifest` (overlay commands, the game's name), `command(id).value()`, `build()` (engine line, profile, STALE) |
+| `depends` | `registryPlugin` | `add` (`editor.overlay`), `envelope`, `manifest` (overlay commands, the game's name), `command(id).value()` and `.choice()`, `build()` (engine line, profile, STALE) |
 | `depends` | `channelPlugin` | `run(id, input, "overlay")` for a Game tab press |
 | `depends` | `perfPlugin` | `status`, `readWindow` (visitors made once), `second`, `spike`, `monitor` (the agent bracket) |
 | `depends` | `recorderPlugin` | `status` (the Record tab and its origin line), `start` (`{ by: "phone" }`), `stop`, `mark`, `command` (the auto mark of a press), `marks`, `files`, `share`, `remove` |
 | Presence | `ctx.has("bridge")` | The Link tab's no-bridge state; no import of `bridgePlugin` |
 
-Pure modules: `perf/graph`, `perf/protocol`, `hub/protocol` (`parseAddress`, `isLoopback`, `DeviceLink`; never the hub
-index, `hub-import.test.ts`) and `registry/protocol`.
+Pure modules: `perf/graph`, `perf/protocol`, `hub/protocol` (`parseAddress`, `isLoopback`, `LINK_OFF`, `DeviceLink`;
+never the hub index, `hub-import.test.ts`) and `registry/protocol`.
 
 ## Cheapness
 
@@ -227,5 +244,5 @@ Size: 43 424 bytes of woff2, 58 788 bytes of `faces.ts`; the dev agent bundle is
 | `pluginConfigs.overlay.corner` | `dock: "left"` (top-left / bottom-left) or `dock: "right"` |
 | `pluginConfigs.overlay.open: true` | `mode: "card"` (or `"pill"`), or the game's `config.debug.overlay` |
 | `editor.overlay { on: true / false }` | `{ mode: "card" }` / `{ mode: "hidden" }` |
-| The one-click cheat buttons | Mark the command in the game's `.dev` module: `overlay: "button"` (or `"toggle"` with `input: { on: "boolean" }` and `value(app)`) |
+| The one-click cheat buttons | Mark the command in the game's `.dev` module: `overlay: "button"` (or `"toggle"` with `input: { on: "boolean" }` and `value(app)`; with `choices` and `choice(app)` add `choice: "string"` to the input) |
 | Custom agent compositions | Compose `[registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin]` |

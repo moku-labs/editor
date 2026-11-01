@@ -9,6 +9,7 @@ import { paintNow } from "../../paint/tick";
 import {
   bracketMonitor,
   changes,
+  command,
   createOctx,
   GARDEN_COMMANDS,
   RECORDING,
@@ -51,6 +52,35 @@ function garden(): TestOctx {
   const octx = createOctx({}, GARDEN_COMMANDS);
   octx.registry.values.set("garden.glow", false);
   octx.registry.values.set("garden.fog", true);
+  return octx;
+}
+
+/** A toggle with three choices, as the manifest describes it. */
+const MOOD: CommandDescriptor = {
+  id: "garden.mood",
+  title: "Mood",
+  input: { on: "boolean", choice: "string" },
+  effect: "cosmetic",
+  overlay: "toggle",
+  choices: ["calm", "storm", "dusk"],
+  allowed: true
+};
+
+/**
+ * A context over the Mood toggle.
+ *
+ * @param value - What its `value(app)` answers.
+ * @param current - What its `choice(app)` answers; undefined for a failed read.
+ * @param extra - Descriptor fields to replace.
+ * @returns The context.
+ */
+function mood(
+  value: boolean,
+  current: string | undefined,
+  extra: Partial<CommandDescriptor> = {}
+): TestOctx {
+  const octx = createOctx({}, [{ ...MOOD, ...extra }]);
+  octx.registry.command = () => ({ value: () => value, choice: () => current });
   return octx;
 }
 
@@ -217,6 +247,101 @@ describe("a press", () => {
     answers[0]?.({ value: true, state: { path: "a", frame: 1, tainted: false } });
     await first;
     expect(octx.state.busy.size).toBe(0);
+  });
+});
+
+describe("a toggle with choices in the model", () => {
+  it("the row marks no choice, or the wrong one (the one choice(app) answers; none when it failed)", () => {
+    const rows = gameRows(overlayCommands(mood(true, "storm").registry), new Set());
+    expect(rows[0]?.choices).toEqual([
+      { value: "calm", current: false },
+      { value: "storm", current: true },
+      { value: "dusk", current: false }
+    ]);
+    const failed = gameRows(overlayCommands(mood(true, undefined).registry), new Set());
+    expect(failed[0]?.choices?.some(choice => choice.current)).toBe(false);
+  });
+
+  it("choice(app) is read four times a second while the Game tab hides (only with the values)", () => {
+    const choice = vi.fn(() => "calm");
+    const octx = mood(true, "calm");
+    octx.registry.command = () => ({ choice });
+    expect(overlayCommands(octx.registry, false)[0]).toMatchObject({ choices: MOOD.choices });
+    expect(choice).not.toHaveBeenCalled();
+    expect(overlayCommands(octx.registry)[0]?.choice).toBe("calm");
+    expect(choice).toHaveBeenCalledOnce();
+  });
+
+  it("an older manifest's rows grow a choices key (no key on a plain toggle or a button)", () => {
+    const plain = command("garden.sun", { overlay: "toggle", allowed: true });
+    const button = command("garden.rain", { overlay: "button", allowed: true, choices: ["calm"] });
+    const commands = overlayCommands(createOctx({}, [plain, button]).registry);
+    for (const each of commands) {
+      expect(each).not.toHaveProperty("choices");
+      expect(each).not.toHaveProperty("choice");
+    }
+    for (const row of gameRows(commands, new Set())) expect(row).not.toHaveProperty("choices");
+  });
+});
+
+describe("a press on a toggle with choices", () => {
+  it("a tap flips the switch or loses the choice (it keeps the switch, sets the choice and names it)", async () => {
+    for (const on of [true, false]) {
+      const octx = mood(on, "calm");
+      await pressCommand(octx, "garden.mood", "storm");
+      expect(octx.channel.runs).toEqual([
+        { id: "garden.mood", input: { on, choice: "storm" }, via: "overlay" }
+      ]);
+      expect(octx.recorder.calls).toEqual(["command:garden.mood:Mood storm"]);
+      expect(octx.state.toast?.text).toBe("Mood storm.");
+    }
+  });
+
+  it("the switch drops the choice (it flips and keeps the current one, in the words of today)", async () => {
+    for (const [value, on, word] of [
+      [true, false, "off"],
+      [false, true, "on"]
+    ] as const) {
+      const octx = mood(value, "storm");
+      await pressCommand(octx, "garden.mood");
+      expect(octx.channel.runs).toEqual([
+        { id: "garden.mood", input: { on, choice: "storm" }, via: "overlay" }
+      ]);
+      expect(octx.state.toast?.text).toBe(`Mood ${word}.`);
+    }
+  });
+
+  it("a failed choice(app) leaves the switch dead on a tester's phone (it sends the first choice)", async () => {
+    const octx = mood(true, undefined);
+    await pressCommand(octx, "garden.mood");
+    expect(octx.channel.runs).toEqual([
+      { id: "garden.mood", input: { on: false, choice: "calm" }, via: "overlay" }
+    ]);
+  });
+
+  it("a plain toggle sends an undefined choice, which checkInput refuses (exactly { on })", async () => {
+    const octx = garden();
+    await pressCommand(octx, "garden.glow");
+    expect(octx.channel.runs).toStrictEqual([
+      { id: "garden.glow", input: { on: true }, via: "overlay" }
+    ]);
+  });
+
+  it("a tap runs on a refused build (it runs nothing)", async () => {
+    const octx = mood(true, "calm", { allowed: false, reason: "read-only" });
+    await pressCommand(octx, "garden.mood", "storm");
+    expect(octx.channel.runs).toEqual([]);
+  });
+
+  it("a tap while the switch is in flight starts a second run (one flight per command)", async () => {
+    const octx = mood(true, "calm");
+    const answers: ((value: RunResult) => void)[] = [];
+    octx.channel.answer = () => new Promise(resolve => answers.push(resolve));
+    const first = pressCommand(octx, "garden.mood");
+    await pressCommand(octx, "garden.mood", "storm");
+    expect(octx.channel.runs).toHaveLength(1);
+    answers[0]?.({ value: true, state: { path: "a", frame: 1, tainted: false } });
+    await first;
   });
 });
 

@@ -46,6 +46,7 @@ export type OverlayActions = {
   readonly back: () => void;
   readonly more: () => void;
   readonly press: (id: string) => void;
+  readonly choose: (id: string, choice: string) => void;
   readonly record: (action: "start" | "stop") => void;
   readonly markDraft: (text: string) => void;
   readonly mark: () => void;
@@ -96,29 +97,55 @@ function errorText(error: unknown): string {
 }
 
 /**
- * Presses a Game tab command: a toggle runs `{ on: !value }`, a button `{}`, through
+ * What a press runs and the words of its mark and toast. A tap on a choice keeps the switch and
+ * names the choice; the switch runs the opposite of its value and names the value it switches to,
+ * with the current choice when the toggle has choices: `choices[0]` when `choice(app)` failed, as
+ * the run needs a string and the failed read has already warned. A button runs `{}`.
+ *
+ * @param command - The command pressed, read now.
+ * @param tapped - The choice tapped; undefined for the row itself.
+ * @returns The input and the label.
+ */
+function pressOf(
+  command: OverlayCommand,
+  tapped: string | undefined
+): { readonly input: Json; readonly label: string } {
+  const { title, value } = command;
+  if (command.kind !== "toggle") return { input: {}, label: title };
+  if (tapped !== undefined) {
+    return { input: { on: value === true, choice: tapped }, label: `${title} ${tapped}` };
+  }
+  const on = value !== true;
+  const choice = command.choice ?? command.choices?.[0];
+  return {
+    input: choice === undefined ? { on } : { on, choice },
+    label: `${title} ${on ? "on" : "off"}`
+  };
+}
+
+/**
+ * Presses a Game tab command: a toggle runs `{ on: !value }`, with its current `choice` when it has
+ * choices; a tap on a choice runs `{ on: value, choice: tapped }`; a button runs `{}`; all through
  * `channel.run(id, input, "overlay")` (the recorder's `registry:command` hook writes the one
  * `command` line); a success adds the recorder's auto mark and toasts; a -32009 refusal toasts its
  * reason (`read_only`: a debug build of a newer engine, `dev_only`: a dev or debug build); any
- * other failure toasts and warns. Ignored while busy or for a refused command.
+ * other failure toasts and warns. Ignored while busy (the switch and its choices share one flight)
+ * or for a refused command.
  *
  * @param octx - Domain context.
  * @param id - The command id.
+ * @param tapped - The choice tapped; undefined for the row itself.
  * @returns Settles when the run settled; never rejects.
  */
-export async function pressCommand(octx: OverlayCtx, id: string): Promise<void> {
+export async function pressCommand(octx: OverlayCtx, id: string, tapped?: string): Promise<void> {
   // Guard: a press in flight, or an unknown or refused command, does nothing.
   const { state } = octx;
   if (state.busy.has(id)) return;
   const command = overlayCommands(octx.registry).find(each => each.id === id);
   if (command === undefined || !command.allowed) return;
 
-  // Gather: a toggle runs the opposite of its value; the mark names the value it switches to.
-  const toggle = command.kind === "toggle";
-  const on = command.value !== true;
-  const input: Json = toggle ? { on } : {};
-  const switchedTo = on ? "on" : "off";
-  const label = toggle ? `${command.title} ${switchedTo}` : command.title;
+  // Gather: the input from the values read now, and the words of the mark and the toast.
+  const { input, label } = pressOf(command, tapped);
   state.busy.add(id);
   paintNow(octx);
   try {
@@ -399,6 +426,9 @@ export function actionsOf(octx: OverlayCtx): OverlayActions {
     },
     press: id => {
       pressCommand(octx, id).catch(settled);
+    },
+    choose: (id, choice) => {
+      pressCommand(octx, id, choice).catch(settled);
     },
     record: action => {
       switchRecording(octx, action).catch(settled);

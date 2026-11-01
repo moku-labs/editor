@@ -14,7 +14,7 @@ import { isInputError, messageOf } from "./failures";
  * settles: `ok` true on resolve, false on reject (a refusal included); `input` is the raw input
  * (null when none), `via` the caller's (`"local"` when absent). A run whose input check refused
  * it (-32602) is not a run and emits nothing. A throwing emit is logged `registry:emit-failed` and
- * never changes the caller's result. The descriptor and `value()` are kept.
+ * never changes the caller's result. The descriptor, `value()` and `choice()` are kept.
  *
  * @param entry - The command entry (a door, module or guarded editor entry).
  * @param emit - The registry's emit.

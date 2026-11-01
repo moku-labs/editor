@@ -114,6 +114,19 @@ describe("isManifest", () => {
     expect(isManifest(manifestWith({ panels: [{ id: "p", module: "/p.js" }] }))).toBe(true);
   });
 
+  it("accepts a command whose descriptor carries choices (bug: a new agent's hello is refused)", () => {
+    const toggle = {
+      id: "c",
+      title: "c",
+      input: { on: "boolean", choice: "string" },
+      effect: "cosmetic",
+      overlay: "toggle",
+      choices: ["slow", "fast"]
+    };
+
+    expect(isManifest(manifestWith({ commands: [toggle] }))).toBe(true);
+  });
+
   it("accepts a well-formed restored entry and rejects a malformed one (R6)", () => {
     expect(isManifest(manifestWith({ restored: { bookmark: '{"path":"home"}', frame: 12 } }))).toBe(
       true

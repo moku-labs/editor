@@ -47,33 +47,38 @@ export function reasonText(reason: CommandRefusal | undefined): string {
 }
 
 /**
- * One overlay command from its descriptor; a toggle's value read now (when asked).
+ * One overlay command from its descriptor; a toggle's value read now (when asked), and its choices
+ * with the current one.
  *
  * @param descriptor - A manifest command with an overlay marker.
  * @param kind - Its marker.
- * @param value - The toggle's value function, if any.
+ * @param entry - The command's registry entry, when its values are to be read.
  * @returns The overlay command.
  */
 function commandOf(
   descriptor: CommandDescriptor,
   kind: "toggle" | "button",
-  value: (() => boolean | undefined) | undefined
+  entry: ReturnType<OverlayRegistry["command"]>
 ): OverlayCommand {
   const allowed = isAllowed(descriptor);
+  const toggle = kind === "toggle";
+  const { choices } = descriptor;
   return {
     id: descriptor.id,
     title: descriptor.title,
     kind,
-    value: kind === "toggle" ? value?.() : undefined,
+    value: toggle ? entry?.value?.() : undefined,
     effect: descriptor.effect,
     allowed,
-    reason: allowed ? undefined : reasonText(descriptor.reason)
+    reason: allowed ? undefined : reasonText(descriptor.reason),
+    ...(toggle && choices !== undefined ? { choices, choice: entry?.choice?.() } : {})
   };
 }
 
 /**
- * The game's commands marked for the overlay, in manifest order. A toggle's value is read now
- * (`command(id).value()`, the engine's `value(app)`) only when `withValues`.
+ * The game's commands marked for the overlay, in manifest order. A toggle's value and current
+ * choice are read now (`command(id).value()` and `.choice()`, the engine's `value(app)` and
+ * `choice(app)`) only when `withValues`.
  *
  * @param registry - The registry's manifest and command lookup.
  * @param withValues - Read the toggles' values (the Game tab shows).
@@ -87,8 +92,9 @@ export function overlayCommands(
   for (const descriptor of registry.manifest().commands) {
     const kind = descriptor.overlay;
     if (kind === undefined) continue;
-    const value = withValues ? registry.command(descriptor.id)?.value : undefined;
-    commands.push(commandOf(descriptor, kind, value));
+    commands.push(
+      commandOf(descriptor, kind, withValues ? registry.command(descriptor.id) : undefined)
+    );
   }
   return commands;
 }
@@ -109,7 +115,7 @@ export function tabsOf(hasCommands: boolean): readonly OverlayTab[] {
 
 /**
  * One Game tab row: toggle ON / OFF, button RUN; a refused command greyed with its reason; a
- * command in flight busy.
+ * command in flight busy; a toggle's choices with the current one marked.
  *
  * @param command - The overlay command.
  * @param busy - Whether its run has not settled.
@@ -118,6 +124,7 @@ export function tabsOf(hasCommands: boolean): readonly OverlayTab[] {
 function rowOf(command: OverlayCommand, busy: boolean): GameRow {
   const toggle = command.kind === "toggle";
   const on = command.value === true;
+  const { choices, choice } = command;
   return {
     id: command.id,
     name: command.title,
@@ -129,7 +136,10 @@ function rowOf(command: OverlayCommand, busy: boolean): GameRow {
     toggle,
     pressed: toggle ? on : undefined,
     disabled: !command.allowed || busy,
-    title: command.allowed ? undefined : command.reason
+    title: command.allowed ? undefined : command.reason,
+    ...(choices === undefined
+      ? {}
+      : { choices: choices.map(value => ({ value, current: value === choice })) })
   };
 }
 

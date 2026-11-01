@@ -180,7 +180,8 @@ function editorEntriesOf(state: RegistryState): {
  *
  * @param ctx - Domain context of the registry.
  * @throws {Error} The missing-game, not-an-app, duplicate-id and descriptor errors; a `TypeError`
- *   for an unknown overlay marker or a toggle without value(app).
+ *   for an unknown overlay marker, a toggle without value(app), a button with choices, or a toggle
+ *   with choices and no string `choice` input.
  */
 export function buildCatalogue(ctx: RegistryCtx): void {
   const game = requireGame(ctx.config);

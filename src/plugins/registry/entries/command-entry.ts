@@ -22,7 +22,7 @@ import {
   wireValueOf
 } from "./failures";
 import { readBuildInfo } from "./profile";
-import { toggleValue } from "./toggles";
+import { choiceValue, toggleValue } from "./toggles";
 
 /**
  * The engine's refusal of a command by the page's build: `run` on a `--debug` page
@@ -79,7 +79,8 @@ export function runnableOf(door: DoorCommand): RunnableCommand {
 /**
  * Builds the entry of a door (or module) command. Its `run` is async and never throws
  * synchronously. The descriptor's `allowed` / `reason` come from this page's build (its flags
- * never change); an overlay toggle's entry has `value()`.
+ * never change); an overlay toggle's entry has `value()`, and `choice()` when its descriptor has
+ * `choices`.
  *
  * @param game - The game app.
  * @param door - The door command.
@@ -108,7 +109,10 @@ export function commandEntry(game: GameLike, door: DoorCommand, log: Log.LogApi)
 
       return { value: wireValueOf(id, ran.value), state: { path, frame, tainted } };
     },
-    ...(door.overlay === "toggle" ? { value: toggleValue(game, door, log) } : {})
+    ...(door.overlay === "toggle" ? { value: toggleValue(game, door, log) } : {}),
+    ...(door.overlay === "toggle" && descriptor.choices !== undefined
+      ? { choice: choiceValue(game, door, log) }
+      : {})
   });
 }
 

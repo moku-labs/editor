@@ -215,6 +215,7 @@ export type StoredOverlay = {
  * @example
  * ```ts
  * const glow: OverlayCommand = { id: "garden.glow", title: "Glow", kind: "toggle", value: false, effect: "cosmetic", allowed: true, reason: undefined };
+ * const mood: OverlayCommand = { ...glow, id: "garden.mood", title: "Mood", choices: ["calm", "storm", "dusk"], choice: "storm" };
  * ```
  */
 export type OverlayCommand = {
@@ -231,6 +232,13 @@ export type OverlayCommand = {
   readonly allowed: boolean;
   /** Why not, when not allowed: "needs a debug build of a newer engine, or without --debug=read". */
   readonly reason: string | undefined;
+  /** The values drawn under a toggle's switch. No key on a plain toggle or a button. */
+  readonly choices?: readonly string[];
+  /**
+   * The current one of `choices`, read with the value; undefined when `choice(app)` failed or the
+   * values were not read. No key without `choices`.
+   */
+  readonly choice?: string | undefined;
 };
 
 /**
@@ -554,8 +562,8 @@ export type OverlayApi = {
    */
   mode(): OverlayMode;
   /**
-   * The game's commands marked for the overlay, in manifest order, with a toggle's value read now.
-   * Empty: the card has no Game tab.
+   * The game's commands marked for the overlay, in manifest order, with a toggle's value read now,
+   * and a toggle's `choices` with its current `choice`. Empty: the card has no Game tab.
    *
    * @returns Fresh copies.
    * @example
@@ -616,7 +624,7 @@ export type OverlayRegistry = Pick<
   RegistryApi,
   "manifest" | "add" | "envelope" | "build" | "game"
 > & {
-  command(id: string): { value?(): boolean | undefined } | undefined;
+  command(id: string): { value?(): boolean | undefined; choice?(): string | undefined } | undefined;
 };
 
 /**

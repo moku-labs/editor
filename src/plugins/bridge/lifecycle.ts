@@ -1,11 +1,11 @@
 /**
  * @file bridge plugin — config check and the editor.reload and editor.clock commands (onInit), the
  * domain deps, start (onStart: the remembered links, mode and address, heartbeat listener, page
- * and reload listeners, the checkpoint restore in page mode, connect — not awaited) and stop
- * (onStop: bye, close, clear timers and the ack deadline).
+ * and reload listeners, the checkpoint restore in page mode, connect — not awaited; in off only
+ * the one lost status) and stop (onStop: bye, close, clear timers and the ack deadline).
  */
 import { channelPlugin } from "../channel";
-import { parseAddress } from "../hub/protocol";
+import { LINK_OFF, parseAddress } from "../hub/protocol";
 import { recorderPlugin } from "../recorder";
 import { registryPlugin } from "../registry";
 import { encode, notification } from "../registry/protocol";
@@ -240,15 +240,16 @@ function restoreThenConnect(deps: BridgeDeps, checkpoint: TakenCheckpoint): void
 /**
  * Reads the remembered links and decides the mode and the address. A `connect` before start
  * already chose device mode; that choice stays. A build address `parseAddress` refuses is
- * warned about once (the engine's `--editor` rule is wider than ours).
+ * warned about once (the engine's `--editor` rule is wider than ours); the off flag is no address.
  *
  * @param deps - The domain deps.
  */
 function resolveStart(deps: BridgeDeps): void {
   const { state, flags, config } = deps;
   state.remembered = readRemembered(deps);
-  if (flags.editor !== undefined && parseAddress(flags.editor) === undefined) {
-    deps.log.warn("bridge:bad-address", { address: flags.editor });
+  const { editor } = flags;
+  if (editor !== undefined && editor !== LINK_OFF && parseAddress(editor) === undefined) {
+    deps.log.warn("bridge:bad-address", { address: editor });
   }
   // A connect() before start chose device mode: its address goes first, with the remembered ones.
   if (state.mode === "device") {
@@ -269,15 +270,35 @@ function resolveStart(deps: BridgeDeps): void {
 }
 
 /**
+ * A build with no link: phase lost, the one status it ever publishes, one info line. Nothing else:
+ * no listener, no checkpoint, no connect and no timer, so `stopBridge` has nothing to undo.
+ *
+ * @param deps - The domain deps.
+ */
+function startOff(deps: BridgeDeps): void {
+  const { state } = deps;
+  state.phase = "lost";
+  const { lastFrame } = state;
+  setStatus(deps, { kind: "lost", reason: LINK_OFF, lastFrame, retryInMs: 0 }, true);
+  deps.log.info("bridge:off");
+}
+
+/**
  * Starts the bridge over its deps: the remembered links, mode and address, connecting announced,
  * the heartbeat, visibility, tap and reload listeners, then a connect without awaiting:
  * `app.start()` never waits for, or fails on, a computer. In page mode a checkpoint stored before
- * Bun's full reload is restored first (R6); a device page has no Bun HMR.
+ * Bun's full reload is restored first (R6); a device page has no Bun HMR. In off it stops after the
+ * mode, before anything is announced: the overlay never sees `connecting`.
  *
  * @param deps - The domain deps.
  */
 export function startWith(deps: BridgeDeps): void {
   resolveStart(deps);
+  if (deps.state.mode === "off") {
+    startOff(deps);
+    return;
+  }
+
   setStatus(deps, { kind: "connecting" }, true);
   deps.state.off.push(
     deps.channel.onHeartbeat(beat => {

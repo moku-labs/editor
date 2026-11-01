@@ -50,8 +50,8 @@ export function currentStatus(deps: Pick<BridgeDeps, "state" | "channel">): Link
 }
 
 /**
- * The device link of the state: undefined in page mode; in device mode the link mode, the
- * address, and the pairing code, the computer's engine and its last sign when there are some.
+ * The device link of the state: undefined in page mode and in off; in device mode the link mode,
+ * the address, and the pairing code, the computer's engine and its last sign when there are some.
  *
  * @param state - The bridge state.
  * @returns A fresh DeviceLink, or undefined.

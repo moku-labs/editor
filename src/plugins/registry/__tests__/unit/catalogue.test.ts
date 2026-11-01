@@ -474,6 +474,120 @@ describe("overlay markers", () => {
   });
 });
 
+describe("overlay choices", () => {
+  /** Toggle fields with a value(app), so the choices rule is the one that answers. */
+  const switchFields: Partial<DoorCommand> = {
+    overlay: "toggle",
+    value: () => true,
+    choices: ["calm", "storm"],
+    choice: () => "storm"
+  };
+
+  it("throws a two-line TypeError for a toggle with choices and no choice in its input", () => {
+    const ctx = createCtx({
+      game: game.app,
+      modules: [{ commands: [commandWith({ ...switchFields, input: { on: "boolean" } })] }]
+    });
+    const error = thrownBy(() => buildCatalogue(ctx));
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error).toMatchObject({
+      message:
+        '[moku-editor] Command "tiny.command" has choices and no string choice in its input.\n  Add choice: "string" to its input: the overlay runs { on, choice }.'
+    });
+  });
+
+  it("gives a number choice the same TypeError and takes an optional string: a tap sends a string", () => {
+    const refused = createCtx({
+      game: game.app,
+      modules: [
+        {
+          commands: [commandWith({ ...switchFields, input: { on: "boolean", choice: "number" } })]
+        }
+      ]
+    });
+    const taken = createCtx({
+      game: game.app,
+      modules: [
+        {
+          commands: [commandWith({ ...switchFields, input: { on: "boolean", choice: "string?" } })]
+        }
+      ]
+    });
+    const error = thrownBy(() => buildCatalogue(refused));
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error).toMatchObject({
+      message:
+        '[moku-editor] Command "tiny.command" has choices and no string choice in its input.\n  Add choice: "string" to its input: the overlay runs { on, choice }.'
+    });
+    expect(() => buildCatalogue(taken)).not.toThrow();
+  });
+
+  it("throws a two-line TypeError for a button with choices", () => {
+    const ctx = createCtx({
+      game: game.app,
+      modules: [{ commands: [commandWith({ overlay: "button", choices: ["calm"] })] }]
+    });
+    const error = thrownBy(() => buildCatalogue(ctx));
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error).toMatchObject({
+      message:
+        '[moku-editor] Command "tiny.command" is an overlay button with choices.\n  Make it an overlay toggle, or drop its choices.'
+    });
+  });
+
+  it("treats an empty list as no list: a plain toggle and a button build as before", () => {
+    const ctx = createCtx({
+      game: game.app,
+      modules: [
+        {
+          commands: [
+            commandWith({
+              ...switchFields,
+              id: "tiny.mood",
+              choices: [],
+              input: { on: "boolean" }
+            }),
+            commandWith({ id: "tiny.boss", overlay: "button", choices: [] })
+          ]
+        }
+      ]
+    });
+
+    expect(() => buildCatalogue(ctx)).not.toThrow();
+  });
+
+  it("takes a module toggle down the door path: the manifest list, choice() and a run with the choice", async () => {
+    const asked: unknown[] = [];
+    const ctx = createCtx({
+      game: game.app,
+      modules: [
+        {
+          commands: [
+            commandWith({
+              ...switchFields,
+              id: "tiny.mood",
+              effect: "cosmetic",
+              input: { on: "boolean", choice: "string" },
+              run: (_app, input) => asked.push(input)
+            })
+          ]
+        }
+      ]
+    });
+
+    buildCatalogue(ctx);
+    const entry = ctx.state.commands.get("tiny.mood");
+    await entry?.run({ on: true, choice: "calm" });
+
+    expect(entry?.descriptor.choices).toEqual(["calm", "storm"]);
+    expect(entry?.choice?.()).toBe("storm");
+    expect(asked).toEqual([{ on: true, choice: "calm" }]);
+  });
+});
+
 describe("editor.toggles", () => {
   /** Toggles of two modules: on, broken (value throws), off. */
   const on = commandWith({ id: "tiny.glow", overlay: "toggle", value: () => true });

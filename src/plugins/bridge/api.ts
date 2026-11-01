@@ -2,7 +2,7 @@
  * @file bridge plugin — api factory: status (from the phase and channel.heartbeat), session, the
  * device link, and connect (switch to another computer in device mode).
  */
-import { parseAddress } from "../hub/protocol";
+import { LINK_OFF, parseAddress } from "../hub/protocol";
 import { startCandidatesAt } from "./connection/device";
 import { redial } from "./connection/loop";
 import { rememberLast, writeRemembered } from "./connection/pairing-store";
@@ -13,7 +13,8 @@ import type { BridgeApi, BridgeCtx, BridgeDeps } from "./types";
 /**
  * Switches to device mode at `address` and dials it now: remembers it as the last address,
  * closes the current socket and connects with the streak reset. The address already live does
- * nothing; before start the address waits for start; after stop nothing happens.
+ * nothing; before start the address waits for start; after stop nothing happens. A build with no
+ * link returns at once, before it reads the address.
  *
  * @param deps - The domain deps.
  * @param address - `host:port` or `[v6]:port`.
@@ -21,6 +22,10 @@ import type { BridgeApi, BridgeCtx, BridgeDeps } from "./types";
  *   validation); nothing changes then.
  */
 export function dial(deps: BridgeDeps, address: string): void {
+  // Guard: a build with no link dials nothing. The flag, not the mode: before start the mode is
+  // still undecided, and a connect() then would make start keep device mode.
+  if (deps.flags.editor === LINK_OFF) return;
+
   // Guard: an address parseAddress refuses changes nothing.
   const parsed = parseAddress(address);
   if (parsed === undefined) {

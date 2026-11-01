@@ -423,6 +423,28 @@ describe("bridge device mode against the hub's device listener", { timeout: 15_0
     expect(JSON.parse(storage.get(PAIRING_STORE_KEY) ?? "{}").last).toBe(second.address);
   });
 
+  it("a store-signed test build, whose global says off, links to nothing on the real agent", async () => {
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    const { address } = await startComputer();
+    const remembered = { v: 1, last: address, links: {} };
+    storage.set(PAIRING_STORE_KEY, JSON.stringify(remembered));
+
+    const { app } = await startPhone("off");
+    app.bridge.connect(address);
+    app.linkTab.connect(address);
+    await sleep(250);
+
+    expect(sockets).toEqual([]);
+    expect(fetched).not.toHaveBeenCalled();
+    expect(statuses).toEqual([
+      { status: { kind: "lost", reason: "off", lastFrame: 0, retryInMs: 0 } }
+    ]);
+    expect(app.bridge.link()).toBeUndefined();
+    expect(bridgeLogs("warn")).toEqual([]);
+    expect(bridgeLogs("info")).toEqual(["bridge:off"]);
+  });
+
   it("says bye and closes 1000 on stop: the hub closes the device session with bye", async () => {
     const { address } = await startComputer();
     const { app } = await startPhone(address);

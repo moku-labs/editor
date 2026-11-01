@@ -10,6 +10,7 @@ import {
 import { startTinyHeadless } from "../../../../../tests/fixtures/tiny-screen-game";
 import type { AgentEvents } from "../../../../config";
 import { agentCoreConfig, createAgentCore, createAgentPlugin } from "../../../../config";
+import { bridgePlugin } from "../../../bridge";
 import { channelPlugin } from "../../../channel";
 import { perfPlugin } from "../../../perf";
 import { recorderPlugin } from "../../../recorder";
@@ -50,6 +51,11 @@ const framework = createAgentCore(agentCoreConfig, {
 /** The agent defaults alone: no bridge, so nothing reaches a computer. */
 const offline = createAgentCore(agentCoreConfig, {
   plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin]
+});
+
+/** The agent defaults with the real bridge, for a build whose flag says it has no link. */
+const noLink = createAgentCore(agentCoreConfig, {
+  plugins: [registryPlugin, channelPlugin, perfPlugin, recorderPlugin, overlayPlugin, bridgePlugin]
 });
 
 /** The toggle's state, read by its `value(app)`. */
@@ -102,6 +108,29 @@ const cheatModule: DevModule = {
   ]
 };
 
+/** The Mood toggle's state, read by its `value(app)` and `choice(app)`. */
+let mood = { on: true, choice: "calm" };
+
+/** A dev module with a toggle with three choices. */
+const moodModule: DevModule = {
+  commands: [
+    {
+      id: "test.mood",
+      title: "Mood",
+      input: { on: "boolean", choice: "string" },
+      effect: "cosmetic",
+      overlay: "toggle",
+      choices: ["calm", "storm", "dusk"],
+      value: () => mood.on,
+      choice: () => mood.choice,
+      run: (_app, input) => {
+        mood = { on: input.on === true, choice: String(input.choice) };
+        return mood.choice;
+      }
+    }
+  ]
+};
+
 /** A started headless tiny game. */
 type StartedGame = { readonly app: GameLike; stop(): Promise<void> };
 
@@ -117,15 +146,20 @@ const stops: (() => Promise<void>)[] = [];
  * @param pluginConfigs.overlay - Overlay overrides.
  * @param pluginConfigs.recorder - Recorder overrides.
  * @param pluginConfigs.recorder.autoStart - Start a log at start.
+ * @param pluginConfigs.module - The dev module (default the toggle and the button).
  * @returns The started app.
  */
 async function startEditor(
-  pluginConfigs: { overlay?: Partial<Config>; recorder?: { autoStart?: boolean | "device" } } = {}
+  pluginConfigs: {
+    overlay?: Partial<Config>;
+    recorder?: { autoStart?: boolean | "device" };
+    module?: DevModule;
+  } = {}
 ) {
   const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
   const app = framework.createApp({
     pluginConfigs: {
-      registry: { game: grafted, modules: [devModule] },
+      registry: { game: grafted, modules: [pluginConfigs.module ?? devModule] },
       overlay: pluginConfigs.overlay ?? {},
       recorder: pluginConfigs.recorder ?? {}
     }
@@ -201,6 +235,7 @@ function commit(
 beforeEach(async () => {
   glowOn = true;
   godOn = false;
+  mood = { on: true, choice: "calm" };
   connects.length = 0;
   vi.stubGlobal("__MOKU_GAME_DEV__", false);
   vi.stubGlobal("__MOKU_GAME_AGENT__", true);
@@ -436,6 +471,52 @@ describe("overlay integration", () => {
     expect(godOn).toBe(true);
     expect(part('[data-command="test.god"]').dataset.state).toBe("on");
     expect(monitor.events.filter(event => event.name === "command")).toHaveLength(1);
+  });
+
+  it("(9) a toggle with choices: a tap runs { on, choice } through the channel and moves the mark; the switch keeps the choice", async () => {
+    const app = await startEditor({ module: moodModule });
+    commit(30, 1000);
+    app.overlay.open({ tab: "game" });
+    expect(part("[data-current]").dataset.choice).toBe("calm");
+    expect(app.overlay.commands()[0]).toMatchObject({ value: true, choice: "calm" });
+
+    part('[data-choice="storm"]').click();
+    await vi.advanceTimersByTimeAsync(PAINT_MS);
+    expect(mood).toEqual({ on: true, choice: "storm" });
+    expect(part("[data-current]").dataset.choice).toBe("storm");
+    expect(part('[data-command="test.mood"]').dataset.state).toBe("on");
+
+    part('[data-command="test.mood"]').click();
+    await vi.advanceTimersByTimeAsync(PAINT_MS);
+    expect(mood).toEqual({ on: false, choice: "storm" });
+    expect(part("[data-current]").dataset.choice).toBe("storm");
+    expect(part('[data-command="test.mood"]').dataset.state).toBe("off");
+
+    expect(
+      monitor.events.filter(event => event.name === "command").map(event => event.detail)
+    ).toMatchObject([
+      { id: "test.mood", via: "overlay" },
+      { id: "test.mood", via: "overlay" }
+    ]);
+  });
+
+  it('(10) a build with no link: the real bridge\'s one status reaches the card (NO PC, no address, no live box, "no editor link")', async () => {
+    vi.stubGlobal("__MOKU_GAME_EDITOR__", "off");
+    const grafted: GameLike = Object.create(game.app, { renderer: { value: { monitor } } });
+    const app = noLink.createApp({
+      pluginConfigs: { registry: { game: grafted }, overlay: { remember: false } }
+    });
+    app.log.clearSinks();
+    await app.start();
+    stops.push(() => app.stop());
+    commit(30, 1000);
+    app.overlay.open({ tab: "link" });
+
+    expect(part('[data-part="header"] [data-link]').textContent).toBe("NO PC");
+    expect(part('[data-part="mode"][data-lit]').dataset.link).toBe("none");
+    expect(shadow().querySelector('[data-part="address"]')).toBeNull();
+    expect(shadow().querySelector('[data-part="live"]')).toBeNull();
+    expect(part('[data-part="note"]').textContent).toBe("This test build has no editor link.");
   });
 });
 

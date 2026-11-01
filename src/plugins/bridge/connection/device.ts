@@ -5,7 +5,7 @@
  * Tokens and device ids are never logged: log lines name the address only.
  */
 import type { PairParams } from "../../hub/protocol";
-import { isLoopback, parseAddress } from "../../hub/protocol";
+import { isLoopback, LINK_OFF, parseAddress } from "../../hub/protocol";
 import type { Json } from "../../registry/protocol";
 import { notification, toWireValue } from "../../registry/protocol";
 import { memberOf } from "../dispatch/params";
@@ -114,40 +114,47 @@ function isAbsoluteHello(hello: string): boolean {
 }
 
 /**
- * The mode and the address at start, first match wins: (1) a debug build's
+ * The mode and the address at start, first match wins: (1) a store-signed test build's
+ * `__MOKU_GAME_EDITOR__ === "off"` → off, no address, whatever else is known; (2) a debug build's
  * `__MOKU_GAME_EDITOR__` → device at the remembered address, else config.device, else the
- * build's; (2) config.device → device at the remembered address, else config.device; (3) a native
+ * build's; (3) config.device → device at the remembered address, else config.device; (4) a native
  * page → device at the remembered address, else DEFAULT_DEVICE_ADDRESS, except a page without a URL
- * whose hello names its server (a headless agent in Bun); (4) page mode. The remembered address wins: it was chosen on the device
+ * whose hello names its server (a headless agent in Bun); (5) page mode. The remembered address wins: it was chosen on the device
  * later than the build was made. An address `parseAddress` refuses is skipped.
  *
  * @param input - Config, flags, page URL and the remembered links.
- * @returns The mode and the normalized address (undefined in page mode).
+ * @returns The mode and the normalized address (undefined in page mode and in off).
  * @example
  * ```ts
  * resolveMode({ config, flags: { editor: "127.0.0.1:47600", model: undefined, userAgent: undefined }, href: undefined, remembered });
  * // { mode: "device", address: "127.0.0.1:47600" }
+ * resolveMode({ config, flags: { editor: "off", model: undefined, userAgent: undefined }, href: undefined, remembered });
+ * // { mode: "off", address: undefined }
  * ```
  */
 export function resolveMode(input: ModeInput): ResolvedMode {
   const { config, flags, href, remembered } = input;
+
+  // 1. A store-signed test build: no link, whatever the device remembers.
+  if (flags.editor === LINK_OFF) return { mode: "off", address: undefined };
+
   const last = normalized(remembered.last);
   const configured = normalized(config.device);
 
-  // 1. A debug build: its `--editor` wrote the computer's address (__MOKU_GAME_EDITOR__).
+  // 2. A debug build: its `--editor` wrote the computer's address (__MOKU_GAME_EDITOR__).
   if (flags.editor !== undefined) {
     const address = last ?? configured ?? normalized(flags.editor) ?? DEFAULT_DEVICE_ADDRESS;
     return { mode: "device", address };
   }
-  // 2. The developer configured a computer address.
+  // 3. The developer configured a computer address.
   if (configured !== undefined) return { mode: "device", address: last ?? configured };
-  // 3. A native WebView page no dev server served; a page without a URL whose hello names its
+  // 4. A native WebView page no dev server served; a page without a URL whose hello names its
   //    server is a headless agent and stays in page mode.
   const headless = href === undefined && isAbsoluteHello(config.hello);
   if (isNativePage(href) && !headless) {
     return { mode: "device", address: last ?? DEFAULT_DEVICE_ADDRESS };
   }
-  // 4. A page the dev server served.
+  // 5. A page the dev server served.
   return { mode: "page", address: undefined };
 }
 

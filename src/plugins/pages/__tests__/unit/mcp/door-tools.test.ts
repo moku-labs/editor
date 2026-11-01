@@ -1,6 +1,7 @@
 import { createBrandConsole } from "@moku-labs/common/cli";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommandDescriptor, Json } from "../../../../registry/protocol";
+import { toWireValue } from "../../../../registry/protocol";
 import type { DoorTools } from "../../../mcp/door-tools";
 import {
   COVERED_DOORS,
@@ -41,7 +42,7 @@ function manifestOf(commands: readonly CommandDescriptor[]): Json {
     page: "http://127.0.0.1:3000/",
     embedded: true,
     sources: [{ id: "game.position", title: "Position", input: {}, changes: "commit" }],
-    commands: commands.map(command => ({ ...command, input: { ...command.input } }))
+    commands: commands.map(command => toWireValue(command))
   };
 }
 

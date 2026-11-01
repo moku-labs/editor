@@ -61,9 +61,9 @@ function shellModel(shell: unknown): string | undefined {
 }
 
 /**
- * Reads the page flags once: `__MOKU_GAME_EDITOR__` (a debug build's computer address), the
- * native shell's model and `navigator.userAgent`. Every read is guarded: a missing or odd value
- * reads as undefined.
+ * Reads the page flags once: `__MOKU_GAME_EDITOR__` (a debug build's computer address, or "off"
+ * in a store-signed test build), the native shell's model and `navigator.userAgent`. Every read is
+ * guarded: a missing or odd value reads as undefined.
  *
  * @param scope - The page scope (`globalThis`).
  * @returns The flags.

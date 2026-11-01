@@ -3,11 +3,14 @@
 /* eslint-disable unicorn/no-null -- null is the engine's and perf's "not measured" */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PerfSpikeRecord } from "../../../perf/protocol";
+import type { CommandDescriptor, RunResult } from "../../../registry/protocol";
 import { CONTROL_ENGINE } from "../../model/game";
 import { openOverlay, setTab } from "../../modes";
 import { PAINT_MS } from "../../types";
 import {
+  command,
   createOctx,
+  ENVELOPE,
   GARDEN_COMMANDS,
   logFile,
   part,
@@ -41,6 +44,37 @@ function card(commands = true): TestOctx {
   octx.registry.values.set("garden.glow", false);
   openOverlay(octx);
   return octx;
+}
+
+/**
+ * A started card on the Game tab: a Mood toggle with three choices, on and on "storm", above a plain
+ * toggle.
+ *
+ * @param extra - Descriptor fields of Mood to replace.
+ * @returns The context.
+ */
+function moodCard(extra: Partial<CommandDescriptor> = {}): TestOctx {
+  const toggle = { overlay: "toggle", allowed: true } as const;
+  const mood = command("garden.mood", {
+    ...toggle,
+    title: "Mood",
+    choices: ["calm", "storm", "dusk"],
+    ...extra
+  });
+  octx = started(createOctx({ remember: false }, [mood, command("garden.glow", toggle)]));
+  octx.registry.command = id =>
+    id === "garden.mood" ? { value: () => true, choice: () => "storm" } : {};
+  openOverlay(octx, { tab: "game" });
+  return octx;
+}
+
+/**
+ * The choice buttons of the overlay.
+ *
+ * @returns The buttons, in order.
+ */
+function chips(): HTMLButtonElement[] {
+  return [...shadowOf(octx).querySelectorAll<HTMLButtonElement>("[data-choice]")];
 }
 
 /**
@@ -419,6 +453,64 @@ describe("the Game, Record and Link tabs", () => {
     expect(part(octx, '[data-part="press-note"]').textContent).toBe(
       "Each press is written to the log as a mark."
     );
+  });
+
+  it("a choice is a button inside the switch, an invalid nesting (one group right under its row, the current one marked)", () => {
+    moodCard();
+    const groups = shadowOf(octx).querySelectorAll<HTMLElement>('[data-part="choices"]');
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group?.previousElementSibling).toBe(part(octx, '[data-command="garden.mood"]'));
+    expect(group?.dataset.state).toBe("on");
+    expect(
+      chips().map(chip => [
+        chip.textContent,
+        chip.dataset.choice,
+        chip.getAttribute("aria-pressed"),
+        chip.dataset.current !== undefined
+      ])
+    ).toEqual([
+      ["calm", "calm", "false", false],
+      ["storm", "storm", "true", true],
+      ["dusk", "dusk", "false", false]
+    ]);
+    expect(chips().every(chip => !chip.disabled)).toBe(true);
+  });
+
+  it("a tap on a choice presses the switch (it runs the tapped choice)", async () => {
+    moodCard();
+    click('[data-choice="dusk"]');
+    await vi.waitFor(() => {
+      expect(part(octx, "[data-toast]").textContent).toBe("Mood dusk.");
+    });
+    expect(octx.channel.runs).toEqual([
+      { id: "garden.mood", input: { on: true, choice: "dusk" }, via: "overlay" }
+    ]);
+  });
+
+  it("a refused toggle leaves its choices live (greyed with the row: disabled, titled, its state on the group)", () => {
+    moodCard({ allowed: false, reason: "read-only" });
+    const row = part<HTMLButtonElement>(octx, '[data-command="garden.mood"]');
+    expect(part(octx, '[data-part="choices"]').dataset.state).toBe("refused");
+    expect(row.disabled).toBe(true);
+    expect(chips().every(chip => chip.disabled)).toBe(true);
+    expect(chips()[0]?.title).toBe(row.title);
+    expect(row.title).not.toBe("");
+    chips()[0]?.click();
+    expect(octx.channel.runs).toEqual([]);
+  });
+
+  it("the choices stay live while the press is in flight (disabled until it settles)", async () => {
+    moodCard();
+    const answers: ((value: RunResult) => void)[] = [];
+    octx.channel.answer = () => new Promise(resolve => answers.push(resolve));
+    click('[data-command="garden.mood"]');
+    expect(part(octx, '[data-part="choices"]').dataset.state).toBe("busy");
+    expect(chips().every(chip => chip.disabled)).toBe(true);
+    answers[0]?.({ value: true, state: ENVELOPE });
+    await vi.waitFor(() => {
+      expect(chips().every(chip => !chip.disabled)).toBe(true);
+    });
   });
 
   it("drives the recorder from the Record tab", async () => {

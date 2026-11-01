@@ -291,19 +291,43 @@ function readCommand(value: Json): CommandDescriptor | undefined {
 }
 
 /**
- * Reads the overlay marker of a command; any other value is dropped.
+ * The value when it is text: the item reader of a list of strings.
+ *
+ * @param value - A Json value.
+ * @returns The string, or undefined.
+ * @example
+ * ```ts
+ * textItem("calm"); // "calm"
+ * textItem(3); // undefined
+ * ```
+ */
+function textItem(value: Json): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Reads the overlay marker of a command and its `choices`. Any other marker is dropped, and takes
+ * the choices with it. `choices` stays only as a non-empty array of strings. An older agent sends
+ * none: the result is the marker alone.
  *
  * @param object - The command object.
- * @returns `{ overlay }`, or `{}`.
+ * @returns `{ overlay, choices? }`, or `{}`.
  * @example
  * ```ts
  * readOverlay({ overlay: "toggle" }); // { overlay: "toggle" }
  * readOverlay({ overlay: "slider" }); // {}
+ * readOverlay({ overlay: "toggle", choices: ["calm", "storm"] }); // { overlay: "toggle", choices: ["calm", "storm"] }
+ * readOverlay({ overlay: "toggle", choices: ["calm", 3] }); // { overlay: "toggle" }
+ * readOverlay({ overlay: "toggle", choices: [] }); // { overlay: "toggle" }
+ * readOverlay({ choices: ["calm", "storm"] }); // {}
  * ```
  */
-function readOverlay(object: JsonObject): { overlay?: OverlayMarker } {
+function readOverlay(object: JsonObject): { overlay?: OverlayMarker; choices?: readonly string[] } {
   const { overlay } = object;
-  return overlay === "toggle" || overlay === "button" ? { overlay } : {};
+  if (overlay !== "toggle" && overlay !== "button") return {};
+
+  const choices = listOf(object.choices, textItem);
+  return choices === undefined || choices.length === 0 ? { overlay } : { overlay, choices };
 }
 
 /**
@@ -404,8 +428,8 @@ function readRestored(value: Json | undefined): Manifest["restored"] {
 
 /**
  * Reads a manifest (the hub validated it on hello; link checks it again before typing it). A
- * malformed `restored` or `build` entry, overlay marker or build verdict is dropped; the manifest
- * stays.
+ * malformed `restored` or `build` entry, overlay marker, `choices` list or build verdict is dropped;
+ * the manifest stays.
  *
  * @param value - The `manifest` result.
  * @returns The manifest, or undefined.

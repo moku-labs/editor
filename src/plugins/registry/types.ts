@@ -57,9 +57,31 @@ export type DoorSource = {
 type ToggleValue = { value(app: HeadlessApp): boolean }["value"];
 
 /**
+ * The `choice(app)` of an overlay toggle with choices, as a method type: its parameter compares
+ * bivariantly, so a game's `choice: (app: GameLike) => string` fits.
+ */
+type ToggleChoice = { choice(app: HeadlessApp): string }["choice"];
+
+/**
  * Any door command with its generics erased (method syntax, see DoorSource). Every branch of the
  * engine's overlay union fits without a cast: none (`overlay?: undefined`), a toggle with its
- * `value`, a button.
+ * `value`, a button. `choices` and `choice` are structural: they need no engine type.
+ *
+ * @example
+ * ```ts
+ * // A switch with a choice under it: a tap on a choice runs { on, choice }.
+ * const mood: DoorCommand = {
+ *   id: "garden.mood",
+ *   title: "Mood",
+ *   input: { on: "boolean", choice: "string" },
+ *   effect: "cosmetic",
+ *   overlay: "toggle",
+ *   choices: ["calm", "storm", "dusk"],
+ *   value: (app: GameLike) => !app.time.isPaused(),
+ *   choice: () => "calm",
+ *   run: (_app, { on, choice }) => ({ on, choice })
+ * };
+ * ```
  */
 export type DoorCommand = {
   readonly id: string;
@@ -71,6 +93,13 @@ export type DoorCommand = {
   run(app: HeadlessApp, input: InputOf<InputSchema>): unknown;
   /** The current value of an overlay toggle (engine spec 12: required with `overlay: "toggle"`). */
   readonly value?: ToggleValue | undefined;
+  /**
+   * The values the overlay draws under a toggle's switch. Absent or empty: a plain switch. Needs
+   * `choice` in `input`, of kind `string` or `string?`, and refused on a button.
+   */
+  readonly choices?: readonly string[] | undefined;
+  /** The current one of `choices`. */
+  readonly choice?: ToggleChoice | undefined;
 };
 
 /**
@@ -129,7 +158,8 @@ export type SourceEntry = {
 };
 
 /**
- * A closure-erased command: raw Json in, RunResult out. An overlay toggle of the game has value().
+ * A closure-erased command: raw Json in, RunResult out. An overlay toggle of the game has value(),
+ * and choice() when it has choices.
  */
 export type CommandEntry = {
   readonly descriptor: CommandDescriptor;
@@ -141,6 +171,8 @@ export type CommandEntry = {
   run(raw: Json, via?: CommandVia, client?: string): Promise<RunResult>;
   /** Overlay toggles of the game only: the switch's state now; undefined when value(app) failed. */
   value?(): boolean | undefined;
+  /** Overlay toggles with choices only: the current choice; undefined when choice(app) failed. */
+  choice?(): string | undefined;
 };
 
 /**
@@ -253,7 +285,8 @@ export type RegistryApi = {
    */
   source(id: string): SourceEntry | undefined;
   /**
-   * Looks up a command entry: door, module or editor. An overlay toggle's entry has `value()`.
+   * Looks up a command entry: door, module or editor. An overlay toggle's entry has `value()`, and
+   * `choice()` when the toggle has choices.
    *
    * @param id - The command id, e.g. "game.step".
    * @returns The entry, or undefined for an unknown id or a source id.
@@ -262,6 +295,8 @@ export type RegistryApi = {
    * // The overlay draws the game's "Glow" switch, then flips it.
    * app.registry.command("garden.glow")?.value?.(); // true
    * await app.registry.command("garden.glow")?.run({ on: false }); // { value: …, state: { path: "garden/boss", frame: 4812, tainted: false } }
+   * // A toggle with choices: the overlay marks the current one.
+   * app.registry.command("garden.mood")?.choice?.(); // "calm"
    * ```
    */
   command(id: string): CommandEntry | undefined;

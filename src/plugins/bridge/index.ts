@@ -2,8 +2,8 @@
  * Complex tier — opt-in. Websocket client from the game page to the editor hub. Page mode: hello,
  * JSON-RPC dispatch into the channel, heartbeats, taps, the checkpoint across Bun's full reload,
  * editor.reload and editor.clock. Device mode: dials a computer address, pairs by a code, ships the
- * recorder's log with an ack. Emits the global agent event `bridge:status`; hooks
- * `overlay:connect` and `recorder:status`.
+ * recorder's log with an ack. Off (a store-signed test build): no socket, one lost status. Emits
+ * the global agent event `bridge:status`; hooks `overlay:connect` and `recorder:status`.
  *
  * @see README.md
  */

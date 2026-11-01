@@ -1,7 +1,7 @@
 /**
  * @file registry plugin — the descriptor rules shared by the catalogue and `add`: the id
- * pattern, the input kinds, and the changes key of a source or the effect and overlay marker of a
- * command.
+ * pattern, the input kinds, and the changes key of a source or the effect, overlay marker and
+ * choices of a command.
  */
 import type { CommandDescriptor, SourceDescriptor } from "../protocol";
 import type { DoorCommand } from "../types";
@@ -42,11 +42,43 @@ const EFFECTS: ReadonlySet<string> = new Set(["read", "route", "cosmetic", "chea
 const OVERLAYS: ReadonlySet<unknown> = new Set(["toggle", "button"]);
 
 /**
- * Checks the overlay marker of a command: a known marker, and a `value(app)` beside a toggle. The
- * descriptor of a door or module command is the door itself, so its `value` is read from it.
+ * The input kinds of a toggle's `choice`: a tap on a choice sends a string.
+ */
+const CHOICE_KINDS: ReadonlySet<unknown> = new Set(["string", "string?"]);
+
+/**
+ * Checks the choices of a command with an overlay marker: they sit under a toggle only, and that
+ * toggle takes a string `choice` in its input, because the overlay runs `{ on, choice }` and the
+ * input check refuses an unknown key or another kind, so every tap would fail with -32602. A
+ * missing or empty list is no list: it reaches no descriptor.
  *
  * @param command - The command descriptor (or the door).
- * @throws {TypeError} `[moku-editor] Command "<id>" has an unknown overlay …` or `… is an overlay toggle without value(app).`
+ * @throws {TypeError} `[moku-editor] Command "<id>" is an overlay button with choices.` or `… has choices and no string choice in its input.`
+ */
+function checkChoices(command: CommandDescriptor | DoorCommand): void {
+  const { id, overlay, input, choices } = command;
+  if (choices === undefined || choices.length === 0) return;
+
+  if (overlay === "button") {
+    throw new TypeError(
+      `[moku-editor] Command "${id}" is an overlay button with choices.\n  Make it an overlay toggle, or drop its choices.`
+    );
+  }
+
+  if (!CHOICE_KINDS.has(input.choice)) {
+    throw new TypeError(
+      `[moku-editor] Command "${id}" has choices and no string choice in its input.\n  Add choice: "string" to its input: the overlay runs { on, choice }.`
+    );
+  }
+}
+
+/**
+ * Checks the overlay marker of a command: a known marker, a `value(app)` beside a toggle, and its
+ * choices. The descriptor of a door or module command is the door itself, so its `value` is read
+ * from it.
+ *
+ * @param command - The command descriptor (or the door).
+ * @throws {TypeError} `[moku-editor] Command "<id>" has an unknown overlay …`, `… is an overlay toggle without value(app).` or the choices errors.
  */
 function checkOverlay(command: CommandDescriptor | DoorCommand): void {
   const { id, overlay } = command;
@@ -63,6 +95,8 @@ function checkOverlay(command: CommandDescriptor | DoorCommand): void {
       `[moku-editor] Command "${id}" is an overlay toggle without value(app).\n  Give the command a value(app) that answers the switch's state.`
     );
   }
+
+  checkChoices(command);
 }
 
 /**
@@ -72,7 +106,7 @@ function checkOverlay(command: CommandDescriptor | DoorCommand): void {
  * @param kind - "source" or "command", for the messages.
  * @param descriptor - The descriptor (or the door, which carries one).
  * @throws {Error} `[moku-editor] …` naming the id and what is wrong; a `TypeError` for the overlay
- *   marker.
+ *   marker and its choices.
  */
 export function checkDescriptor(
   kind: "source" | "command",

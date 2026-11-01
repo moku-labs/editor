@@ -172,6 +172,20 @@ export type CommandVia = "overlay" | "bridge" | "tools" | "mcp" | "local";
 /**
  * A command the way the manifest describes it (no functions). An agent from before the build
  * profile sends no `allowed`: read it as allowed.
+ *
+ * @example
+ * ```ts
+ * // A switch with three choices under it, on a build that runs it.
+ * const mood: CommandDescriptor = {
+ *   id: "garden.mood",
+ *   title: "Mood",
+ *   input: { on: "boolean", choice: "string" },
+ *   effect: "cosmetic",
+ *   overlay: "toggle",
+ *   choices: ["calm", "storm", "dusk"],
+ *   allowed: true
+ * };
+ * ```
  */
 export type CommandDescriptor = {
   readonly id: string;
@@ -180,6 +194,8 @@ export type CommandDescriptor = {
   readonly effect: Effect;
   /** Shows the command on the overlay's Game tab. Absent: not shown. */
   readonly overlay?: OverlayMarker;
+  /** The values the overlay draws under a toggle's switch. Absent: a plain switch, or an older agent. */
+  readonly choices?: readonly string[];
   /** Whether this page's build runs the command (advice; the engine's run decides). */
   readonly allowed?: boolean;
   /** Why the build refuses it; present only with `allowed: false`. */
