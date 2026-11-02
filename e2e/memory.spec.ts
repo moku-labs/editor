@@ -40,10 +40,14 @@
  * The bin's tools page does not publish its app: activeSource and link are reached through the
  * plugin context the workspace's shell renders with (`viaTools`).
  *
+ * The test counts one phone: the fake. A real phone attached by adb links too (`adb reverse` of the
+ * listener's port routes its debug game here), adds a second linked row and session, and may become
+ * the source first. With one attached the test is skipped and says why (CI has none).
+ *
  * `reducedMotion: "no-preference"`: the live timeline's rAF loop must run. It retries nothing on
  * its own (CI's one retry applies).
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { CDPSession, Frame, Page } from "@playwright/test";
 import { expect, type Tools, test, WORKSPACES } from "./fixtures";
@@ -443,6 +447,23 @@ function startPhone(address: string): FakePhone {
 }
 
 /**
+ * The serials of the phones adb lists as attached; none without adb.
+ *
+ * @returns The serials.
+ */
+function attachedPhones(): string[] {
+  // eslint-disable-next-line sonarjs/no-os-command-from-path -- adb is on PATH where a phone is attached; without it there is no phone to find.
+  const adb = spawnSync("adb", ["devices"], { encoding: "utf8" });
+  if (adb.status !== 0) return [];
+  return adb.stdout
+    .split("\n")
+    .slice(1)
+    .map(line => line.split("\t"))
+    .filter(([, state]) => state === "device")
+    .map(([serial]) => serial ?? "");
+}
+
+/**
  * Stops the fake phone and waits for its exit.
  *
  * @param phone - The phone.
@@ -597,6 +618,11 @@ test.describe("memory (M4)", () => {
     tools,
     errors
   }) => {
+    const phones = attachedPhones();
+    test.skip(
+      phones.length > 0,
+      `a phone is attached by adb (${phones.join(", ")}): its debug game links into device mode next to the fake one; unplug it to run M4`
+    );
     test.setTimeout(600_000);
     const { page } = tools;
     await renderLocal(tools);
