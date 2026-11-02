@@ -808,7 +808,7 @@ test.describe("top bar · round 2", () => {
 
       // Registry opens the registry popover under ⋯, inside the window.
       await openMore(page);
-      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("31 · 31");
+      await expect(menuRow(page, "registry").locator("[data-part=state]")).toHaveText("31 · 32");
       await menuRow(page, "registry").click();
       const registry = page.locator("[data-ui=registry-popover]");
       await expect(registry).toBeVisible();
@@ -894,7 +894,7 @@ test.describe("top bar · round 2", () => {
       }
       // Registry: the icon only, the counts in its title.
       const registryButton = bar.locator(":scope > [data-action=registry]");
-      await expect(registryButton).toHaveAttribute("title", "Registry · 31 sources · 31 commands");
+      await expect(registryButton).toHaveAttribute("title", "Registry · 31 sources · 32 commands");
       await expect(registryButton).toHaveAccessibleName("Registry");
 
       const overlay = bar.getByRole("switch", { name: "Overlay", exact: true });

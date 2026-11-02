@@ -12,7 +12,7 @@
  * the 0.15.x patch and the next engine change at the end of the file (spec 03 Delta 2026-10-16 D1):
  * the editor's structural copies, kept because the peer floor (0.15.0) exports none of them.
  * `engine-contract.test.ts` asserts each re-export equals the engine's type, and each mirror against
- * the engine's export once the dev engine (0.15.1) has it.
+ * the engine's export once the dev engine (0.15.90) has it.
  */
 import type { FrameRing, PassRecord, PerfEventName, Renderer, Time } from "@moku-labs/game";
 import type { MonitorSectionName, MonitorSections } from "./sections";
@@ -158,11 +158,12 @@ export type DevtoolsDetail = { mode: "hidden" | "pill" | "card"; tab: string };
 
 /**
  * Kept pictures of the last drawn frame (spec 23 P12.1, `Renderer.KeptStats`): pictures drawn as one
- * texture, the MiB their textures hold, and the pictures taken in the last full second.
+ * texture, the MiB their textures hold, the pictures taken in the last full second, and the
+ * pictures the budget evicted and refused in it (0.15.90).
  *
  * @example
  * ```ts
- * const kept: KeptStats = { pictures: 1, mb: 1.4, retakes: 0 };
+ * const kept: KeptStats = { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 };
  * ```
  */
 export type KeptStats = Renderer.KeptStats;
@@ -174,7 +175,7 @@ export type KeptStats = Renderer.KeptStats;
  *
  * @example
  * ```ts
- * const stats: RenderStatsLike = { renderPasses: 1, renderPassesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 };
+ * const stats: RenderStatsLike = { renderPasses: 1, renderPassesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 }, redraws: 0, rebuilds: 0 };
  * ```
  */
 export type RenderStatsLike = Pick<
@@ -199,7 +200,7 @@ export type MonitorLike = Renderer.PerfMonitorApi;
 
 // Mirrors of the 0.15.x patch and the next engine change (spec 03 Delta 2026-10-16 D1).
 // The peer floor (0.15.0) exports none of these: each is the editor's structural copy, optional for a
-// reader (an older engine sends none of it). The dev engine (0.15.1) exports the patch's; the
+// reader (an older engine sends none of it). The dev engine (0.15.90) exports the patch's; the
 // `engine-contract.test.ts` checks each against it (ask E7); the next change's wait for the engine.
 
 /**
@@ -239,7 +240,7 @@ export type RingNamesNext = {
 /**
  * The event names the 0.15.x patch and the next change add to the engine's `PerfEventName`: `shader`
  * (E4), `problem` (N3, three rules in 0.15.1), `debug` (U6, overdraw), `gc` (N6) and `sections` (N1).
- * The dev engine (0.15.1) lists the patch's three; the peer floor (0.15.0) none.
+ * The dev engine (0.15.90) lists all of them but `gc`; the peer floor (0.15.0) none.
  *
  * @example
  * ```ts

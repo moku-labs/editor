@@ -42,7 +42,7 @@ function debugStats() {
   return {
     renderPasses: 3,
     renderPassesMax: 4,
-    kept: { pictures: 1, mb: 1.4, retakes: 0 },
+    kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 3, refused: 1 },
     redraws: 2,
     rebuilds: 5
   };
@@ -57,8 +57,17 @@ function releaseStats() {
   return {
     renderPasses: 1,
     renderPassesMax: 1,
-    kept: { pictures: 4, mb: 1.6, retakes: 0 }
+    kept: { pictures: 4, mb: 1.6, retakes: 0, evicted: 0, refused: 0 }
   };
+}
+
+/**
+ * A renderer.stats() answer of an engine before 0.15.90: kept without the budget's counts.
+ *
+ * @returns The answer.
+ */
+function beforeBudgetStats() {
+  return { renderPasses: 1, renderPassesMax: 2, kept: { pictures: 2, mb: 0.8, retakes: 1 } };
 }
 
 describe("monitorOf and offReasonOf", () => {
@@ -96,7 +105,7 @@ describe("statsOf", () => {
     const stats = debugStats;
     expect(statsOf({ renderer: { stats } })).toEqual({
       passesMax: 4,
-      kept: { pictures: 1, mb: 1.4, retakes: 0 },
+      kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 3, refused: 1 },
       redraws: 2,
       rebuilds: 5
     });
@@ -106,9 +115,20 @@ describe("statsOf", () => {
     const stats = releaseStats;
     expect(statsOf({ renderer: { stats } })).toEqual({
       passesMax: 1,
-      kept: { pictures: 4, mb: 1.6, retakes: 0 },
+      kept: { pictures: 4, mb: 1.6, retakes: 0, evicted: 0, refused: 0 },
       redraws: null,
       rebuilds: null
+    });
+  });
+
+  it("reads the kept of an engine before 0.15.90 with 0 evicted and refused (bug: its kept read as null without the budget's counts)", () => {
+    const stats = beforeBudgetStats;
+    expect(statsOf({ renderer: { stats } })?.kept).toEqual({
+      pictures: 2,
+      mb: 0.8,
+      retakes: 1,
+      evicted: 0,
+      refused: 0
     });
   });
 

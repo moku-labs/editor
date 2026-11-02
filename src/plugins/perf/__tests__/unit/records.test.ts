@@ -88,7 +88,7 @@ function debugStats() {
   return {
     renderPasses: 3,
     renderPassesMax: 3,
-    kept: { pictures: 1, mb: 1.4, retakes: 0 },
+    kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 },
     redraws: 0,
     rebuilds: 0
   };
@@ -445,7 +445,7 @@ describe("second()", () => {
     const second = secondOf(state);
     expect(second.render).toEqual({
       passesMax: 3,
-      kept: { pictures: 1, mb: 1.4, retakes: 0 },
+      kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 },
       redraws: 0,
       rebuilds: 0
     });

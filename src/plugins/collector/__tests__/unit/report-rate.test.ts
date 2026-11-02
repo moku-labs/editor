@@ -71,7 +71,8 @@ describe("summarize — rates", () => {
       ladder: [90],
       thermal: null,
       asked: null,
-      heldBy: null
+      heldBy: null,
+      scale: 1
     } as const;
 
     expect(rateOf(headerLine(0, { rate }))).toBe(90);

@@ -18,7 +18,7 @@
         "@moku-labs/ci": "1.5.7",
         "@moku-labs/common": "0.3.10",
         "@moku-labs/core": "1.7.6",
-        "@moku-labs/game": "^0.15.1",
+        "@moku-labs/game": "^0.15.90",
         "@playwright/test": "1.63.0",
         "@types/bun": "1.4.2",
         "@vitest/coverage-istanbul": "4.0.18",
@@ -31,6 +31,7 @@
         "happy-dom": "20.14.5",
         "jiti": "2.6.1",
         "lefthook": "2.1.1",
+        "pixi.js": "8.22.0",
         "publint": "0.3.21",
         "subset-font": "2.9.0",
         "tsdown": "0.22.1",
@@ -217,7 +218,7 @@
 
     "@moku-labs/core": ["@moku-labs/core@1.7.6", "", {}, "sha512-CdCxX/9zwJ9Czv45I/CmDuV8sV1r9uiOSfUzckD3MZC8eumO1QcT4PY4yiSXd0zspsTgdsntFxfDHkUUYVp5Iw=="],
 
-    "@moku-labs/game": ["@moku-labs/game@0.15.1", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.9", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-MmBzLEoZeq55pCDeMV3sHfeNy1PpzAVaYYfl+lOgGg0vLCCaHvUDRhiA0BmHIDFx8qxyixv1qfowpSAIK/RJ3A=="],
+    "@moku-labs/game": ["@moku-labs/game@0.15.90", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.13", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-FvW7EJE5B+9uS8xLG8oSNV0girS8MFJwYgw5MAXjWwqfZKLexDosnLjKBPubFUnTeos9bosAdsRhIFKNxQab7w=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
@@ -731,7 +732,7 @@
 
     "picomatch": ["picomatch@4.0.7", "", {}, "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="],
 
-    "pixi.js": ["pixi.js@8.21.0", "", { "dependencies": { "@pixi/colord": "^2.9.6", "@types/earcut": "^3.0.0", "@webgpu/types": "^0.1.69", "@xmldom/xmldom": "^0.8.15", "earcut": "^3.0.2", "eventemitter3": "^5.0.1", "gifuct-js": "^2.1.2", "ismobilejs": "^1.1.1", "parse-svg-path": "^0.2.0", "tiny-lru": "^11.4.7" } }, "sha512-GJ/KqBtUuWDBPMQu2D0ZHsRCYOcWRjjKrpyC+3jPQI5JTqHMC5dH8l9sSyvoUT4qJidvRzs1fwFWRWceno2Ltw=="],
+    "pixi.js": ["pixi.js@8.22.0", "", { "dependencies": { "@pixi/colord": "^2.9.6", "@types/earcut": "^3.0.0", "@webgpu/types": "^0.1.69", "@xmldom/xmldom": "^0.8.15", "earcut": "^3.0.2", "eventemitter3": "^5.0.1", "gifuct-js": "^2.1.2", "ismobilejs": "^1.1.1", "parse-svg-path": "^0.2.0", "tiny-lru": "^11.4.7" } }, "sha512-QbTANHMZ751MIjLiLSUSM8a7LNMWwMIf0KbRCqlW+SPS9hNLfSVS+cl1O2SEp9g1K/wyLzj/OJHv+1TUfiPr/w=="],
 
     "playwright": ["playwright@1.63.0", "", { "dependencies": { "playwright-core": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg=="],
 

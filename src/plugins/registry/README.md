@@ -54,7 +54,7 @@ Module commands may have any effect, `cheat` and `raw` included.
 | `build()` | `BuildInfo` | `{ profile, id?, engine?, appId? }` of this page (see "Build profile and allowed commands"). Read once; the flags of a page never change. |
 
 ```ts
-registry.manifest().commands.length; // 21 door commands + module + editor commands
+registry.manifest().commands.length; // 22 door commands + module + editor commands
 registry.source("game.history")?.read({ last: 1 }); // [{ path: "home", outcome: "play", … }]
 await registry.command("game.step")?.run({ frames: 1 }); // { value: { frame: 1841, … }, state: { … } }
 registry.envelope(); // { path: "board/awaitIntent", frame: 1840, tainted: false }

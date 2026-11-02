@@ -454,6 +454,7 @@ type MutablePasses = {
   index: Uint8Array;
   kind: Uint8Array;
   stencil: Uint8Array;
+  restart: Uint8Array;
   width: Uint16Array;
   height: Uint16Array;
   gpuMs: Float32Array;
@@ -483,6 +484,7 @@ function createPasses(slots: number, withColumns: boolean): MutablePasses {
     index: new Uint8Array(slots),
     kind: new Uint8Array(slots),
     stencil: new Uint8Array(slots),
+    restart: new Uint8Array(slots),
     width: new Uint16Array(slots),
     height: new Uint16Array(slots),
     gpuMs: new Float32Array(slots),
@@ -808,6 +810,7 @@ export function rateChange(overrides: Partial<RateChange> = {}): RateChange {
     thermal: "none",
     window: { drawn: 41, missed: 9, heavy: 0 },
     dwellMs: 5000,
+    scale: 1,
     ...overrides
   };
 }
@@ -1316,7 +1319,8 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     };
   };
 
-  const fake: FakeMonitor = {
+  // An engine before the next change has no `sections`; the dev engine (0.15.90) types it required.
+  const fake: Omit<FakeMonitor, "sections"> & Partial<Pick<FakeMonitor, "sections">> = {
     ring,
     begins: 0,
     ends: 0,
@@ -1434,5 +1438,6 @@ export function createFakeMonitor(options: FakeMonitorOptions = {}): FakeMonitor
     ...(sectionsMode === "absent" ? {} : { sections: readOrWriteSections }),
     ...(detailMode === "absent" ? {} : { detail: detailOf })
   };
-  return fake;
+  // boundary: with `sections: "absent"` the fake is the peer floor's monitor, without the member
+  return fake as FakeMonitor;
 }

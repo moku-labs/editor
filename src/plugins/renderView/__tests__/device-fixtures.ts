@@ -123,7 +123,12 @@ export function secondOf(overrides: Partial<PerfSecond> = {}): PerfSecond {
     spikes: 6,
     budgetMs: 16.7,
     rate: { fps: 60, mode: "auto", reason: "start", displayHz: 60, switches: 0 },
-    render: { passesMax: 3, kept: { pictures: 4, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 },
+    render: {
+      passesMax: 3,
+      kept: { pictures: 4, mb: 1.4, retakes: 0, evicted: 0, refused: 0 },
+      redraws: 0,
+      rebuilds: 0
+    },
     sample: sampleOf(),
     display: {
       dpr: 2.8125,

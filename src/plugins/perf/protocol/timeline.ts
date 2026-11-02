@@ -188,7 +188,7 @@ export type PerfEventsWire = {
 /**
  * An event line as the timeline reads it: the engine's `PerfEventLine` with the names of the 0.15.x
  * patch and the next change (`shader`, `problem`, `gc`, `sections`, `debug`), which the peer floor's
- * type (0.15.0) does not list and the dev engine's (0.15.1) lists but `gc` and `sections`. Every
+ * type (0.15.0) does not list and the dev engine's (0.15.90) lists but `gc`. Every
  * `PerfEventLine` is one.
  *
  * @example

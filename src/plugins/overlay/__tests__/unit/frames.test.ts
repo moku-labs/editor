@@ -206,7 +206,7 @@ describe("counterCells", () => {
       {
         render: {
           passesMax: 3,
-          kept: { pictures: 1, mb: 1.4, retakes: 0 },
+          kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 },
           redraws: 0,
           rebuilds: 0
         }
@@ -260,7 +260,7 @@ describe("moreParts", () => {
     const production = secondOf({
       render: {
         passesMax: 2,
-        kept: { pictures: 0, mb: 0, retakes: 0 },
+        kept: { pictures: 0, mb: 0, retakes: 0, evicted: 0, refused: 0 },
         redraws: null,
         rebuilds: null
       }

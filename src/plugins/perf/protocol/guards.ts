@@ -225,13 +225,15 @@ export function isPerfDisplay(value: unknown): value is PerfDisplay {
 }
 
 /**
- * The `kept` of a render stats answer: an object with three finite numbers, else null.
+ * The `kept` of a render stats answer: an object with three finite numbers, else null. The
+ * budget's `evicted` and `refused` are 0 where the engine sends none (an engine before 0.15.90
+ * has no budget to evict or refuse by).
  *
  * @param value - `stats().kept`.
  * @returns The copy, or null.
  * @example
  * ```ts
- * keptOf({ pictures: 1, mb: 1.4, retakes: 0 }); // { pictures: 1, mb: 1.4, retakes: 0 }
+ * keptOf({ pictures: 1, mb: 1.4, retakes: 0 }); // { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 }
  * ```
  */
 function keptOf(value: unknown): PerfRenderStats["kept"] {
@@ -243,7 +245,9 @@ function keptOf(value: unknown): PerfRenderStats["kept"] {
   return {
     pictures: Number(fieldOf(value, "pictures")),
     mb: Number(fieldOf(value, "mb")),
-    retakes: Number(fieldOf(value, "retakes"))
+    retakes: Number(fieldOf(value, "retakes")),
+    evicted: hasNumbers(value, ["evicted"]) ? Number(fieldOf(value, "evicted")) : 0,
+    refused: hasNumbers(value, ["refused"]) ? Number(fieldOf(value, "refused")) : 0
   };
 }
 

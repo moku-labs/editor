@@ -11,6 +11,7 @@ import type {
   PerfStatus,
   PerfWindowView
 } from "../../perf/protocol";
+import { SECTION_DEFAULTS } from "../../perf/protocol/sections";
 import type { LogFileInfo, LogMark, RecorderStatus, ShareResult } from "../../recorder/types";
 import type {
   BuildInfo,
@@ -207,6 +208,7 @@ export function bracketMonitor(): BracketMonitor {
       calls.push("end");
     },
     setResolution: () => 1,
+    sections: () => SECTION_DEFAULTS,
     counts: { register: () => unsubscribe }
   };
 }
@@ -292,7 +294,12 @@ export function secondOf(
     spikes: 6,
     budgetMs: 16.67,
     rate: { fps: 60, mode: "fixed", reason: "start", displayHz: 60, switches: 0 },
-    render: { passesMax: 3, kept: { pictures: 4, mb: 1.6, retakes: 0 }, redraws: 0, rebuilds: 0 },
+    render: {
+      passesMax: 3,
+      kept: { pictures: 4, mb: 1.6, retakes: 0, evicted: 0, refused: 0 },
+      redraws: 0,
+      rebuilds: 0
+    },
     sample: sample === null ? null : sampleLine(4812, sample),
     display: DISPLAY,
     device: headerLine().device,
