@@ -259,6 +259,7 @@ function createCountedPixi() {
       onRenderTargetChange: silentRunner
     };
     readonly background = { clearBeforeRender: true };
+    readonly resolution = 1;
     readonly gpu: { readonly device: StandInDevice };
     readonly encoder: StandInGpuEncoderSystem;
     readonly filter: StandInFilterSystem;

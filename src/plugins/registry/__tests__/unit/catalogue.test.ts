@@ -94,17 +94,17 @@ const commandWith = (fields: Partial<DoorCommand>): DoorCommand => ({
 });
 
 describe("buildCatalogue", () => {
-  it("adds the 21 door sources and 21 door commands in catalogue key order", () => {
+  it("adds the 21 door sources and 22 door commands in catalogue key order", () => {
     const ctx = createCtx({ game: game.app });
 
     buildCatalogue(ctx);
 
     expect(doorSourceIds).toHaveLength(21);
-    expect(doorCommandIds).toHaveLength(21);
+    expect(doorCommandIds).toHaveLength(22);
     expect([...ctx.state.sources.keys()]).toEqual(doorSourceIds);
     expect([...ctx.state.commands.keys()]).toEqual(doorCommandIds);
     expect([...ctx.state.origins.values()].every(origin => origin === "door")).toBe(true);
-    expect(ctx.state.origins.size).toBe(42);
+    expect(ctx.state.origins.size).toBe(43);
   });
 
   it("adds module entries after the doors, modules in config order", () => {

@@ -18,6 +18,19 @@ import { feedRig, perfCtx, perfState } from "../helpers";
 // build is the registry's -32009 after the feeds switched.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** A sample's section costs, every section 0 ms. */
+const NO_COSTS = {
+  memory: 0,
+  gpu: 0,
+  passes: 0,
+  shaders: 0,
+  problems: 0,
+  systems: 0,
+  nodes: 0,
+  longFrames: 0,
+  base: 0
+};
+
 /**
  * Runs `editor.perf.sections` with an input and answers its value.
  *
@@ -81,7 +94,9 @@ describe("editor.perf.sections", () => {
 
   it("changes nothing for {} and answers the state, with the sample's costs (bug: a read that writes)", async () => {
     const { command, monitor, state } = feedRig();
-    monitor.emit(patchedSampleLine(10, { monitorMs: 0.21, sectionsMs: { gpu: 0.01 } }));
+    monitor.emit(
+      patchedSampleLine(10, { monitorMs: 0.21, sectionsMs: { ...NO_COSTS, gpu: 0.01 } })
+    );
     const answer = await switched(raw => command("editor.perf.sections").run(raw), {});
     expect(monitor.controlCalls).toEqual([]);
     expect(answer).toMatchObject({

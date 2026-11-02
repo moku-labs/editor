@@ -72,7 +72,7 @@ export type PerfRate = {
  * @example
  * ```ts
  * // The memory screen at rest on a debug build, its lamps kept.
- * const render: PerfRenderStats = { passesMax: 1, kept: { pictures: 4, mb: 1.6, retakes: 0 }, redraws: 0, rebuilds: 0 };
+ * const render: PerfRenderStats = { passesMax: 1, kept: { pictures: 4, mb: 1.6, retakes: 0, evicted: 0, refused: 0 }, redraws: 0, rebuilds: 0 };
  * ```
  */
 export type PerfRenderStats = {
@@ -181,7 +181,7 @@ export type PerfCaps = {
  * const second: PerfSecond = { state: "on", fps: { loop: 60, drawn: 54 }, spikes: 6, budgetMs: 16.67,
  *   rate: { fps: 60, mode: "auto", reason: "missed", displayHz: 120, switches: 1 },
  *   gpuTime: { p50Ms: 0.49, p90Ms: 0.61 },
- *   render: { passesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0 }, redraws: 0, rebuilds: 0 },
+ *   render: { passesMax: 3, kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 }, redraws: 0, rebuilds: 0 },
  *   sample: null, display: null, device: null, gpu: null, build: "debug-20261014T160000Z", engine: "0.14.12+9c41e0" };
  * ```
  */

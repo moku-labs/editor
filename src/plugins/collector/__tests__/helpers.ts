@@ -288,7 +288,8 @@ export function headerLine(t = 0, overrides: Partial<PerfHeaderLine> = {}): Perf
     ladder: [120, 60],
     thermal: null,
     asked: null,
-    heldBy: null
+    heldBy: null,
+    scale: 1
   } as const;
   return { ...baseHeader(t), rate, ...overrides };
 }

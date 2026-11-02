@@ -33,7 +33,7 @@ function keptStats() {
   return {
     renderPasses: 1,
     renderPassesMax: 1,
-    kept: { pictures: 1, mb: 1.4, retakes: 0 }
+    kept: { pictures: 1, mb: 1.4, retakes: 0, evicted: 0, refused: 0 }
   };
 }
 

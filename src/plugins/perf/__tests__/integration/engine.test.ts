@@ -78,7 +78,7 @@ describe("perf on the real engine", () => {
     // rebuilds (spec 26) on this agent build.
     expect(editor.perf.second().render).toEqual({
       passesMax: expect.any(Number),
-      kept: { pictures: 0, mb: 0, retakes: 0 },
+      kept: { pictures: 0, mb: 0, retakes: 0, evicted: 0, refused: 0 },
       redraws: 0,
       rebuilds: 0
     });
@@ -152,7 +152,7 @@ describe("perf on the real engine without the agent flag (a page moku-game dev d
   });
 });
 
-describe("Mission control's feeds on an uncounted WebGL page of the dev engine (0.15.1, spec 03 Delta 2026-10-16 D15)", () => {
+describe("Mission control's feeds on an uncounted WebGL page of the dev engine (0.15.90, spec 03 Delta 2026-10-16 D15)", () => {
   it("answer every new id with the blocks it does not measure absent and those capabilities false; nothing throws (bug: WebGL's drawsAt 0 shown as passes of 0 draws)", async () => {
     const { editor, step } = await startPair();
     const read = (id: string, input: Json = {}): Json =>
@@ -172,22 +172,23 @@ describe("Mission control's feeds on an uncounted WebGL page of the dev engine (
       reason: "no-detail"
     });
     expect(() => read("editor.perf.passes")).not.toThrow();
-    // 0.15.1 writes the pass ring's owner column on every backend, draws only where it counts them.
+    // The engine writes the pass ring's owner column on every backend, draws only where it counts
+    // them; from 0.15.90 its monitor switches sections on every backend too.
     expect(editor.perf.second()).toMatchObject({
       caps: {
         passOwners: true,
         passDraws: false,
-        sections: false,
+        sections: true,
         detail: false,
         gpuTimer: false
       },
-      monitor: { engine: false, feeds: { passes: true, systems: true, nodes: true } },
+      monitor: { engine: true, feeds: { passes: true, systems: true, nodes: true } },
       memory: { trusted: false }
     });
   });
 });
 
-describe("Mission control's feeds on a counted WebGPU page of the dev engine (0.15.1, delta-data Verification)", () => {
+describe("Mission control's feeds on a counted WebGPU page of the dev engine (0.15.90, delta-data Verification)", () => {
   it("show the pass owners, filters and draws, a shader event, a problem, the system names, the sample's counts and targets and the build's app id (bug: a 0.15.1 column or line perf reads under another name)", async () => {
     const appId = "com.mokulabs.timber.debug";
     const { game, editor, step, filterOwner } = await startPair({

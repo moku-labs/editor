@@ -29,6 +29,7 @@ const silentRunner = { add: (): void => undefined, remove: (): void => undefined
 class StandInApplication {
   renderer = {
     name: "webgl",
+    resolution: 1,
     texture: { managedTextures: [] },
     runners: { prerender: silentRunner, renderStart: silentRunner },
     renderTarget: { renderTarget: undefined, onRenderTargetChange: silentRunner },
