@@ -240,7 +240,7 @@ export type RingNamesNext = {
 /**
  * The event names the 0.15.x patch and the next change add to the engine's `PerfEventName`: `shader`
  * (E4), `problem` (N3, three rules in 0.15.1), `debug` (U6, overdraw), `gc` (N6) and `sections` (N1).
- * The dev engine (0.15.1) lists the patch's three; the peer floor (0.15.0) none.
+ * The dev engine (0.15.90) lists all of them but `gc`; the peer floor (0.15.0) none.
  *
  * @example
  * ```ts
