@@ -177,6 +177,36 @@ describe("parseBinArgs mcp (M2, M3)", () => {
   });
 });
 
+describe("parseBinArgs --device (E13)", () => {
+  it("keeps the phone of --device for the serving bin, mcp and perf, and leaves the key out without it", () => {
+    expect(parseBinArgs(["a.html", "--device", "R5CY32V0J9M"])).toMatchObject({
+      kind: "run",
+      device: "R5CY32V0J9M"
+    });
+    expect(parseBinArgs(["--root", "game", "--device", "emulator-5554"])).toMatchObject({
+      kind: "run",
+      device: "emulator-5554"
+    });
+    expect(parseBinArgs(["mcp", "--device", "192.168.1.23:37011"])).toMatchObject({
+      kind: "mcp",
+      device: "192.168.1.23:37011"
+    });
+    expect(parseBinArgs(["perf", "--device", "R5"])).toMatchObject({ kind: "perf", device: "R5" });
+    expect("device" in parseBinArgs(["a.html"])).toBe(false);
+    expect("device" in parseBinArgs(["perf"])).toBe(false);
+  });
+
+  it.each([
+    [["a.html", "--device", "R5; adb kill-server"], "--device must be a serial adb devices prints"],
+    [["perf", "--device", "R5 X"], "perf --device must be a serial adb devices prints"],
+    [["mcp-config", "--device", "R5"], "mcp-config takes only <game-html> and --port"],
+    [["a.html", "--device"], "argument missing"]
+  ])("refuses %j", (argv, message) => {
+    const result = parseBinArgs(argv);
+    expect(result.kind === "error" && result.message).toContain(message);
+  });
+});
+
 describe("parseBinArgs mcp-config (M8)", () => {
   it("parses `mcp-config` alone and with html and port", () => {
     expect(parseBinArgs(["mcp-config"])).toEqual({ kind: "mcp-config" });

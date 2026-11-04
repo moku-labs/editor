@@ -14,7 +14,7 @@ import { filesPlugin } from "../files";
 import { normalizeModel } from "../hub/protocol";
 import type { DeviceLines, HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfHeaderLine, PerfLogLine } from "../perf/protocol";
-import { startAdbLoop, stopAdbLoop } from "./adb/loop";
+import { chooseDevice, startAdbLoop, stopAdbLoop } from "./adb/loop";
 import { fileNameOf } from "./session/name";
 import { telemetryLineOf, telemetryLogOf } from "./session/telemetry";
 import { closeFile, closeLog, emitQueued, enqueue, writeLines } from "./session/writer";
@@ -177,13 +177,13 @@ function onClosed(ctx: CollectorCtx, device: LinkedDevice): void {
 }
 
 /**
- * Device mode stopped: the adb loop stops, every log is done, its queue closes the handle, then
+ * Device mode stopped: the adb loop stops (its reverse removed), every log is done, its queue closes the handle, then
  * emits.
  *
  * @param ctx - Domain context of the collector.
  */
 function onStopped(ctx: CollectorCtx): void {
-  stopAdbLoop(ctx);
+  void stopAdbLoop(ctx);
   ctx.state.devices.clear();
   for (const session of ctx.state.sessions.values()) {
     if (session.state === "done") continue;
@@ -242,7 +242,7 @@ export function onTelemetry(ctx: CollectorCtx, record: DeviceTelemetry): void {
 
 /**
  * collector's hooks factory (`hooks: createCollectorHooks`): the hub's per-plugin `hub:device` and
- * connect's per-plugin `connect:telemetry`.
+ * connect's per-plugin `connect:telemetry` and `connect:device` (the phone chosen in the tools page).
  *
  * @param ctx - Domain context of the collector.
  * @returns The hooks.
@@ -254,6 +254,9 @@ export function createCollectorHooks(ctx: CollectorCtx): CollectorHooks {
     },
     "connect:telemetry": record => {
       onTelemetry(ctx, record);
+    },
+    "connect:device": choice => {
+      if (!ctx.state.stopped) void chooseDevice(ctx, choice.serial);
     }
   };
 }

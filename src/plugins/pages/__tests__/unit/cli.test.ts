@@ -905,6 +905,23 @@ describe("startBin engine page (B5)", () => {
       }
     });
 
+    it("re-runs the child with the --device phone, the flag or ANDROID_SERIAL (bug E13: the child lost the chosen phone)", async () => {
+      const flag = engineDeps();
+      await expect(startBin(["--root", moku, "--device", "R5CX1234"], flag.deps)).resolves.toEqual({
+        code: 0
+      });
+      expect(flag.spawn.mock.calls[0]?.[0].slice(-2)).toEqual(["--device", "R5CX1234"]);
+
+      const env = engineDeps();
+      const withEnv = { ...env.deps, env: { ANDROID_SERIAL: "emulator-5554" } };
+      await expect(startBin(["--root", moku], withEnv)).resolves.toEqual({ code: 0 });
+      expect(env.spawn.mock.calls[0]?.[0].slice(-2)).toEqual(["--device", "emulator-5554"]);
+
+      const none = engineDeps();
+      await expect(startBin(["--root", moku], none.deps)).resolves.toEqual({ code: 0 });
+      expect(none.spawn.mock.calls[0]?.[0]).not.toContain("--device");
+    });
+
     it("refuses a game with no pack before the page is written", async () => {
       const { deps, lines, spawn, importCli } = engineDeps();
       await expect(startBin(["--root", moku, "--packed"], deps)).resolves.toEqual({ code: 1 });
@@ -1141,12 +1158,14 @@ describe("startBin perf", () => {
     await startBin(["--help"], deps);
     const text = lines.join("\n");
     expect(text).toContain(
-      "moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]"
+      "moku-editor perf [--device SERIAL] [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]"
     );
     expect(text).toContain(
       'moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jsonl> <b.jsonl>'
     );
-    expect(text).toContain("perf        phones over adb reverse (--lan: by pairing code)");
+    expect(text).toContain(
+      "perf        the --device phone over adb reverse (--lan: by pairing code)"
+    );
   });
 
   it("dispatches perf mark, perf summary and perf compare to the perf deps", async () => {

@@ -62,7 +62,7 @@ export function refused(token: string): TypeError {
  * serialOf("192.168.1.23:37011"); // "192.168.1.23:37011"
  * ```
  */
-function serialOf(serial: string): string {
+export function serialOf(serial: string): string {
   if (!SERIAL.test(serial)) throw refused(serial);
   return serial;
 }

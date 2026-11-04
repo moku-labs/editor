@@ -241,6 +241,11 @@ export type RunArgs = {
   readonly servePlugins: readonly string[];
   /** True with `--packed`: the game is served from `dist/assets`; left out without the flag. */
   readonly packed?: true;
+  /**
+   * The phone this editor may reach by wire (`--device <serial>`, else `ANDROID_SERIAL`): the only
+   * one that gets `adb reverse`. Left out: no phone by wire reaches the editor.
+   */
+  readonly device?: string;
 };
 
 /**
@@ -270,6 +275,8 @@ export type McpArgs = {
   readonly hmr: boolean;
   /** True with `--packed`; left out without the flag. */
   readonly packed?: true;
+  /** `--device <serial>`: handed to the bin the bridge starts; left out without the flag. */
+  readonly device?: string;
 };
 
 /**

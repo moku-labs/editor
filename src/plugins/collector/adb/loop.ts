@@ -1,11 +1,12 @@
 /* eslint-disable unicorn/no-null -- null is "not reported" on the collector's thermal line */
 /**
  * @file collector plugin — the adb loop while device mode is on: a reverse round every
- * `reverseEveryMs` (`adb devices`, the model of a new serial, `adb reverse` for every ready phone)
- * and a poll round every `everyS` (heat and system frames of each phone matched to exactly one live
- * adb log of the configured app), written as collector lines through the log's queue. A round
- * already running when the loop stops finishes and writes nothing. adb missing stops the loop until
- * device mode turns on again.
+ * `reverseEveryMs` (`adb devices`, then the model and `adb reverse` of the chosen phone,
+ * `collector.device`, while it is listed ready; no chosen phone, no adb at all) and a poll round
+ * every `everyS` (heat and system frames of the phone matched to exactly one live adb log of the
+ * configured app), written as collector lines through the log's queue. Stopping the loop removes
+ * the reverse it made. A round already running when the loop stops finishes and writes nothing (a
+ * reverse it made is removed at once). adb missing stops the loop until device mode turns on again.
  */
 import { baseAppId } from "../../hub/protocol";
 import type { PerfCollectorLine, PerfThermalLine } from "../../perf/protocol";
@@ -45,8 +46,26 @@ const SECOND_MS = 1000;
 const MISSING_HINT =
   "USB phones need Android platform-tools (adb) on PATH; a LAN phone works without it";
 
+/** The hint of the one `collector:no-device` line. */
+const NO_DEVICE_HINT =
+  "no phone is reached by wire; start with --device <serial> (adb devices) or set ANDROID_SERIAL";
+
+/** The hint of a `collector:device-absent` line. */
+const ABSENT_HINT =
+  "the chosen phone is not ready in adb devices; plug it in and allow USB debugging";
+
 /** A collector line with the computer clock it was written at. */
 type Stamped<Line> = Line & { readonly rx: number };
+
+/**
+ * The one phone the loop may reverse: the one chosen in the tools page, else `collector.device`.
+ *
+ * @param ctx - Domain context of the collector.
+ * @returns The serial, or undefined for none.
+ */
+function chosenOf(ctx: CollectorCtx): string | undefined {
+  return ctx.state.chosen ?? ctx.config.device;
+}
 
 /**
  * Whether a loop is still the running one: a round checks it before each write.
@@ -167,11 +186,33 @@ async function reversePhone(
   const port = `tcp:${loop.port}`;
   const reversed = await adbOf(ctx, loop, run, ["-s", serial, "reverse", port, port]);
   if (isCurrent(ctx, loop)) noteReverse(ctx, loop, phone, reversed.code === 0);
+  else if (reversed.code === 0) await loop.unreverse(serial);
 }
 
 /**
- * One reverse round (skipped while one runs): `adb devices`, then `adb reverse` for every ready
- * phone, a phone plugged in later included. A serial that left is forgotten.
+ * Notes whether the chosen phone is listed ready: one `collector:device-absent` line each time it
+ * goes missing (the first round included), cleared when it is back.
+ *
+ * @param ctx - Domain context of the collector.
+ * @param loop - The loop.
+ * @param serial - The chosen serial.
+ * @param ready - Whether `adb devices` lists it ready.
+ */
+function noteChosen(ctx: CollectorCtx, loop: AdbLoop, serial: string, ready: boolean): void {
+  const key = `absent:${serial}`;
+  if (ready) {
+    loop.warned.delete(key);
+    return;
+  }
+  if (loop.warned.has(key)) return;
+  loop.warned.add(key);
+  ctx.log.info("collector:device-absent", { serial, hint: ABSENT_HINT });
+}
+
+/**
+ * One reverse round (skipped while one runs, and without a chosen phone): `adb devices`, then
+ * `adb reverse` for the chosen phone when it is ready, also when it is plugged in later. Every
+ * other phone is left alone. A serial that left is forgotten.
  *
  * @param ctx - Domain context of the collector.
  * @param loop - The loop.
@@ -183,7 +224,8 @@ export async function reverseRound(
   loop: AdbLoop,
   run: AdbRunner
 ): Promise<void> {
-  if (loop.reversing || !isCurrent(ctx, loop)) return;
+  const chosen = chosenOf(ctx);
+  if (chosen === undefined || loop.reversing || !isCurrent(ctx, loop)) return;
 
   loop.reversing = true;
   try {
@@ -192,7 +234,9 @@ export async function reverseRound(
 
     const serials = parseDevices(listed.text);
     forgetGone(loop, serials);
-    await Promise.all(serials.map(serial => reversePhone(ctx, loop, run, serial)));
+    const ready = serials.includes(chosen);
+    noteChosen(ctx, loop, chosen, ready);
+    if (ready) await reversePhone(ctx, loop, run, chosen);
   } finally {
     loop.reversing = false;
   }
@@ -514,7 +558,7 @@ export async function pollRound(ctx: CollectorCtx, loop: AdbLoop, run: AdbRunner
 
 /**
  * The adb loop with both timers (unref'd): a reverse round every `reverseEveryMs`, a poll round
- * every `everyS` s.
+ * every `everyS` s, and the removal of a reverse it made.
  *
  * @param ctx - Domain context of the collector.
  * @param port - The device port to reverse.
@@ -529,6 +573,15 @@ export function createAdbLoop(ctx: CollectorCtx, port: number, run: AdbRunner): 
     polling: false,
     state: "on",
     warned: new Set(),
+    run,
+    unreverse: async serial => {
+      const port = `tcp:${loop.port}`;
+      await run(
+        ctx.config.adb,
+        ["-s", serial, "reverse", "--remove", port],
+        ctx.config.adbTimeoutMs
+      );
+    },
     reverseTimer: setInterval(() => {
       void reverseRound(ctx, loop, run);
     }, ctx.config.reverseEveryMs),
@@ -542,8 +595,29 @@ export function createAdbLoop(ctx: CollectorCtx, port: number, run: AdbRunner): 
 }
 
 /**
- * Turns the adb loop on for device mode's port (a running loop is stopped first): a reverse
- * round and a poll round at once (the first poll records the gfx baseline), then on their timers.
+ * The first reverse round of a loop: after a restart it waits for the old loop's removals, so they
+ * never undo its reverse; else it starts at once (no await before it).
+ *
+ * @param stopped - The old loop's removals, or undefined for a first start.
+ * @param ctx - Domain context of the collector.
+ * @param loop - The new loop.
+ * @param run - The process seam.
+ * @returns When the round is over.
+ */
+async function reverseAfter(
+  stopped: Promise<void> | undefined,
+  ctx: CollectorCtx,
+  loop: AdbLoop,
+  run: AdbRunner
+): Promise<void> {
+  if (stopped !== undefined) await stopped;
+  await reverseRound(ctx, loop, run);
+}
+
+/**
+ * Turns the adb loop on for device mode's port (a running loop is stopped first, its reverse
+ * removed before the new loop's first reverse round): a reverse round and a poll round at once (the first poll records the gfx baseline), then on their timers.
+ * Without a chosen phone (`collector.device`) one `collector:no-device` line says how to choose one.
  *
  * @param ctx - Domain context of the collector.
  * @param port - The device port to reverse.
@@ -551,26 +625,55 @@ export function createAdbLoop(ctx: CollectorCtx, port: number, run: AdbRunner): 
  * @returns The loop, now `state.adb`.
  */
 export function startAdbLoop(ctx: CollectorCtx, port: number, run: AdbRunner = runAdb): AdbLoop {
-  stopAdbLoop(ctx);
+  const restart = ctx.state.adb !== undefined;
+  const stopped = stopAdbLoop(ctx);
   const loop = createAdbLoop(ctx, port, run);
   ctx.state.adb = loop;
-  void reverseRound(ctx, loop, run);
+  if (chosenOf(ctx) === undefined) ctx.log.info("collector:no-device", { hint: NO_DEVICE_HINT });
+  void reverseAfter(restart ? stopped : undefined, ctx, loop, run);
   void pollRound(ctx, loop, run);
   return loop;
 }
 
 /**
- * Turns the adb loop off: both timers cleared, `state.adb` undefined. A round already running
- * finishes and writes nothing. Takes the state only, so onStop can call it.
+ * A phone chosen in the tools page (`connect:device`): it becomes the only phone the loop may
+ * reverse. A phone reversed before it loses its reverse, and a running loop reverses the new one
+ * at once (connectDevice waits for its session).
+ *
+ * @param ctx - Domain context of the collector.
+ * @param serial - The chosen serial.
+ * @returns When the old reverse is removed and the round is over.
+ */
+export async function chooseDevice(ctx: CollectorCtx, serial: string): Promise<void> {
+  ctx.state.chosen = serial;
+  const loop = ctx.state.adb;
+  if (loop === undefined) return;
+
+  const others = [...loop.phones.values()].filter(phone => phone.serial !== serial);
+  for (const phone of others) loop.phones.delete(phone.serial);
+  await Promise.all(
+    others.filter(phone => phone.reversed).map(phone => loop.unreverse(phone.serial))
+  );
+  await reverseRound(ctx, loop, loop.run);
+}
+
+/**
+ * Turns the adb loop off: both timers cleared, `state.adb` undefined, and the reverse of every
+ * reversed phone removed (`adb reverse --remove`), so no phone keeps a way to this computer's
+ * device port. A round already running finishes and writes nothing. Takes the state only, so
+ * onStop can call it.
  *
  * @param ctx - Anything with the collector's state.
  * @param ctx.state - The collector's state.
+ * @returns When every removal answered (a failed one included).
  */
-export function stopAdbLoop(ctx: { readonly state: CollectorState }): void {
+export async function stopAdbLoop(ctx: { readonly state: CollectorState }): Promise<void> {
   const loop = ctx.state.adb;
   if (loop === undefined) return;
 
   clearInterval(loop.reverseTimer);
   clearInterval(loop.pollTimer);
   ctx.state.adb = undefined;
+  const reversed = [...loop.phones.values()].filter(phone => phone.reversed);
+  await Promise.all(reversed.map(phone => loop.unreverse(phone.serial)));
 }

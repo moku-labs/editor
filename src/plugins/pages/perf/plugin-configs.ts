@@ -1,7 +1,7 @@
 /**
  * @file pages perf sub-domain — the plugin config of a perf run: every switch is a field of the
  * plugin that owns it (`hub.devicePort`, `hub.deviceLan`, `collector.out`, `collector.everyS`,
- * `pages.toolsPage`), so a later `moku-editor --device` reuses the same mapping. Pure.
+ * `pages.toolsPage`), and `--device` maps onto `collector.device`. Pure.
  */
 import type { PerfArgs, PerfPluginConfigs, ServerPluginConfigs } from "./types";
 
@@ -27,7 +27,12 @@ export function perfConfigOf(
   return {
     files: { root, project: false },
     hub: { devicePort: args.port, deviceLan: args.lan },
-    collector: { out: args.out, everyS: args.every, ...(appId === undefined ? {} : { appId }) },
+    collector: {
+      out: args.out,
+      everyS: args.every,
+      ...(appId === undefined ? {} : { appId }),
+      ...(args.device === undefined ? {} : { device: args.device })
+    },
     pages: { toolsPage: args.ui }
   };
 }

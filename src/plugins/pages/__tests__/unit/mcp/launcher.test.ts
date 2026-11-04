@@ -92,6 +92,14 @@ describe("launchCommand", () => {
     expect(launchCommand(["bun", "bin"], options())).not.toContain("--packed");
   });
 
+  it("passes --device only when the bridge was given a phone (bug E13: the started bin reversed no phone, or every phone)", () => {
+    expect(launchCommand(["bun", "bin"], { ...options(), device: "R5CX1234" }).slice(-2)).toEqual([
+      "--device",
+      "R5CX1234"
+    ]);
+    expect(launchCommand(["bun", "bin"], options())).not.toContain("--device");
+  });
+
   it("starts the engine form, without the html, when the html is the root's engine page", () => {
     const engine = { html: join(root, ".moku", "index.html"), port: 4100, root, hmr: true };
 

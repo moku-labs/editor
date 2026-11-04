@@ -4,7 +4,8 @@
  * confirm in the page, and for a phone by wire that a tools page watches, CDP over adb forward and
  * the wired telemetry (GPU, CPU and memory per process, JS heap and inferred GCs) published as
  * `editor.deviceTelemetry` once a second. Registers the editor methods `connect.*` on the hub;
- * hooks the hub's `hub:device`; emits its per-plugin event `connect:telemetry`.
+ * hooks the hub's `hub:device`; emits its per-plugin events `connect:telemetry`
+ * and `connect:device`.
  *
  * @see README.md
  */
@@ -16,7 +17,7 @@ import { createConnectHooks } from "./handlers";
 import { initConnect } from "./init";
 import { startConnect, stopConnect } from "./lifecycle";
 import { createConnectState } from "./state";
-import type { ConnectConfig, DeviceTelemetry } from "./types";
+import type { ConnectConfig, DeviceTelemetry, WireChoice } from "./types";
 
 const defaultConfig: ConnectConfig = {
   adb: "adb",
@@ -50,6 +51,9 @@ export const connectPlugin = createServerPlugin("connect", {
   events: (register: RegisterFunction) => ({
     "connect:telemetry": register<DeviceTelemetry>(
       "One wired telemetry record of a watched device, once per tick"
+    ),
+    "connect:device": register<WireChoice>(
+      "The phone a person chose to reach by wire (connect.wire with a device)"
     )
   }),
   createState: createConnectState,

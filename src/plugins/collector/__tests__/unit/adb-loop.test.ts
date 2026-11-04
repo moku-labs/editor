@@ -4,7 +4,14 @@ import { join } from "node:path/posix";
 import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LinkedDevice } from "../../../hub/types";
-import { createAdbLoop, pollRound, reverseRound, startAdbLoop, stopAdbLoop } from "../../adb/loop";
+import {
+  chooseDevice,
+  createAdbLoop,
+  pollRound,
+  reverseRound,
+  startAdbLoop,
+  stopAdbLoop
+} from "../../adb/loop";
 import { stopCollector } from "../../lifecycle";
 import { createLogSession } from "../../state";
 import type { AdbResult, AdbRunner, LogSession } from "../../types";
@@ -159,7 +166,7 @@ beforeEach(async () => {
   });
   vi.setSystemTime(NOW);
   root = await tempDir();
-  ctx = createCtx(root, { appId: "com.example.garden" });
+  ctx = createCtx(root, { appId: "com.example.garden", device: "R5" });
 });
 
 afterEach(async () => {
@@ -170,17 +177,24 @@ afterEach(async () => {
 });
 
 describe("reverse rounds", () => {
-  it("reverses every ready phone every round, a phone plugged in later included, and stops with the loop", async () => {
-    const scenario = scenarioOf();
+  it("reverses only the chosen phone, also when plugged in later, and never another ready phone (bug E13: every phone got a reverse)", async () => {
+    const scenario = { ...scenarioOf(), devices: ["Q9"] };
     const run = fakeRunner(scenario);
 
     startAdbLoop(ctx, 47_600, run);
     await settle();
-    scenario.devices = ["R5", "Q9"];
+    expect(serialsOf(run, "reverse")).toEqual([]);
+    expect(ctx.log.info).toHaveBeenCalledWith("collector:device-absent", {
+      serial: "R5",
+      hint: "the chosen phone is not ready in adb devices; plug it in and allow USB debugging"
+    });
+
+    scenario.devices = ["Q9", "R5"];
     await vi.advanceTimersByTimeAsync(2000);
     await settle();
 
-    expect(serialsOf(run, "reverse")).toEqual(["R5", "R5", "Q9"]);
+    expect(serialsOf(run, "reverse")).toEqual(["R5"]);
+    expect(serialsOf(run, "getprop")).toEqual(["R5"]);
     expect(run.mock.calls.find(([, args]) => args[2] === "reverse")?.[1]).toEqual([
       "-s",
       "R5",
@@ -193,13 +207,116 @@ describe("reverse rounds", () => {
       model: "SM-A266B",
       port: 47_600
     });
+  });
 
-    stopAdbLoop(ctx);
+  it("runs no adb at all without a chosen phone and says once how to choose one", async () => {
+    ctx = createCtx(root, { appId: "com.example.garden" });
+    const run = fakeRunner(scenarioOf());
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(run).not.toHaveBeenCalled();
+    expect(ctx.log.info).toHaveBeenCalledTimes(1);
+    expect(ctx.log.info).toHaveBeenCalledWith("collector:no-device", {
+      hint: "no phone is reached by wire; start with --device <serial> (adb devices) or set ANDROID_SERIAL"
+    });
+  });
+
+  it("removes the reverse it made when the loop stops, and runs nothing after", async () => {
+    const run = fakeRunner(scenarioOf());
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    await stopAdbLoop(ctx);
     const calls = run.mock.calls.length;
     await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(run.mock.calls.at(-1)?.[1]).toEqual(["-s", "R5", "reverse", "--remove", "tcp:47600"]);
     expect(run.mock.calls).toHaveLength(calls);
     expect(ctx.state.adb).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("restarted on a second listening, reverses again only after the old loop removed its reverse", async () => {
+    const run = fakeRunner(scenarioOf());
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+
+    const reverses = run.mock.calls
+      .map(([, args]) => args.join(" "))
+      .filter(line => line.includes(" reverse "));
+    expect(reverses).toEqual([
+      "-s R5 reverse tcp:47600 tcp:47600",
+      "-s R5 reverse --remove tcp:47600",
+      "-s R5 reverse tcp:47600 tcp:47600"
+    ]);
+  });
+
+  it("removes nothing for a phone whose reverse failed", async () => {
+    const run = fakeRunner({ ...scenarioOf(), reverseCode: 1 });
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    await stopAdbLoop(ctx);
+
+    expect(run.mock.calls.some(([, args]) => args.includes("--remove"))).toBe(false);
+  });
+
+  it("removes at once a reverse that succeeded after the loop stopped", async () => {
+    const { promise: pending, resolve: release } = Promise.withResolvers<AdbResult>();
+    const scenario = scenarioOf();
+    const run: Mock<AdbRunner> = vi.fn<AdbRunner>(async (_command, args) =>
+      args[2] === "reverse" && args[3] !== "--remove" ? pending : answer(scenario, args)
+    );
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    await stopAdbLoop(ctx);
+    expect(run.mock.calls.some(([, args]) => args.includes("--remove"))).toBe(false);
+    release(ok(""));
+    await settle();
+
+    expect(run.mock.calls.at(-1)?.[1]).toEqual(["-s", "R5", "reverse", "--remove", "tcp:47600"]);
+  });
+
+  it("moves the reverse to the phone chosen in the tools page at once, and removes the old one", async () => {
+    const scenario = {
+      ...scenarioOf(),
+      devices: ["R5", "Q9"],
+      models: { R5: "SM-A266B", Q9: "Pixel 7" }
+    };
+    const run = fakeRunner(scenario);
+
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+    await chooseDevice(ctx, "Q9");
+
+    expect(serialsOf(run, "reverse")).toEqual(["R5", "R5", "Q9"]);
+    expect(
+      run.mock.calls.some(([, args]) => args.join(" ") === "-s R5 reverse --remove tcp:47600")
+    ).toBe(true);
+    expect([...(ctx.state.adb?.phones.keys() ?? [])]).toEqual(["Q9"]);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await settle();
+    expect(serialsOf(run, "reverse").filter(serial => serial === "R5")).toHaveLength(2);
+  });
+
+  it("keeps a phone chosen while device mode is off for the next loop", async () => {
+    ctx = createCtx(root, { appId: "com.example.garden" });
+    const run = fakeRunner(scenarioOf());
+
+    await chooseDevice(ctx, "R5");
+    startAdbLoop(ctx, 47_600, run);
+    await settle();
+
+    expect(serialsOf(run, "reverse")).toEqual(["R5"]);
+    expect(ctx.log.info).not.toHaveBeenCalledWith("collector:no-device", expect.anything());
   });
 
   it("asks getprop once per appearance of a serial", async () => {

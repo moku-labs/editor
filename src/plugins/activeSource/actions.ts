@@ -72,14 +72,21 @@ function badAnswer(method: string, missing: string): Error {
  *
  * @param ctx - Domain context of activeSource.
  * @param method - The editor method.
+ * @param params - The method's params, or undefined for none.
+ * @param params.device - The serial of the phone chosen by wire (`connect.wire` only).
  * @returns The listen addresses.
  * @throws {Error} connect's wire error; the two-line error of an answer without a listen.
  */
 export async function listenOn(
   ctx: ActiveSourceCtx,
-  method: "connect.wire" | "connect.network"
+  method: "connect.wire" | "connect.network",
+  params?: { readonly device: string }
 ): Promise<ListenInfo> {
-  const listen = readListen(await ctx.require(linkPlugin).callEditor(method));
+  const link = ctx.require(linkPlugin);
+  const answer = await (params === undefined
+    ? link.callEditor(method)
+    : link.callEditor(method, params));
+  const listen = readListen(answer);
   if (listen === undefined) throw badAnswer(method, "a listen");
   return listen;
 }
@@ -222,8 +229,9 @@ function waitForSession(ctx: ActiveSourceCtx, serial: string, model: string): Pr
 }
 
 /**
- * Connects one phone adb lists: device mode on for wires when off, a wait for its debug game, then
- * the switch (reason connected).
+ * Connects one phone adb lists: it becomes the phone chosen by wire (`connect.wire { device }`, the
+ * only one the collector reverses, E13), device mode on for wires when off, a wait for its debug
+ * game, then the switch (reason connected).
  *
  * @param ctx - Domain context of activeSource.
  * @param serial - WireDevice.serial.
@@ -244,7 +252,7 @@ export async function connectDevice(ctx: ActiveSourceCtx, serial: string): Promi
       `${ERROR_PREFIX}Allow USB debugging on the phone.\n  Accept the prompt on its screen, then connect again.`
     );
   }
-  if (!directory.mode.on) await listenOn(ctx, "connect.wire");
+  await listenOn(ctx, "connect.wire", { device: serial });
 
   const session = await waitForSession(ctx, serial, phone.model ?? serial);
   await switchToDevice(ctx, session, "connected");

@@ -42,6 +42,7 @@
  * | collector | adb | "adb" |
  * | collector | adbTimeoutMs | 5000 |
  * | collector | appId | undefined: no gfx lines |
+ * | collector | device | undefined: no phone by wire is reversed |
  * | pages | title | "moku editor" |
  * | pages | editorUrl | "vscode://file/{path}:{line}" |
  * | pages | pageDir | undefined: dist/tools next to the module |
@@ -50,7 +51,8 @@
  *
  * The switches of `moku-editor perf` are not options of their own: `--port` is `hub.devicePort`,
  * `--lan` `hub.deviceLan`, `--out` `collector.out`, `--every` `collector.everyS`, `--no-ui`
- * `pages.toolsPage: false`.
+ * `pages.toolsPage: false`, and `--device` (else `ANDROID_SERIAL`, also on the serving bin and
+ * `mcp`) `collector.device`.
  *
  * @file The Bun entry: the server core and its plugins.
  * @example

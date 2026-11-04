@@ -12,15 +12,21 @@ computer:
   written in arrival order: the hook enqueues synchronously, each log has one write queue. When a
   device starts a new log, the files of its other logs are closed (chained on their queues) and
   reopen on their next line, so one phone holds one open file at a time.
-- **adb, only while device mode is on.** Every `reverseEveryMs` (2 s): `adb devices` and
-  `adb -s <serial> reverse tcp:<port> tcp:<port>` for every ready phone, so a phone plugged in later is
-  reached without a restart. The model comes from `adb shell getprop ro.product.model`, normalized
+- **adb, only while device mode is on, only for the chosen phone (E13).** The chosen phone is
+  connect's `connect:device` (Connect on a phone in the tools page), else `device`
+  (`moku-editor --device <serial>`, else `ANDROID_SERIAL`). Every `reverseEveryMs` (2 s): `adb devices`
+  and `adb -s <serial> reverse tcp:<port> tcp:<port>` for that phone while it is listed ready, so it is
+  reached when plugged in later without a restart (`collector:device-absent` once while it is not).
+  Every other phone is left alone; with no phone chosen the loop runs no adb at all and says so once
+  (`collector:no-device`), so a run in some worktree never takes over the phone on the desk. A new
+  choice removes the old phone's reverse; stopping the loop (device mode off, onStop) removes the
+  reverse it made (`adb reverse --remove`), also one that succeeded after the stop. The model comes from `adb shell getprop ro.product.model`, normalized
   like the page's header (`normalizeModel` of `hub/protocol`). Every `everyS` seconds, for each adb
   phone matched to exactly one live adb log of its model and of the configured app (a log whose app
   id — the pair's, the header's `app.id` — differs from `appId` once `.debug` is stripped is left
   out; a log without an app id, from an engine before it, stays in): `dumpsys battery` + `dumpsys thermalservice` (a `thermal`
   line, `source: "collector"`) and `dumpsys gfxinfo <package>` (a `gfx` line from the second reading
-  on). Reads only; nothing on the phone changes except the port reverse.
+  on). Reads only; nothing on the phone changes except the port reverse of the chosen phone.
 - **Wired telemetry while the phone records.** For a phone by wire that a tools page watches, connect
   emits one `DeviceTelemetry` record a second (`connect:telemetry`: GPU, CPU and memory per process,
   the CDP heap and inferred GCs). The collector writes each as one computer-side `telemetry` line into
@@ -62,6 +68,7 @@ two-line format.
 | `adb` | `string` | `"adb"` | The adb command (a name on PATH or a path). Non-empty. |
 | `adbTimeoutMs` | `number` | `5000` | The longest one adb command may run before it is killed. Whole number, ≥ 500. |
 | `appId` | `string \| undefined` | `undefined` | The game's Android package. `<appId>.debug` is preferred when installed. Undefined: no gfx lines. |
+| `device` | `string \| undefined` | `undefined` | The one phone by wire that gets `adb reverse` (an adb serial). `--device` / `ANDROID_SERIAL` set it; `connect:device` wins. Undefined: no phone, no adb. |
 
 ```
 [moku-editor] collector.everyS is 0.

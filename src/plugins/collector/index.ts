@@ -25,13 +25,15 @@ const defaultConfig: CollectorConfig = {
   reverseEveryMs: 2000,
   adb: "adb",
   adbTimeoutMs: 5000,
-  appId: undefined
+  appId: undefined,
+  device: undefined
 };
 
 /**
  * Collector plugin — device logs on the computer: one JSONL file per phone log, adb reverse and
  * heat while device mode is on, a wired phone's telemetry while it records, `collector:session` for
- * live lines. Idle until `hub:device`. Depends on connect for its `connect:telemetry` event only.
+ * live lines. Idle until `hub:device`. Depends on connect for its `connect:telemetry` and
+ * `connect:device` events only.
  *
  * @example
  * ```ts

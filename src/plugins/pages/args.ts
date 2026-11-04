@@ -1,7 +1,8 @@
 /**
  * @file pages plugin — the arguments of `moku-editor [<game-html>] [--port 3000] [--root .]
- * [--no-hmr] [--packed] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of the subcommands
- * `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]` and
+ * [--no-hmr] [--packed] [--device SERIAL] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of
+ * the subcommands `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]
+ * [--device SERIAL]` and
  * `moku-editor mcp-config [<game-html>] [--port N]`. Without a game HTML file the bin serves the
  * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
  * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
@@ -11,6 +12,7 @@
  * are not the serving bin's.
  */
 import { parseArgs } from "node:util";
+import { deviceKey } from "./device";
 import { perfArgs } from "./perf/args";
 import type { BinArgs } from "./types";
 
@@ -40,7 +42,7 @@ const E2E_NO_CONFIG = "e2e needs the Playwright config: -c <file>";
 const CONFIG_JOINED = "--config=";
 
 /**
- * Parses argv strictly with the seven flags of the bin; `--preload` and `--serve-plugin` repeat.
+ * Parses argv strictly with the eight flags of the bin; `--preload` and `--serve-plugin` repeat.
  *
  * @param argv - Arguments after the script name.
  * @returns The positionals and flag values.
@@ -60,6 +62,7 @@ function parse(argv: readonly string[]) {
       root: { type: "string", short: "r" },
       "no-hmr": { type: "boolean" },
       packed: { type: "boolean" },
+      device: { type: "string" },
       preload: { type: "string", multiple: true },
       "serve-plugin": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" }
@@ -215,7 +218,17 @@ function mcpArgs(parsed: Parsed): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
-  return { kind: "mcp", ...game, root, hmr: values["no-hmr"] !== true, ...packedKey(values) };
+  const device = deviceKey(values.device);
+  if (typeof device === "string") return failed(device);
+
+  return {
+    kind: "mcp",
+    ...game,
+    root,
+    hmr: values["no-hmr"] !== true,
+    ...packedKey(values),
+    ...device
+  };
 }
 
 /**
@@ -232,7 +245,10 @@ function mcpConfigArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
   if (hasPageFlags(values)) return failed(SERVING_ONLY);
   const hasServeFlags =
-    values.root !== undefined || values["no-hmr"] !== undefined || values.packed !== undefined;
+    values.root !== undefined ||
+    values["no-hmr"] !== undefined ||
+    values.packed !== undefined ||
+    values.device !== undefined;
   if (hasServeFlags) return failed("mcp-config takes only <game-html> and --port");
 
   const game = optionalGame(positionals.slice(1), values.port);
@@ -276,6 +292,10 @@ function runArgs(parsed: Parsed): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
+  // The phone by wire is chosen only by name (E13).
+  const device = deviceKey(values.device);
+  if (typeof device === "string") return failed(device);
+
   // The html key is left out for the engine page.
   return {
     kind: "run",
@@ -285,7 +305,8 @@ function runArgs(parsed: Parsed): BinArgs {
     hmr: values["no-hmr"] !== true,
     preload: values.preload ?? [],
     servePlugins: values["serve-plugin"] ?? [],
-    ...packedKey(values)
+    ...packedKey(values),
+    ...device
   };
 }
 
@@ -326,7 +347,7 @@ function e2eArgs(words: readonly string[]): BinArgs {
  *
  * @param argv - Arguments after the script name.
  * @returns `run` with html (left out for the engine page), port, root, hmr, preload,
- * servePlugins and packed (when given); `mcp`; `mcp-config`; `e2e` with the config and
+ * servePlugins, packed and device (when given); `mcp`; `mcp-config`; `e2e` with the config and
  * Playwright's words; `perf`, `perf-mark`, `perf-summary` or `perf-compare`; `help`; or `error`
  * with a message.
  * @example

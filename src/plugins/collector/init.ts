@@ -15,6 +15,9 @@ const MIN_MS = 500;
 /** An Android application id: dotted segments, each starting with a letter. */
 const APP_ID = /^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/;
 
+/** A serial as adb prints it: USB, `ip:port`, or an `_adb-tls-connect` mDNS name (connect's rule). */
+const SERIAL = /^[\w.:-]{1,96}$/;
+
 /**
  * A config value as the error shows it: strings quoted.
  *
@@ -63,13 +66,14 @@ function isWholeIn(value: number, min: number, max = Number.POSITIVE_INFINITY): 
 
 /**
  * Checks the collector config: `out` and `adb` non-empty, `everyS` whole 1–3600, `reverseEveryMs`
- * and `adbTimeoutMs` whole ≥ 500, `appId` undefined or an Android application id.
+ * and `adbTimeoutMs` whole ≥ 500, `appId` undefined or an Android application id, `device`
+ * undefined or an adb serial.
  *
  * @param config - The resolved config.
  * @throws {TypeError} `[moku-editor] collector.<field> is <value>.` with the fix on a second line.
  */
 export function validateCollectorConfig(config: Readonly<CollectorConfig>): void {
-  const { out, everyS, reverseEveryMs, adb, adbTimeoutMs, appId } = config;
+  const { out, everyS, reverseEveryMs, adb, adbTimeoutMs, appId, device } = config;
   if (typeof out !== "string" || out.length === 0)
     throw configError("out", out, 'Set it to a folder, for example ".moku/perf"');
   if (!isWholeIn(everyS, EVERY_S.min, EVERY_S.max)) {
@@ -96,6 +100,13 @@ export function validateCollectorConfig(config: Readonly<CollectorConfig>): void
       "appId",
       appId,
       'Use the Android package of the game, for example "com.example.garden"'
+    );
+  }
+  if (device !== undefined && !SERIAL.test(device)) {
+    throw configError(
+      "device",
+      device,
+      'Use the serial adb devices prints, for example "R5CX1234"'
     );
   }
 }

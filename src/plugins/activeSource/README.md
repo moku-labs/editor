@@ -62,7 +62,7 @@ A bad value fails `createApp` with a two-line `TypeError`, e.g.
 | `connectWire()`, `connectNetwork()` | `connect.wire` / `connect.network`: device mode on; answers the listen addresses |
 | `confirmPairing(ticket, code)`, `refusePairing(ticket)` | `connect.confirm` / `connect.refuse` |
 | `stopDevices(options?)` | `connect.off` (all of device mode, or `{ lan: true }`); a device it cuts falls back to the local preview (reason `stopped`) |
-| `connectDevice(serial)` | device mode on for wires when off, waits up to 20 s (connect's default `answerTimeoutMs`) for the phone's debug game, then `useDevice` (reason `connected`) |
+| `connectDevice(serial)` | names the phone to `connect.wire { device }` (the only phone the collector reverses, E13), device mode on for wires when off, waits up to 20 s (connect's default `answerTimeoutMs`) for the phone's debug game, then `useDevice` (reason `connected`) |
 | `telemetry()`, `onTelemetry(fn)` | the active device's `editor.deviceTelemetry` only |
 | `markers()`, `notice()`, `dismissNotice()`, `reconnect()` | timeline markers, the disconnect notice, Reconnect |
 | `label()`, `health()`, `clockOffsetMs()` | the connection bar's name and link, the latency ring (48 samples, one per directory update of the active device, NaN for a gap, allocated once), the phone − computer clock offset (median of the last 8 heartbeats of the active device, each `at − (receivedAt − latency / 2)`; 0 for the local preview and a page, null before two beats) |

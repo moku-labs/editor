@@ -23,6 +23,7 @@ import { createBrandConsole } from "@moku-labs/common/cli";
 import type { KeysWatcher } from "@moku-labs/game/cli";
 import { createApp } from "../../server";
 import { parseBinArgs } from "./args";
+import { withDevice } from "./device";
 import { discoveryOf, publishDiscovery } from "./discovery";
 import type { E2eDeps } from "./e2e";
 import { processE2eDeps, runE2e } from "./e2e";
@@ -55,22 +56,23 @@ export type { Started } from "./types";
  * The usage lines of `--help` and of an argument error.
  */
 const USAGE = [
-  "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--packed]",
-  "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--packed] [--help]",
-  "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]",
+  "Usage: moku-editor [--root DIR] [--preload FILE]… [--serve-plugin FILE]… [--packed] [--device SERIAL]",
+  "       moku-editor <game-html> [--port 3000] [--root .] [--no-hmr] [--packed] [--device SERIAL] [--help]",
+  "       moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed] [--device SERIAL]",
   "       moku-editor mcp-config [<game-html>] [--port N]",
   "       moku-editor e2e -c <playwright config> [playwright args…]",
-  "       moku-editor perf [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]",
+  "       moku-editor perf [--device SERIAL] [--lan] [--port 47600] [--out DIR] [--every 10] [--no-ui]",
   '       moku-editor perf mark "<label>" | perf summary <log.jsonl> | perf compare <a.jsonl> <b.jsonl>',
   "  without an HTML file, a moku-game folder (index.ts + config.ts) gets its page from the engine",
   "  mcp         stdio MCP server for Claude Code: uses the running editor, or starts it",
   "  mcp-config  print the .mcp.json snippet and the claude mcp add line",
   "  e2e         one Playwright run per project and spec file, each on its own PORT",
-  "  perf        phones over adb reverse (--lan: by pairing code): JSONL logs, heat, live lines, tools page on the port",
+  "  perf        the --device phone over adb reverse (--lan: by pairing code): JSONL logs, heat, live lines, tools page on the port",
   "  --port, -p  port on 127.0.0.1 (0 = a random free port)",
   "  --root, -r  project root the editor reads and writes (default .)",
   "  --no-hmr    serve the game without hot reload (default: hot reload on)",
-  "  --packed    serve dist/assets, no keys watch: new art shows after moku-game pack"
+  "  --packed    serve dist/assets, no keys watch: new art shows after moku-game pack",
+  "  --device    the one phone reached by wire (adb devices serial; default ANDROID_SERIAL): no flag, no phone"
 ];
 
 /**
@@ -112,6 +114,11 @@ export type CliDeps = {
   readonly e2e?: E2eDeps;
   /** What `perf` and its subcommands talk to; default `processPerfDeps()`; tests pass a stub. */
   readonly perf?: PerfDeps;
+  /**
+   * The environment `ANDROID_SERIAL` is read from (the phone by wire when `--device` is not
+   * given); default none, so a test never picks up the shell's phone.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 };
 
 /**
@@ -184,12 +191,18 @@ function forwardLog(app: EditorApp, ui: BrandConsole): void {
  *
  * @param rootPath - The absolute project root.
  * @param ui - The branded console.
+ * @param device - The phone the collector may reverse (E13), or undefined for none.
  * @returns The started app, or undefined after printing the error.
  */
-async function startEditor(rootPath: string, ui: BrandConsole): Promise<EditorApp | undefined> {
+async function startEditor(
+  rootPath: string,
+  ui: BrandConsole,
+  device: string | undefined
+): Promise<EditorApp | undefined> {
   try {
+    const collector = device === undefined ? {} : { collector: { device } };
     const editor = createApp({
-      pluginConfigs: { files: { root: rootPath }, pages: { gameUrl: "/" } }
+      pluginConfigs: { files: { root: rootPath }, pages: { gameUrl: "/" }, ...collector }
     });
     forwardLog(editor, ui);
     await editor.start();
@@ -342,7 +355,7 @@ async function serveGame(args: ServeArgs, deps: CliDeps): Promise<Started> {
   const bundle = await importGame(htmlPath, deps);
   if (bundle === undefined) return { code: 1 };
 
-  const editor = await startEditor(rootPath, ui);
+  const editor = await startEditor(rootPath, ui, args.device);
   if (editor === undefined) return { code: 1 };
 
   let game: GameServer;
@@ -509,7 +522,7 @@ async function startPerf(
  */
 export async function startBin(argv: readonly string[], deps: CliDeps): Promise<Started> {
   const { ui } = deps;
-  const args = parseBinArgs(argv);
+  const args = withDevice(parseBinArgs(argv), deps.env ?? {});
 
   // Help and argument errors print the usage.
   if (args.kind === "help") {
@@ -603,7 +616,13 @@ function exit(code: number): void {
  * ```
  */
 function processDeps(): CliDeps {
-  return { ui: createBrandConsole(), importPage, exit, reexec: processReexec() };
+  return {
+    ui: createBrandConsole(),
+    importPage,
+    exit,
+    reexec: processReexec(),
+    env: process.env // @env-allow — ANDROID_SERIAL, the phone by wire without --device
+  };
 }
 
 /**

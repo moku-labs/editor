@@ -1,9 +1,10 @@
 /**
  * @file pages perf sub-domain — the words after `moku-editor perf`: `mark "<label>"`,
- * `summary <log>`, `compare <a> <b>`, or the run's switches `[--lan] [--port 47600] [--out DIR]
- * [--every 10] [--no-ui]` (strict). Pure: no I/O. Every error is two lines, the second the fix.
+ * `summary <log>`, `compare <a> <b>`, or the run's switches `[--device SERIAL] [--lan]
+ * [--port 47600] [--out DIR] [--every 10] [--no-ui]` (strict). Pure: no I/O. Every error is two lines, the second the fix.
  */
 import { parseArgs } from "node:util";
+import { deviceKey } from "../device";
 import type { BinArgs } from "../types";
 
 /** The device port when `--port` is not given. */
@@ -84,7 +85,8 @@ function parse(words: readonly string[]) {
       port: { type: "string", short: "p" },
       out: { type: "string", short: "o" },
       every: { type: "string" },
-      "no-ui": { type: "boolean" }
+      "no-ui": { type: "boolean" },
+      device: { type: "string" }
     }
   });
 }
@@ -155,7 +157,18 @@ function runArgs(words: readonly string[]): BinArgs {
   const out = values.out ?? DEFAULT_OUT;
   if (out === "") return failed(OUT_ERROR);
 
-  return { kind: "perf", lan: values.lan === true, port, out, every, ui: values["no-ui"] !== true };
+  const device = deviceKey(values.device);
+  if (typeof device === "string") return failed(`perf ${device}`);
+
+  return {
+    kind: "perf",
+    lan: values.lan === true,
+    port,
+    out,
+    every,
+    ui: values["no-ui"] !== true,
+    ...device
+  };
 }
 
 /**
