@@ -46,8 +46,7 @@ export function withDevice<Args extends { readonly kind: string; readonly device
   env: Readonly<Record<string, string | undefined>>
 ): Args {
   const takesDevice = args.kind === "run" || args.kind === "mcp" || args.kind === "perf";
-  const serial = env.ANDROID_SERIAL?.trim();
-  if (!takesDevice || args.device !== undefined || serial === undefined || serial === "")
-    return args;
-  return { ...args, device: serial };
+  const serial = env.ANDROID_SERIAL?.trim() ?? "";
+  const fromEnvironment = takesDevice && args.device === undefined && serial !== "";
+  return fromEnvironment ? { ...args, device: serial } : args;
 }

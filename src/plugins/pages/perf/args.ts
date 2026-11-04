@@ -1,7 +1,7 @@
 /**
  * @file pages perf sub-domain — the words after `moku-editor perf`: `mark "<label>"`,
- * `summary <log>`, `compare <a> <b>`, or the run's switches `[--lan] [--port 47600] [--out DIR]
- * [--every 10] [--no-ui]` (strict). Pure: no I/O. Every error is two lines, the second the fix.
+ * `summary <log>`, `compare <a> <b>`, or the run's switches `[--device SERIAL] [--lan]
+ * [--port 47600] [--out DIR] [--every 10] [--no-ui]` (strict). Pure: no I/O. Every error is two lines, the second the fix.
  */
 import { parseArgs } from "node:util";
 import { deviceKey } from "../device";

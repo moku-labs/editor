@@ -146,7 +146,7 @@ export function reexecRoot(
 
 /**
  * The flags a re-spawned bin keeps: `--no-hmr` when hot reload is off, `--packed` when it serves
- * the pack.
+ * the pack, `--device <serial>` when a phone was chosen (E13).
  *
  * @param args - The `run` arguments.
  * @returns The flag words.
@@ -154,6 +154,8 @@ export function reexecRoot(
  * ```ts
  * keptFlags({ kind: "run", port: 0, root: ".", hmr: false, preload: [], servePlugins: [], packed: true });
  * // ["--no-hmr", "--packed"]
+ * keptFlags({ kind: "run", port: 0, root: ".", hmr: true, preload: [], servePlugins: [], device: "R5" });
+ * // ["--device", "R5"]
  * ```
  */
 function keptFlags(args: RunArgs): string[] {

@@ -466,7 +466,7 @@ export type ConnectState = {
  */
 export type ConnectEvents = {
   readonly "connect:telemetry": DeviceTelemetry;
-  readonly "connect:device": DeviceChoice;
+  readonly "connect:device": WireChoice;
 };
 
 /**
@@ -475,10 +475,10 @@ export type ConnectEvents = {
  *
  * @example
  * ```ts
- * const choice: DeviceChoice = { serial: "R5CX30ABCDE" };
+ * const choice: WireChoice = { serial: "R5CX30ABCDE" };
  * ```
  */
-export type DeviceChoice = { readonly serial: string };
+export type WireChoice = { readonly serial: string };
 
 /**
  * What `connect.watch` answers: whether wired telemetry runs for the device, and why not.

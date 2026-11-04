@@ -8,7 +8,7 @@ import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require } from "../../config";
 import type { DeviceTelemetry } from "../connect/protocol";
-import type { DeviceChoice } from "../connect/types";
+import type { WireChoice } from "../connect/types";
 import type { HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfCause } from "../perf/protocol";
 
@@ -486,12 +486,13 @@ export type CollectorApi = {
 
 /**
  * The hooks of the collector: the hub's per-plugin event `hub:device` and connect's per-plugin
- * event `connect:telemetry` (both seen through `depends`).
+ * events `connect:telemetry` and `connect:device` (the phone chosen in the tools page), all seen
+ * through `depends`.
  */
 export type CollectorHooks = {
   readonly "hub:device": (event: HubDeviceEvent) => void;
   readonly "connect:telemetry": (record: DeviceTelemetry) => void;
-  readonly "connect:device": (choice: DeviceChoice) => void;
+  readonly "connect:device": (choice: WireChoice) => void;
 };
 
 /**

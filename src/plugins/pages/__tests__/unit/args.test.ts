@@ -200,7 +200,7 @@ describe("parseBinArgs --device (E13)", () => {
     [["a.html", "--device", "R5; adb kill-server"], "--device must be a serial adb devices prints"],
     [["perf", "--device", "R5 X"], "perf --device must be a serial adb devices prints"],
     [["mcp-config", "--device", "R5"], "mcp-config takes only <game-html> and --port"],
-    [["a.html", "--device"], "[moku-editor] "]
+    [["a.html", "--device"], "argument missing"]
   ])("refuses %j", (argv, message) => {
     const result = parseBinArgs(argv);
     expect(result.kind === "error" && result.message).toContain(message);

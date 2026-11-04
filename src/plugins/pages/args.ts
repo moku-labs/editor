@@ -1,7 +1,8 @@
 /**
  * @file pages plugin — the arguments of `moku-editor [<game-html>] [--port 3000] [--root .]
- * [--no-hmr] [--packed] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of the subcommands
- * `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]` and
+ * [--no-hmr] [--packed] [--device SERIAL] [--preload FILE]… [--serve-plugin FILE]… [--help]` and of
+ * the subcommands `moku-editor mcp [<game-html>] [--port N] [--root DIR] [--no-hmr] [--packed]
+ * [--device SERIAL]` and
  * `moku-editor mcp-config [<game-html>] [--port N]`. Without a game HTML file the bin serves the
  * engine page of a moku-game folder; `--preload` and `--serve-plugin` feed only that page. Pure:
  * no I/O. Unknown flags are errors (strict), so `--host` cannot exist: the server always binds
@@ -41,7 +42,7 @@ const E2E_NO_CONFIG = "e2e needs the Playwright config: -c <file>";
 const CONFIG_JOINED = "--config=";
 
 /**
- * Parses argv strictly with the seven flags of the bin; `--preload` and `--serve-plugin` repeat.
+ * Parses argv strictly with the eight flags of the bin; `--preload` and `--serve-plugin` repeat.
  *
  * @param argv - Arguments after the script name.
  * @returns The positionals and flag values.
@@ -346,7 +347,7 @@ function e2eArgs(words: readonly string[]): BinArgs {
  *
  * @param argv - Arguments after the script name.
  * @returns `run` with html (left out for the engine page), port, root, hmr, preload,
- * servePlugins and packed (when given); `mcp`; `mcp-config`; `e2e` with the config and
+ * servePlugins, packed and device (when given); `mcp`; `mcp-config`; `e2e` with the config and
  * Playwright's words; `perf`, `perf-mark`, `perf-summary` or `perf-compare`; `help`; or `error`
  * with a message.
  * @example
