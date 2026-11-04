@@ -25,7 +25,8 @@ const defaultConfig: CollectorConfig = {
   reverseEveryMs: 2000,
   adb: "adb",
   adbTimeoutMs: 5000,
-  appId: undefined
+  appId: undefined,
+  device: undefined
 };
 
 /**

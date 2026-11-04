@@ -11,6 +11,7 @@
  * are not the serving bin's.
  */
 import { parseArgs } from "node:util";
+import { deviceKey } from "./device";
 import { perfArgs } from "./perf/args";
 import type { BinArgs } from "./types";
 
@@ -60,6 +61,7 @@ function parse(argv: readonly string[]) {
       root: { type: "string", short: "r" },
       "no-hmr": { type: "boolean" },
       packed: { type: "boolean" },
+      device: { type: "string" },
       preload: { type: "string", multiple: true },
       "serve-plugin": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" }
@@ -215,7 +217,17 @@ function mcpArgs(parsed: Parsed): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
-  return { kind: "mcp", ...game, root, hmr: values["no-hmr"] !== true, ...packedKey(values) };
+  const device = deviceKey(values.device);
+  if (typeof device === "string") return failed(device);
+
+  return {
+    kind: "mcp",
+    ...game,
+    root,
+    hmr: values["no-hmr"] !== true,
+    ...packedKey(values),
+    ...device
+  };
 }
 
 /**
@@ -232,7 +244,10 @@ function mcpConfigArgs(parsed: Parsed): BinArgs {
   const { positionals, values } = parsed;
   if (hasPageFlags(values)) return failed(SERVING_ONLY);
   const hasServeFlags =
-    values.root !== undefined || values["no-hmr"] !== undefined || values.packed !== undefined;
+    values.root !== undefined ||
+    values["no-hmr"] !== undefined ||
+    values.packed !== undefined ||
+    values.device !== undefined;
   if (hasServeFlags) return failed("mcp-config takes only <game-html> and --port");
 
   const game = optionalGame(positionals.slice(1), values.port);
@@ -276,6 +291,10 @@ function runArgs(parsed: Parsed): BinArgs {
   const root = values.root ?? ".";
   if (root === "") return failed("--root must not be empty");
 
+  // The phone by wire is chosen only by name (E13).
+  const device = deviceKey(values.device);
+  if (typeof device === "string") return failed(device);
+
   // The html key is left out for the engine page.
   return {
     kind: "run",
@@ -285,7 +304,8 @@ function runArgs(parsed: Parsed): BinArgs {
     hmr: values["no-hmr"] !== true,
     preload: values.preload ?? [],
     servePlugins: values["serve-plugin"] ?? [],
-    ...packedKey(values)
+    ...packedKey(values),
+    ...device
   };
 }
 

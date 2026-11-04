@@ -56,7 +56,7 @@ beforeEach(async () => {
   vi.setSystemTime(new Date(2026, 9, 14, 15, 32));
   vi.mocked(runAdb).mockClear();
   root = await tempDir();
-  ctx = createCtx(root);
+  ctx = createCtx(root, { device: "R5" });
   hooks = createCollectorHooks(ctx);
 });
 

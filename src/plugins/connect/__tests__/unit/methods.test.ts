@@ -76,6 +76,27 @@ describe("connect.wire", () => {
     expect(ctx.state.mode).toEqual({ on: false, owner: null, listen: null });
   });
 
+  it("announces the phone it names as the one to reach by wire, also while device mode is on (E13)", async () => {
+    const ctx = ready();
+    await call(ctx, "connect.wire");
+    expect(ctx.emit).not.toHaveBeenCalledWith("connect:device", expect.anything());
+
+    await call(ctx, "connect.wire", { device: "R5CX30ABCDE" });
+
+    expect(ctx.emit).toHaveBeenCalledWith("connect:device", { serial: "R5CX30ABCDE" });
+    expect(ctx.hub.listenDevices).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a device that is not an adb serial before anything runs", async () => {
+    const ctx = ready();
+
+    await expect(call(ctx, "connect.wire", { device: "R5; reboot" })).rejects.toThrow(
+      'refused adb token "R5; reboot"'
+    );
+    expect(ctx.emit).not.toHaveBeenCalledWith("connect:device", expect.anything());
+    expect(ctx.hub.listenDevices).not.toHaveBeenCalled();
+  });
+
   it("answers the listen of a device mode moku-editor perf turned on, calling nothing", async () => {
     const ctx = ready();
     ctx.hub.emit({ kind: "listening", listen: LISTEN });

@@ -14,6 +14,7 @@ import { turnNetworkOn, turnOff, turnWireOn } from "./mode";
 import { answerPairing, refusePairing } from "./pairing/confirm";
 import { unwatchDevice, watchDevice } from "./telemetry/loop";
 import type { ConnectCtx } from "./types";
+import { serialOf } from "./wire/command";
 import { renewScan } from "./wire/scan";
 
 /**
@@ -44,7 +45,9 @@ export function createEditorMethods(ctx: ConnectCtx): EditorMethods {
       return toWireValue(currentDirectory(ctx));
     },
     "connect.wire": async params => {
-      checkInput({}, params ?? null);
+      const { device } = checkInput({ device: "string?" }, params ?? null);
+      // The phone the person chose is the one the collector may reverse (E13).
+      if (device !== undefined) ctx.emit("connect:device", { serial: serialOf(device) });
       return { listen: listenJson(await turnWireOn(ctx)) };
     },
     "connect.network": async params => {

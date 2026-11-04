@@ -86,6 +86,7 @@ The bin asks the engine for the dev page (`preparePage` of `@moku-labs/game/cli`
 | `--port`, `-p` | `3000` | Port on 127.0.0.1. `0` picks a free port. |
 | `--no-hmr` | hot reload on | Serves the game without Bun hot reload. |
 | `--packed` | loose files | Serves `dist/assets` from `moku-game pack`, as `moku-game dev --packed` does: a big game loads far faster, there is no keys watch, and new art shows only after the next pack. No pack is an error. |
+| `--device SERIAL` | `ANDROID_SERIAL`, else none | The one Android phone this editor may reach by wire (a serial `adb devices` prints). Only it gets `adb reverse` when device mode turns on; with neither the flag nor `ANDROID_SERIAL` no phone by wire reaches the editor, so a scenario, restore, save import or reset never lands on a phone nobody chose. Connect on a phone in the Connect panel chooses it too. Also on `mcp` (handed to the bin it starts) and `perf`. |
 | `--preload FILE` | | A file Bun preloads in the serving process. Repeatable. Engine page only. |
 | `--serve-plugin FILE` | | A Bun plugin the engine page bundles with, after the engine's hot plugin. Repeatable. Engine page only. |
 
@@ -634,8 +635,9 @@ Connect panel:
 - **By wire** (Android with USB debugging, or wireless debugging). While the panel is open the
   editor lists the phones `adb devices -l` reports, every 2 s: "Allow USB debugging on the phone (a
   prompt is on its screen)" for an unauthorized one, the model and Android version for a ready one.
-  Connect turns device mode on (the listener `127.0.0.1:47600`), the collector runs `adb reverse
-  tcp:47600 tcp:47600`, the debug build on the phone dials that address and is linked at once (a
+  Connect chooses that phone and turns device mode on (the listener `127.0.0.1:47600`), the
+  collector runs `adb reverse tcp:47600 tcp:47600` on that phone only (never on a phone nobody
+  chose: see `--device`), the debug build on the phone dials that address and is linked at once (a
   phone by wire needs no code), and the phone becomes the source. A ready phone with no debug game
   after 20 s reads "No debug game answered on SM-A266B. Start the debug build on the phone; a
   release build has no agent." Without adb: "adb not found: install Android platform-tools to
@@ -794,10 +796,10 @@ Besides the game's lines the log holds the editor's own events: `devtools` (the 
 
 ### `moku-editor perf`
 
-Run it in the game folder, with the phone on USB (adb) or on the same Wi-Fi (`--lan`):
+Run it in the game folder, with the phone on USB (adb, named by `--device`) or on the same Wi-Fi (`--lan`):
 
 ```sh
-bunx moku-editor perf --lan
+bunx moku-editor perf --device R5CX30ABCDE --lan
 ```
 
 ```
@@ -815,13 +817,14 @@ bunx moku-editor perf --lan
 
 | Switch | Default | Plugin field it sets |
 |---|---|---|
+| `--device` | `ANDROID_SERIAL`, else none | `collector.device`: the one phone by wire that gets `adb reverse` |
 | `--lan` | off | `hub.deviceLan`: also listen on the computer's LAN address |
 | `--port`, `-p` | `47600` | `hub.devicePort` |
 | `--out`, `-o` | `.moku/perf` | `collector.out` |
 | `--every` | `10` | `collector.everyS`: seconds between two adb readings of heat and system frames |
 | `--no-ui` | tools page on | `pages.toolsPage: false` |
 
-- **Over adb** every 2 s the collector runs `adb devices` and `adb reverse tcp:47600 tcp:47600` for every ready phone, so a phone plugged in later is reached without a restart. An adb phone links without a question.
+- **Over adb** every 2 s the collector runs `adb devices` and `adb reverse tcp:47600 tcp:47600` for the `--device` phone (else `ANDROID_SERIAL`) while it is ready, so it is reached when plugged in later without a restart. Every other phone is left alone, and without either nothing runs adb at all (the run says so once). Stopping removes the reverse (`adb reverse --remove`). The chosen phone links without a question.
 - **Over the LAN** a phone shows a four-digit code: type it in the terminal (Enter refuses). The LAN listener takes nothing but paired phones' sockets. A server composed with `pluginConfigs.hub.pairing: "always"` asks every phone, adb ones too.
 - **Live lines**, one block per phone log:
 
@@ -1226,6 +1229,7 @@ Every option belongs to a plugin; the three global configs (`AgentConfig`, `Serv
 | collector | `adb` | `"adb"` | The adb command: a name on `PATH` or a path. |
 | collector | `adbTimeoutMs` | `5000` | The longest one adb command may run, ≥ 500. |
 | collector | `appId` | `undefined` | The game's Android package; `<appId>.debug` is preferred when installed. `undefined`: no system frame lines. |
+| collector | `device` | `undefined` | The one phone by wire (`adb devices` serial) that gets `adb reverse`; set by `--device` / `ANDROID_SERIAL`. `undefined`: none. |
 | pages | `title` | `"moku editor"` | Tools page `<title>`. |
 | pages | `editorUrl` | `"vscode://file/{path}:{line}"` | "Open in editor" link template. |
 | pages | `pageDir` | `undefined` | Built page folder; `undefined` = `dist/tools` next to the module. |

@@ -26,6 +26,11 @@ export type PerfArgs = {
   readonly every: number;
   /** False with `--no-ui`: the tools page is not served on the device port. */
   readonly ui: boolean;
+  /**
+   * The phone to measure by wire (`--device <serial>`, else `ANDROID_SERIAL`): the only one that
+   * gets `adb reverse`. Left out: only LAN phones (`--lan`) reach the run.
+   */
+  readonly device?: string;
 };
 
 /**

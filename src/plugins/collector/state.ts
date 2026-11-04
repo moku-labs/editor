@@ -15,6 +15,7 @@ export function createCollectorState(): CollectorState {
     sessions: new Map(),
     devices: new Map(),
     adb: undefined,
+    chosen: undefined,
     outDir: undefined,
     stopped: false,
     refused: new Map()

@@ -154,7 +154,7 @@ describe("collector over a real hub", () => {
         files: { root: base, project: false },
         hub: { devicePort: 0 },
         connect: { adb: NO_ADB },
-        collector: { out: "perf", everyS: 1 }
+        collector: { out: "perf", everyS: 1, device: "R5CX30ABCDE" }
       }
     });
     app = editor;

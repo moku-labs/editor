@@ -100,14 +100,14 @@ describe("activeSource.connectDevice", () => {
     expect(link.methods()).toEqual([]);
   });
 
-  it("does not call connect.wire when device mode is already on", async () => {
+  it("names the phone to connect.wire, also when device mode is already on (bug E13: the server reversed no phone, so Connect timed out)", async () => {
     const { link, api } = setup();
     link.devices = directoryOf();
     link.list([localSession("s-1", false), deviceSession("s-9")]);
 
     await api.connectDevice("R5CX30ABCDE");
 
-    expect(link.methods()).not.toContain("connect.wire");
+    expect(link.callEditor.mock.calls[0]).toEqual(["connect.wire", { device: "R5CX30ABCDE" }]);
     expect(api.current()).toMatchObject({ kind: "device", session: "s-9" });
   });
 

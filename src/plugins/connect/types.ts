@@ -1,7 +1,7 @@
 /**
  * @file connect plugin — type definitions: the config, the adb seam and its commands (the A0–A10
  * allowlist), the CDP seams, the records of the state (phones adb lists, pairings asking, telemetry
- * attaches), the state, the per-plugin event `connect:telemetry`, the api and the domain context.
+ * attaches), the state, the per-plugin events `connect:telemetry` and `connect:device`, the api and the domain context.
  * The wire types of `connect/protocol` are re-exported for the plugin's own files and the `Connect`
  * namespace of the server entry.
  */
@@ -464,7 +464,21 @@ export type ConnectState = {
 /**
  * connect's per-plugin events, visible to plugins that list `connectPlugin` in `depends`.
  */
-export type ConnectEvents = { readonly "connect:telemetry": DeviceTelemetry };
+export type ConnectEvents = {
+  readonly "connect:telemetry": DeviceTelemetry;
+  readonly "connect:device": DeviceChoice;
+};
+
+/**
+ * The phone a person chose by wire in the tools page (`connect.wire { device }`, E13): the one phone
+ * the collector may `adb reverse`.
+ *
+ * @example
+ * ```ts
+ * const choice: DeviceChoice = { serial: "R5CX30ABCDE" };
+ * ```
+ */
+export type DeviceChoice = { readonly serial: string };
 
 /**
  * What `connect.watch` answers: whether wired telemetry runs for the device, and why not.

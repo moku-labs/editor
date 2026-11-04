@@ -24,17 +24,18 @@
  *   baseline, 3 windows of 10 s. JS heap < +3 MiB, DOM nodes < +200, listeners < +50.
  * - steady-device: device mode on through `activeSource.connectWire()` (the adb listener, port
  *   47600; a taken port fails with connect's message), the fake phone of e2e/fake-device.ts pairs
- *   and becomes the source (activeSource's autoUse), the local preview paused; Render live on the
+ *   and becomes the source (activeSource's autoUse; asserted by its device id, E13: a real phone
+ *   plugged into the computer is never reversed and never counted), the local preview paused; Render live on the
  *   phone with the Memory card "not measured" (a WebView heap is never trusted); warm 5 s, baseline,
  *   3 windows of 10 s with the steady ceilings; the local game stays paused for the whole run.
  * - churn, from the local preview with the phone linked, in 4 windows of 5 rounds: 20 × useDevice
- *   (Use in the Connect panel) ⇄ useLocal ("Use local preview"), 10 × the phone leaves (SIGUSR1:
+ *   (Use on the fake phone's row in the Connect panel, by its device id) ⇄ useLocal ("Use local preview"), 10 × the phone leaves (SIGUSR1:
  *   lost, the local preview takes over) and rejoins (SIGUSR2), 20 × the six workspaces, 20 × the
  *   popovers (Connect, its menu, Monitoring), 20 × the overlay hidden and open as a card; each
  *   window back to Render on the local preview, settle 3 s. Nodes and listeners within 5 % of the
  *   steady-local baseline, heap < +3 MiB from the churn's start (the 2-minute frame history fills
  *   through the steady runs, by design); `activeSource.markers()` within its bound of 32; exactly
- *   one device session in `link.sessions()`; the local preview running. Then the phone leaves and
+ *   one session of the fake phone in `link.sessions()`; the local preview running. Then the phone leaves and
  *   device mode goes off.
  *
  * The bin's tools page does not publish its app: activeSource and link are reached through the
@@ -349,8 +350,15 @@ async function resetLogs(page: Page): Promise<Emptied> {
   return { tools, game, console: lines };
 }
 
-/** The source facts the churn checks, read from the tools page's own plugins. */
-type SourceFacts = { readonly markers: number; readonly deviceSessions: number };
+/**
+ * The source facts the churn checks, read from the tools page's own plugins: the markers, the
+ * device id of every device session, and the device id of the source (null for the local preview).
+ */
+type SourceFacts = {
+  readonly markers: number;
+  readonly devices: readonly string[];
+  readonly source: string | null;
+};
 
 /** What `viaTools` does on the tools page. */
 type ToolsOperation = "connect-wire" | "stop-devices" | "facts" | "reset-log";
@@ -361,8 +369,8 @@ type ToolsOperation = "connect-wire" | "stop-devices" | "facts" | "reset-log";
  * the mount's root vnode on the mount element (`__k`, Preact 10), and a plugin context's `require`
  * resolves a plugin by its name. "connect-wire" is `activeSource.connectWire()` (device mode on,
  * the adb listener; a taken port rejects with connect's message), "stop-devices"
- * `activeSource.stopDevices()`, "facts" the length of `activeSource.markers()` and the device
- * sessions of `link.sessions()`, "reset-log" empties the page's log (`ctx.log.reset()`) and clears
+ * `activeSource.stopDevices()`, "facts" the length of `activeSource.markers()`, the device ids
+ * of the device sessions of `link.sessions()` and the source's device id, "reset-log" empties the page's log (`ctx.log.reset()`) and clears
  * the Console (`consoleView.clear()`), and answers how many entries and lines they held.
  *
  * @param page - The test page.
@@ -393,14 +401,19 @@ function viaTools(page: Page, operation: ToolsOperation): Promise<unknown> {
       connectWire(): Promise<unknown>;
       stopDevices(): Promise<void>;
       markers(): readonly unknown[];
+      current(): { readonly kind: string; readonly device?: { readonly id: string } };
     };
-    const link = ctx.require({ name: "link" }) as { sessions(): readonly { device?: unknown }[] };
+    const link = ctx.require({ name: "link" }) as {
+      sessions(): readonly { device?: { readonly id: string } }[];
+    };
     const operations = {
       "connect-wire": () => activeSource.connectWire(),
       "stop-devices": () => activeSource.stopDevices(),
       facts: () => ({
         markers: activeSource.markers().length,
-        deviceSessions: link.sessions().filter(session => Boolean(session.device)).length
+        devices: link.sessions().flatMap(session => (session.device ? [session.device.id] : [])),
+        // eslint-disable-next-line unicorn/no-null -- null is "the local preview" in the facts
+        source: activeSource.current().device?.id ?? null
       }),
       "reset-log": () => {
         const consoleView = ctx.require({ name: "consoleView" }) as {
@@ -509,13 +522,31 @@ async function sourceIs(page: Page, kind: "local" | "device"): Promise<void> {
 }
 
 /**
- * `useDevice`: the linked phone's Use in the Connect panel, then the panel closed.
+ * The hub device id the fake phone paired with (its `paired <device>` step).
+ *
+ * @param phone - The fake phone, paired.
+ * @returns Its device id.
+ */
+function deviceIdOf(phone: FakePhone): string {
+  const id = phone.lines.find(line => line.startsWith("[fake-device] paired "))?.split(" ")[2];
+  if (id === undefined) throw new Error("[e2e] the fake phone has not paired yet");
+  return id;
+}
+
+/**
+ * `useDevice`: Use on the fake phone's row in the Connect panel (picked by its device id, so a real
+ * phone that linked too is never clicked), then the panel closed.
  *
  * @param page - The test page.
+ * @param device - The fake phone's device id.
  */
-async function useDevice(page: Page): Promise<void> {
+async function useDevice(page: Page, device: string): Promise<void> {
   await page.locator('[data-popover-trigger="connect"]').click();
-  await page.locator('[data-popover="connect"] [data-linked-row] [data-action=use]').click();
+  await page
+    .locator(
+      `[data-popover="connect"] [data-linked-row][data-device-id="${device}"] [data-action=use]`
+    )
+    .click();
   await sourceIs(page, "device");
   if ((await page.locator("[data-popover]").count()) > 0) await page.keyboard.press("Escape");
   await expect(page.locator("[data-popover]")).toHaveCount(0);
@@ -580,7 +611,7 @@ async function overlayMode(page: Page, mode: "card" | "hidden"): Promise<void> {
  */
 async function churnRound(tools: Tools, phone: FakePhone, round: number): Promise<void> {
   const { page } = tools;
-  await useDevice(page);
+  await useDevice(page, deviceIdOf(phone));
   if (round % 2 === 0) await leaveAndRejoin(page, phone);
   await useLocal(page);
   for (const { id } of WORKSPACES) await tools.show(id);
@@ -655,6 +686,8 @@ test.describe("memory (M4)", () => {
         })
         .toBe(1);
       await sourceIs(page, "device");
+      const linked = (await viaTools(page, "facts")) as SourceFacts;
+      expect(linked.source, "the fake phone is the source").toBe(deviceIdOf(phone));
       await expect(page.locator("[data-render=workspace]")).toHaveAttribute("data-src", "device");
       await expect(page.locator("[data-render=frames] [data-headline]")).toContainText(" in view");
       await expect(page.locator("[data-card-kind=memory]")).toContainText(
@@ -708,12 +741,15 @@ test.describe("memory (M4)", () => {
       // running (every pause resumed).
       const facts = (await viaTools(page, "facts")) as SourceFacts;
       console.log(
-        `[leak] M4 churn markers ${facts.markers} (bound ${MARKERS_MAX}), device sessions ${facts.deviceSessions}, rejoins ${stepsOf(phone, "session") - 1}`
+        `[leak] M4 churn markers ${facts.markers} (bound ${MARKERS_MAX}), device sessions ${facts.devices.join(",")}, rejoins ${stepsOf(phone, "session") - 1}`
       );
       expect(facts.markers, "activeSource.markers() stays within its bound").toBeLessThanOrEqual(
         MARKERS_MAX
       );
-      expect(facts.deviceSessions, "one device session in link.sessions()").toBe(1);
+      expect(
+        facts.devices.filter(id => id === deviceIdOf(phone)),
+        "one session of the fake phone in link.sessions()"
+      ).toHaveLength(1);
       await expect(page.locator("[data-render=workspace]")).toHaveAttribute("data-src", "local");
       expect(await localPaused(page), "the local preview runs after the churn").toBe(false);
     } finally {

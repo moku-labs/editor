@@ -33,6 +33,8 @@ describe("validateCollectorConfig", () => {
     [{ adb: "" }, '[moku-editor] collector.adb is "".'],
     [{ appId: "garden" }, '[moku-editor] collector.appId is "garden".'],
     [{ appId: "1com.example" }, '[moku-editor] collector.appId is "1com.example".'],
+    [{ device: "R5; rm -rf /" }, '[moku-editor] collector.device is "R5; rm -rf /".'],
+    [{ device: "" }, '[moku-editor] collector.device is "".'],
     [JSON.parse('{"out":42}'), "[moku-editor] collector.out is 42."],
     [JSON.parse('{"adb":7}'), "[moku-editor] collector.adb is 7."]
   ])("refuses %o with a two-line TypeError (bug: a one-line error with no fix)", (change, first) => {
@@ -45,7 +47,7 @@ describe("validateCollectorConfig", () => {
     expect(lines[1]).toMatch(/^ {2}\S.*\.$/);
   });
 
-  it("accepts the defaults, the bounds and an Android app id", () => {
+  it("accepts the defaults, the bounds, an Android app id and adb serials", () => {
     expect(errorOf({})).toBeUndefined();
     expect(
       errorOf({
@@ -55,6 +57,9 @@ describe("validateCollectorConfig", () => {
         appId: "com.example.garden_2"
       })
     ).toBeUndefined();
+    expect(errorOf({ device: "R5CY32V0J9M" })).toBeUndefined();
+    expect(errorOf({ device: "emulator-5554" })).toBeUndefined();
+    expect(errorOf({ device: "192.168.1.23:37011" })).toBeUndefined();
   });
 });
 

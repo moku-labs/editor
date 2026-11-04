@@ -1,6 +1,6 @@
 /**
  * @file pages/mcp — starts the moku-editor bin when none runs (M3): `moku-editor <html> --port
- * <port> --root <root> [--no-hmr] [--packed]`, detached, stdout and stderr to `.moku/editor.log`,
+ * <port> --root <root> [--no-hmr] [--packed] [--device <serial>]`, detached, stdout and stderr to `.moku/editor.log`,
  * then waits at most 15 s for its discovery file. Stops only a bin it started: SIGTERM, at most
  * 2 s, then SIGKILL.
  *
@@ -64,6 +64,8 @@ export type LaunchOptions = {
   readonly hmr: boolean;
   /** True to serve the pack; left out otherwise. */
   readonly packed?: true;
+  /** The phone the bin may reach by wire (`--device`); left out otherwise. */
+  readonly device?: string;
 };
 
 /**
@@ -115,7 +117,7 @@ function sleep(ms: number): Promise<void> {
  * ```
  */
 export function launchCommand(command: readonly string[], options: LaunchOptions): string[] {
-  const { html, port, root, hmr, packed } = options;
+  const { html, port, root, hmr, packed, device } = options;
   const page = html === join(root, ENGINE_PAGE) ? [] : [html];
   return [
     ...command,
@@ -125,7 +127,8 @@ export function launchCommand(command: readonly string[], options: LaunchOptions
     "--root",
     root,
     ...(hmr ? [] : ["--no-hmr"]),
-    ...(packed === true ? ["--packed"] : [])
+    ...(packed === true ? ["--packed"] : []),
+    ...(device === undefined ? [] : ["--device", device])
   ];
 }
 

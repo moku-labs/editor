@@ -43,7 +43,8 @@ export const DEFAULT_CONFIG: CollectorConfig = {
   reverseEveryMs: 2000,
   adb: "adb",
   adbTimeoutMs: 5000,
-  appId: undefined
+  appId: undefined,
+  device: undefined
 };
 
 /** The hub token of the fake hub. */

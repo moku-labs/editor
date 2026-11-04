@@ -106,11 +106,15 @@ export async function startEditor(
   await cp(path.join(DIST, "game"), root, { recursive: true });
 
   const out = createWriteStream(log, { flags: "a" });
+  // No phone by wire, whatever the shell says (E13): the bin reverses no real phone, and the fake
+  // phone of M4 dials the adb listener directly.
+  const env = { ...process.env };
+  delete env.ANDROID_SERIAL;
   const child = spawn(
     // eslint-disable-next-line sonarjs/no-os-command-from-path -- Bun is the project's runtime (CLAUDE.md); a dev machine has it on PATH.
     "bun",
     ["dist/bin.mjs", path.join(root, "web", "editor.html"), "--port", String(port), "--root", root],
-    { cwd: REPO, stdio: ["ignore", "pipe", "pipe"] }
+    { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"] }
   );
   child.stdout?.pipe(out);
   child.stderr?.pipe(out);

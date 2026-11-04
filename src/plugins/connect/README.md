@@ -37,7 +37,7 @@ loopback Host and Origin); the LAN listener has no tools socket. Unknown params 
 | Method | Params | Does | Answers |
 |---|---|---|---|
 | `connect.scan` | `{}` | renews the scan lease; starts the scan loop (and retries a missing adb) | the `DeviceDirectory`, after the first round |
-| `connect.wire` | `{}` | device mode on with the adb listener when off; connect is its owner | `{ listen }` |
+| `connect.wire` | `{ device? }` | device mode on with the adb listener when off; connect is its owner. `device` (an adb serial, checked like every token) is the phone chosen by wire: emitted as `connect:device`, the only phone the collector reverses (E13); activeSource's `connectDevice` always names it | `{ listen }` |
 | `connect.network` | `{}` | device mode on when off, then the LAN listener | `{ listen }` with `lan` |
 | `connect.off` | `{ lan?: boolean }` | `lan`: the LAN listener off; else device mode off — only while it is connect's | `{ listen \| null }` |
 | `connect.confirm` | `{ ticket, code }` | pairs the asking phone when `code.trim()` is its code, else refuses it | `{ paired }` |
@@ -73,6 +73,7 @@ record of the last tick). The tools page uses the editor methods; the api is for
 | Event | Payload | When |
 |---|---|---|
 | `connect:telemetry` (per-plugin) | `DeviceTelemetry` | each tick of a watched wired device; visible to plugins that depend on `connectPlugin` (the collector) |
+| `connect:device` (per-plugin) | `{ serial }` | `connect.wire` named a phone: the collector reverses that phone only |
 
 Hooks the hub's per-plugin `hub:device`: `listening` → device mode on (owner `other` when connect
 did not cause it) and the scan loop; `connected` → the directory; `closed` → that device's

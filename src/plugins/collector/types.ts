@@ -8,6 +8,7 @@ import type { Log } from "@moku-labs/common/browser";
 import type { EmitFn } from "@moku-labs/core";
 import type { Require } from "../../config";
 import type { DeviceTelemetry } from "../connect/protocol";
+import type { DeviceChoice } from "../connect/types";
 import type { HubDeviceEvent, LinkedDevice } from "../hub/types";
 import type { PerfCause } from "../perf/protocol";
 
@@ -51,6 +52,12 @@ export type CollectorConfig = {
    * gfx lines.
    */
   appId: string | undefined;
+  /**
+   * The serial of the one phone the editor may reach by wire (`moku-editor --device <serial>` or
+   * `ANDROID_SERIAL`). Only this phone gets `adb reverse`, and only while `adb devices` lists it
+   * ready. Undefined: no phone is reversed, so no phone by wire reaches this editor.
+   */
+  device: string | undefined;
 };
 
 /**
@@ -311,6 +318,10 @@ export type AdbLoop = {
   state: "on" | "missing";
   /** One warning per serial and kind (and one ambiguity line per model). */
   warned: Set<string>;
+  /** The process seam the loop's rounds run adb with. */
+  readonly run: AdbRunner;
+  /** Removes the reverse of the device port this loop made on a phone; never rejects. */
+  readonly unreverse: (serial: string) => Promise<void>;
 };
 
 /**
@@ -322,6 +333,11 @@ export type CollectorState = {
   devices: Map<string, LinkedDevice>;
   /** Undefined while device mode is off. */
   adb: AdbLoop | undefined;
+  /**
+   * The phone chosen in the tools page (`connect:device`); it wins over `config.device` for the
+   * rest of the run. Undefined: `config.device` (or none).
+   */
+  chosen: string | undefined;
   /** The absolute out folder, resolved on the first log. */
   outDir: string | undefined;
   /** onStop ran: a later hub:device is ignored and nothing is emitted. */
@@ -475,6 +491,7 @@ export type CollectorApi = {
 export type CollectorHooks = {
   readonly "hub:device": (event: HubDeviceEvent) => void;
   readonly "connect:telemetry": (record: DeviceTelemetry) => void;
+  readonly "connect:device": (choice: DeviceChoice) => void;
 };
 
 /**

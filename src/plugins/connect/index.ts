@@ -16,7 +16,7 @@ import { createConnectHooks } from "./handlers";
 import { initConnect } from "./init";
 import { startConnect, stopConnect } from "./lifecycle";
 import { createConnectState } from "./state";
-import type { ConnectConfig, DeviceTelemetry } from "./types";
+import type { ConnectConfig, DeviceChoice, DeviceTelemetry } from "./types";
 
 const defaultConfig: ConnectConfig = {
   adb: "adb",
@@ -50,6 +50,9 @@ export const connectPlugin = createServerPlugin("connect", {
   events: (register: RegisterFunction) => ({
     "connect:telemetry": register<DeviceTelemetry>(
       "One wired telemetry record of a watched device, once per tick"
+    ),
+    "connect:device": register<DeviceChoice>(
+      "The phone a person chose to reach by wire (connect.wire with a device)"
     )
   }),
   createState: createConnectState,

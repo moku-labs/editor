@@ -157,7 +157,11 @@ export function reexecRoot(
  * ```
  */
 function keptFlags(args: RunArgs): string[] {
-  return [...(args.hmr ? [] : ["--no-hmr"]), ...(args.packed === true ? ["--packed"] : [])];
+  return [
+    ...(args.hmr ? [] : ["--no-hmr"]),
+    ...(args.packed === true ? ["--packed"] : []),
+    ...(args.device === undefined ? [] : ["--device", args.device])
+  ];
 }
 
 /**

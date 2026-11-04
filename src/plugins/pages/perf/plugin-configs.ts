@@ -27,7 +27,12 @@ export function perfConfigOf(
   return {
     files: { root, project: false },
     hub: { devicePort: args.port, deviceLan: args.lan },
-    collector: { out: args.out, everyS: args.every, ...(appId === undefined ? {} : { appId }) },
+    collector: {
+      out: args.out,
+      everyS: args.every,
+      ...(appId === undefined ? {} : { appId }),
+      ...(args.device === undefined ? {} : { device: args.device })
+    },
     pages: { toolsPage: args.ui }
   };
 }

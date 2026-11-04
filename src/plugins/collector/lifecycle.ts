@@ -38,12 +38,12 @@ async function flushLog(session: LogSession): Promise<void> {
  *
  * @param ctx - The teardown context (only its state is read).
  * @param ctx.state - The collector's state.
- * @returns When every log is flushed or the 2 s bound ran out.
+ * @returns When every log is flushed or the 2 s bound ran out, and the adb reverse is removed.
  */
 export async function stopCollector(ctx: { readonly state: CollectorState }): Promise<void> {
   const { state } = ctx;
   state.stopped = true;
-  stopAdbLoop(ctx);
+  const unreversed = stopAdbLoop(ctx);
   state.devices.clear();
   for (const session of state.sessions.values()) {
     clearTimeout(session.emitTimer);
@@ -51,5 +51,8 @@ export async function stopCollector(ctx: { readonly state: CollectorState }): Pr
     session.state = "done";
   }
 
-  await Promise.all([...state.sessions.values()].map(session => flushLog(session)));
+  await Promise.all([
+    unreversed,
+    ...[...state.sessions.values()].map(session => flushLog(session))
+  ]);
 }
