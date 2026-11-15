@@ -321,7 +321,7 @@ A first positional `mcp` or `mcp-config` picks a subcommand (`args.ts`). Anywher
 Both take at most one `.html` positional and the same `--port` rule. Both refuse `--preload` and `--serve-plugin`: "--preload and --serve-plugin belong to the serving bin". `mcp-config` writes only what was given:
 
 ```
-$ moku-editor mcp-config web/index.html --port 3000
+$ moku-editor mcp-config web/index.html
 {
   "mcpServers": {
     "moku-editor": {
@@ -330,18 +330,16 @@ $ moku-editor mcp-config web/index.html --port 3000
       "args": [
         "moku-editor",
         "mcp",
-        "web/index.html",
-        "--port",
-        "3000"
+        "web/index.html"
       ]
     }
   }
 }
 
-claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000
+claude mcp add moku-editor -- bunx moku-editor mcp web/index.html
 ```
 
-The shell line single-quotes a word with a space or a quote (`mcp-config.ts`).
+The shell line single-quotes a word with a space or a quote (`mcp-config.ts`). A committed `.mcp.json` names no port (F185): the bridge finds the editor of its folder on any port, so one file serves every git worktree.
 
 ### Discovery file
 
@@ -397,9 +395,9 @@ The handshake of the installed Claude Code (2.1.280) is recorded in `__tests__/f
 
 Which bin:
 
-1. A live `.moku/editor.json` under `--root` (default the working directory) wins: its port, token and socket URL. A different `--port` prints one stderr line.
-2. Without one, the bridge starts the bin when it knows a game html: the argv `<html>`, else the html of the last discovery file it saw (a stale one counts), else, in a moku-game folder, the engine page `<root>/.moku/index.html` (D-63). A moku-game folder is a root with `index.ts` and `config.ts`, both files: `isGameFolder` of `../discovery`, the rule of the bin. So `moku-editor mcp --root <game>` with no html and no `.moku/` starts the engine page, at startup and on `moku_start {}`. Port: `--port`, else the last port, else 3000. The bridge then owns that bin. When the html is exactly `<root>/.moku/index.html` (the engine page, as an engine bin records it), the launcher passes no html: `moku-editor --port <port> --root <root> [--no-hmr]`. The bin then writes the page again and re-runs itself under `--config=<root>/.moku/bunfig.toml` (D-51, see Engine page), so the page keeps the hot plugin. Any other html starts the html form.
-3. Without an html, in a root that is no moku-game folder, the bridge prints "no running moku-editor and no game html; waiting for moku_start" and tools answer `isError`: "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start." `moku_status` answers `running: false` with that hint instead. `moku_start {}` answers "moku_start needs the game HTML file.".
+1. A live `.moku/editor.json` under `--root` (default the working directory) wins, on any port: its port, token and socket URL. A different `--port` prints one stderr line. The file counts only when its `root` is this root, compared through `realpath` (F185): a `.moku/` copied from another checkout is no file, so a worktree never reaches another checkout's editor. Every tool call reads the file again: a bin started after the bridge is found, and when the file names another live pid than the open connection's (a second bin started for the root), the call closes that connection (`a newer moku-editor runs for this folder at <url>` on stderr) and connects to the newer bin; the older bin keeps running, and one the bridge started stays owned.
+2. Without one, the bridge starts the bin when it knows a game html: the argv `<html>`, else the html of the last discovery file it saw (a stale one counts), else, in a moku-game folder, the engine page `<root>/.moku/index.html` (D-63). A moku-game folder is a root with `index.ts` and `config.ts`, both files: `isGameFolder` of `../discovery`, the rule of the bin. So `moku-editor mcp --root <game>` with no html and no `.moku/` starts the engine page, at startup and on `moku_start {}`. Port: `--port`, else the last port of this root, else 0, a free port (F185; a fixed 3000 took the main checkout's port from a worktree). The bridge then owns that bin. When the html is exactly `<root>/.moku/index.html` (the engine page, as an engine bin records it), the launcher passes no html: `moku-editor --port <port> --root <root> [--no-hmr]`. The bin then writes the page again and re-runs itself under `--config=<root>/.moku/bunfig.toml` (D-51, see Engine page), so the page keeps the hot plugin. Any other html starts the html form.
+3. Without an html, in a root that is no moku-game folder, the bridge prints "no running moku-editor and no game html; waiting for moku_start" and tools answer `isError`: "moku-editor is not running for this folder. Start it here (`bunx moku-editor --root .`, any port) or call moku_start." `moku_status` answers `running: false` with that hint instead. `moku_start {}` answers "moku_start needs the game HTML file.".
 4. When the hub socket closes, the bridge reads the discovery file again and reconnects: one try at the close, then at most three more, 1, 2 and 4 s apart (`RECONNECT_WAITS_MS`). They land 0, 1, 3 and 7 s after the close, like the link's. The bin's restart keeps its port closed for up to about 6 s (Hot reload, D-57), so the last try finds it open again. Each try reads the discovery file first. A connection the hub drops within 5 s of opening (`STABLE_MS`) counts as a failed try: the next try waits, and the count starts over only after a connection held 5 s. So a bin that accepts and drops every socket is tried at most four times in 7 s, not in a loop. The tries end with a connection, without a live bin (no try at all when the bin is gone at the close), after the last wait, when `moku_stop` stops the bin, and on stdin end or a signal. A tool call does not wait for the next try: it tries one connect to a live bin, as every later call does; `moku_start` starts one. When a try and a tool call connect at once, the first connection stays and the second is closed. A connect that opens after the teardown began is closed and not followed.
 
    What stderr says about it (D-59). A failed try prints nothing; its message is kept for the "not running" answer. So a restart that reconnects prints no warning, and tries that end without a connection print exactly one.

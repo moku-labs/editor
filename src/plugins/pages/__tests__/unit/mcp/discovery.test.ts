@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path/posix";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -53,6 +53,18 @@ describe("findEditor", () => {
     expect(findEditor(root)).toEqual({});
     await writeFile(join(root, ".moku", "editor.json"), JSON.stringify({ version: 2 }));
     expect(findEditor(root)).toEqual({});
+  });
+
+  it("answers nothing for a live record of another root (a copied .moku/, F185: never another checkout's editor)", () => {
+    const other = { ...record(process.pid), root: join(root, "..", "other-worktree") };
+    writeDiscovery(root, other);
+    expect(findEditor(root)).toEqual({});
+  });
+
+  it("answers the record when the root is spelled through a symlink (macOS /var → /private/var)", async () => {
+    const real = await realpath(root);
+    writeDiscovery(root, { ...record(process.pid), root: real });
+    expect(findEditor(root).live?.pid).toBe(process.pid);
   });
 });
 

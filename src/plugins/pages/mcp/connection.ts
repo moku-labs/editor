@@ -19,9 +19,10 @@ import type { BridgeDeps, ChildProcess, EditorLink, EditorStatus, HubClient } fr
 
 /**
  * The port of a bin the bridge starts when neither the call, argv nor the last discovery file
- * names one.
+ * names one: 0, a free port (F185). A fixed 3000 took the main checkout's port from a worktree;
+ * the bridge reads the real port from the discovery file.
  */
-const DEFAULT_PORT = 3000;
+const DEFAULT_PORT = 0;
 
 /**
  * The waits before the second, third and fourth reconnect try, in ms. With the try at the close
@@ -45,7 +46,7 @@ export const STABLE_MS = 5000;
  * What a tool answers while no bin runs.
  */
 export const NOT_RUNNING =
-  "moku-editor is not running. Start it (`bunx moku-editor web/index.html --port 3000`) or call moku_start.";
+  "moku-editor is not running for this folder. Start it here (`bunx moku-editor --root .`, any port) or call moku_start.";
 
 /**
  * The stderr warning of reconnect tries that ended without a connection; the last failure follows
@@ -346,7 +347,7 @@ async function launchNow(
   }
 
   // The html: the call's, else argv's, else the last discovery file's, else the engine page of a
-  // moku-game root. The port: the call's, else argv's, else the last one, else 3000.
+  // moku-game root. The port: the call's, else argv's, else the last one, else a free one.
   const html = input.html ?? args.html ?? state.seen?.html ?? enginePageOf(root);
   if (html === undefined) {
     throw new Error(
@@ -439,8 +440,28 @@ async function startup(ctx: LinkCtx): Promise<void> {
 }
 
 /**
- * The open client, after the startup and a reconnect try in flight settled; else one connect to a
- * live bin (a tool call does not wait for the next try).
+ * Drops the open connection when the discovery file names another live bin of the root (F185):
+ * a bin started for this root after the one the bridge talks to wins, so the agent drives the
+ * editor the person opened. The old bin keeps running; one the bridge started stays owned.
+ *
+ * @param ctx - The bin side.
+ * @param live - The live record read right before.
+ */
+function leaveOlderBin(ctx: LinkCtx, live: EditorDiscovery): void {
+  const { state } = ctx;
+  const client = state.client;
+  if (client === undefined || client.bin.pid === live.pid) return;
+
+  state.client = undefined;
+  ctx.onDisconnected();
+  client.close();
+  ctx.deps.ui.info(`moku-editor mcp: a newer moku-editor runs for this folder at ${live.url}`);
+}
+
+/**
+ * The open client of the bin the discovery file names, after the startup and a reconnect try in
+ * flight settled; else one connect to that live bin (a tool call does not wait for the next try).
+ * The file is read on every call, so a bin started or restarted on a new port is found (F185).
  *
  * @param ctx - The bin side.
  * @returns The open client.
@@ -451,10 +472,11 @@ async function hubOf(ctx: LinkCtx): Promise<HubClient> {
   await state.startup;
   await state.reconnect;
   await state.launching?.catch(noop);
-  if (state.client?.isOpen() === true) return state.client;
 
   const found = findEditor(ctx.root, ctx.deps.isAlive);
   state.seen = found.seen ?? state.seen;
+  if (found.live !== undefined) leaveOlderBin(ctx, found.live);
+  if (state.client?.isOpen() === true) return state.client;
   if (found.live === undefined) throw notRunning(state.lastError);
   return connectTo(ctx, found.live);
 }
