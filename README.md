@@ -167,10 +167,10 @@ and writes nothing.
 **1. Register it** from the game folder:
 
 ```sh
-claude mcp add moku-editor -- bunx moku-editor mcp web/index.html --port 3000
+claude mcp add moku-editor -- bunx moku-editor mcp
 ```
 
-Or commit a project `.mcp.json`. `bunx moku-editor mcp-config web/index.html --port 3000` prints it:
+Or commit a project `.mcp.json`. `bunx moku-editor mcp-config` prints it:
 
 ```json
 {
@@ -178,7 +178,7 @@ Or commit a project `.mcp.json`. `bunx moku-editor mcp-config web/index.html --p
     "moku-editor": {
       "type": "stdio",
       "command": "bunx",
-      "args": ["moku-editor", "mcp", "web/index.html", "--port", "3000"]
+      "args": ["moku-editor", "mcp"]
     }
   }
 }
@@ -186,14 +186,16 @@ Or commit a project `.mcp.json`. `bunx moku-editor mcp-config web/index.html --p
 
 `claude mcp list` then shows `moku-editor: … ✔ Connected`.
 
+Pin no port. Each checkout, a git worktree too, finds its own editor whatever port it runs on, so one `.mcp.json` serves every worktree. A game that is no moku-game folder passes its html: `moku-editor mcp web/index.html`.
+
 **2. Ignore the editor's files.** The bin writes `.moku/editor.json` (its port and the per-start token, mode 0600). A bin the bridge starts logs to `.moku/editor.log`. Add `.moku/` to the game's `.gitignore`.
 
 **3. Keep the game page visible.** Open the game or the tools page in a browser, or in Claude's browser pane. Screenshots and contact sheets need the page on screen: a paused game or a hidden tab answers "game paused or hidden at frame N — bring the editor pane to front or resume", not a timeout.
 
 Which editor the bridge uses:
 
-- A running bin wins. The bridge finds it through `.moku/editor.json` under `--root` (default the working directory).
-- No bin runs: the bridge starts `moku-editor <html> --port <port>` itself, with the html and port it was given. In a moku-game folder (`index.ts` and `config.ts`) it needs no html: it starts the engine page.
+- A running bin of this folder wins, on any port. The bridge finds it through `.moku/editor.json` under `--root` (default the working directory) and reads that file again on every tool call, so an editor started after Claude Code, or restarted on a new port, is found. When a second bin starts for the same folder, the next tool call moves to it. A file that names another folder (a copied `.moku/`) or a dead process is ignored: a worktree never reaches another checkout's editor.
+- No bin runs: the bridge starts `moku-editor <html> --port <port>` itself, with the html it was given, on `--port` when given, else the port of the last bin of this folder, else a free port. In a moku-game folder (`index.ts` and `config.ts`) it needs no html: it starts the engine page.
 - Claude Code closes (stdin end, SIGINT or SIGTERM): the bridge stops the bin it started. A bin you started yourself keeps running.
 
 | Tool | What it does |

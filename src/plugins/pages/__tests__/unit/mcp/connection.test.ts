@@ -171,7 +171,7 @@ describe("startup", () => {
     await editor.shutdown();
   });
 
-  it("starts the engine form on port 3000 and with --no-hmr when the bridge got no port and no hot reload", async () => {
+  it("starts the engine form on a free port (--port 0, not 3000: F185) and with --no-hmr when the bridge got no port and no hot reload", async () => {
     makeGameFolder();
     const { editor, spawn } = link({ hmr: false });
     await editor.start();
@@ -179,7 +179,7 @@ describe("startup", () => {
       "bun",
       "bin.mjs",
       "--port",
-      "3000",
+      "0",
       "--root",
       root,
       "--no-hmr"
@@ -1047,3 +1047,86 @@ describe("launch and stop", () => {
     expect(children[0]?.signals).toEqual(["SIGTERM"]);
   });
 });
+
+describe("this checkout's editor on any port (F185)", () => {
+  it("connects each of two roots to its own bin at once, though both bridges got --port 3000", async () => {
+    const otherRoot = await mkdtemp(join(tmpdir(), "moku-mcp-link-other-"));
+    const otherHub = startFakeHub({ sessions: [session("s-other")] });
+    try {
+      writeDiscovery(root, hub.discovery(root));
+      writeDiscovery(otherRoot, otherHub.discovery(otherRoot));
+      const mine = link({ port: 3000 });
+      const other = createEditorLink({
+        root: otherRoot,
+        args: { kind: "mcp", root: otherRoot, hmr: true, port: 3000 },
+        deps: {
+          ui: createBrandConsole({ write: noop, writeError: noop, color: false }),
+          spawn: vi.fn<SpawnProcess>(),
+          isAlive: pid => pid === process.pid,
+          command: ["bun", "bin.mjs"],
+          now: () => clock
+        },
+        onConnected: noop,
+        onDisconnected: noop
+      });
+      await Promise.all([mine.editor.start(), other.start()]);
+
+      const [mineHub, otherHubClient] = await Promise.all([mine.editor.hub(), other.hub()]);
+      expect(mineHub.sessions()).toEqual([session("s-1")]);
+      expect(otherHubClient.sessions()).toEqual([session("s-other")]);
+      expect(mine.editor.status().bin?.url).toBe(hub.url);
+      expect(other.status().bin?.url).toBe(otherHub.url);
+      expect(mine.spawn).not.toHaveBeenCalled();
+      await Promise.all([mine.editor.shutdown(), other.shutdown()]);
+    } finally {
+      await otherHub.stop();
+      await rm(otherRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("finds a bin started after the bridge on the next tool call", async () => {
+    const { editor } = link({ port: 3000 });
+    await editor.start();
+    await expect(editor.hub()).rejects.toThrow(NOT_RUNNING);
+    writeDiscovery(root, hub.discovery(root));
+    const client = await editor.hub();
+    expect(client.sessions()).toEqual([session("s-1")]);
+    await editor.shutdown();
+  });
+
+  it("moves to a newer bin of the root on the next tool call while the old one still runs", async () => {
+    const newer = startFakeHub({ sessions: [session("s-new")] });
+    try {
+      writeDiscovery(root, hub.discovery(root));
+      const { editor, alive, onConnected } = link();
+      await editor.start();
+      const first = await editor.hub();
+
+      alive.add(8100);
+      writeDiscovery(root, newer.discovery(root, 8100));
+      const second = await editor.hub();
+
+      expect(second.sessions()).toEqual([session("s-new")]);
+      expect(editor.status().bin?.url).toBe(newer.url);
+      expect(first.isOpen()).toBe(false);
+      expect(onConnected).toHaveBeenCalledTimes(2);
+      await editor.shutdown();
+    } finally {
+      await newer.stop();
+    }
+  });
+
+  it("ignores a live discovery file of another root: a tool call answers not running", async () => {
+    const elsewhere = join(root, "..", "another-worktree");
+    writeDiscovery(root, { ...hub.discovery(elsewhere), root: elsewhere });
+    const { editor } = link({ port: 3000 });
+    await editor.start();
+    await expect(editor.hub()).rejects.toThrow(NOT_RUNNING);
+    await editor.shutdown();
+  });
+});
+
+/** Does nothing (a callback the test does not watch). */
+function noop(): void {
+  // Nothing to record.
+}
