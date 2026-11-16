@@ -16,7 +16,7 @@
         "@fontsource/barlow": "5.3.0",
         "@fontsource/barlow-condensed": "5.3.0",
         "@moku-labs/ci": "1.5.8",
-        "@moku-labs/common": "0.3.11",
+        "@moku-labs/common": "0.3.12",
         "@moku-labs/core": "1.7.6",
         "@moku-labs/game": "^0.15.90",
         "@playwright/test": "1.63.0",
@@ -214,11 +214,11 @@
 
     "@moku-labs/ci": ["@moku-labs/ci@1.5.8", "", { "bin": { "moku-release": "dist/release.mjs" } }, "sha512-qbwfIjwSKNHMQ0nadkyfiJdW0tb/QancHDM5YZmg4eSecAXBMKmDrOt9imvcMPydpHGtM/dN+x8+kqHhdlT3Lw=="],
 
-    "@moku-labs/common": ["@moku-labs/common@0.3.11", "", { "peerDependencies": { "@moku-labs/core": "^1.7.1" } }, "sha512-3F7QGTn4Upi9o2kPEnCrPo8fKC/IUJBCyUWpoW3XYt0Dom3oaQWw8SB79CEXwvmV6BVaPGRcZNGttspvalDPAQ=="],
+    "@moku-labs/common": ["@moku-labs/common@0.3.12", "", { "peerDependencies": { "@moku-labs/core": "^1.7.1" } }, "sha512-Re8TCuQCBT+uCmgosn5OWQ7qi4H/uWPl5gGPgIjKVMVAZk9n6HNEBKi5k7Z2YnfahOwLhjNC1ZQDwKybAWIXug=="],
 
     "@moku-labs/core": ["@moku-labs/core@1.7.6", "", {}, "sha512-CdCxX/9zwJ9Czv45I/CmDuV8sV1r9uiOSfUzckD3MZC8eumO1QcT4PY4yiSXd0zspsTgdsntFxfDHkUUYVp5Iw=="],
 
-    "@moku-labs/game": ["@moku-labs/game@0.15.101", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.4", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.13", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-xjjFffCIkmfWZagTSiHfnFmxI45YmVTBundNv4cZJ8y5MAq2t8DuDhYhpzPHB9PWzJ52vlPoFtln1Mmf/cX5/Q=="],
+    "@moku-labs/game": ["@moku-labs/game@0.15.144", "", { "dependencies": { "immer": "11.1.18", "maxrects-packer": "2.7.3", "yoga-layout": "3.2.1" }, "peerDependencies": { "@moku-labs/common": "^0.3.12", "@moku-labs/core": "^1.7.1", "@moku-labs/native": "^0.3.13", "@moku-labs/system": "^0.3.1", "pixi.js": "^8.22.0", "playwright-core": ">=1.50.0", "sharp": "^0.34.0", "typescript": ">=5.5" }, "optionalPeers": ["@moku-labs/native", "@moku-labs/system", "playwright-core", "sharp", "typescript"], "bin": { "moku-game": "bin/moku-game.mjs", "moku-game-index": "bin/moku-game-index.mjs", "moku-game-assets": "bin/moku-game-assets.mjs" } }, "sha512-DxyytVMhGQHsU0JcBL6/yaqEE1KWXA5wdgDABQ7mccsGp7l1yaDigsHcl2rgGT+7QE4+6pp3Hqhy03X2x/2LRQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

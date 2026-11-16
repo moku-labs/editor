@@ -401,12 +401,12 @@ describe("bridge integration", { timeout: 15_000 }, () => {
     );
     const sources = listOf(field(manifest, "sources"));
     const registered = app.registry.manifest();
-    // The hello carries the registry's whole manifest: the game's 21 sources, perf's and the recorder's.
+    // The hello carries the registry's whole manifest: the game's 22 sources, perf's and the recorder's.
     expect(sources.map(source => field(source, "id"))).toEqual(
       registered.sources.map(source => source.id)
     );
     expect(sources.filter(source => String(field(source, "id")).startsWith("game."))).toHaveLength(
-      21
+      22
     );
     expect(listOf(field(manifest, "commands")).map(command => field(command, "id"))).toEqual(
       registered.commands.map(command => command.id)
