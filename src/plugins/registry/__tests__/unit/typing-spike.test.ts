@@ -93,8 +93,8 @@ describe("typing spike (S1)", () => {
       commands: Object.values(commands)
     };
 
-    expect(module.sources).toHaveLength(21);
-    expect(module.commands).toHaveLength(22);
+    expect(module.sources).toHaveLength(22);
+    expect(module.commands).toHaveLength(23);
   });
 
   it("fits a defineCommand with App = GameLike and an optional json field into DoorCommand", () => {
